@@ -2,6 +2,7 @@ import os
 
 import warnings
 from dataclasses import dataclass, field
+from copy import deepcopy
 
 from .data import Dataset
 
@@ -39,6 +40,54 @@ class DataManager:
 
         self.data_sets.append(Dataset.from_json(json_file))
 
+    def select(
+        self,
+        function_ids: list[int] = None,
+        algorithms: list[str] = None,
+        experiment_attributes: list[tuple[str, str]] = None,
+        data_attributes: list[str] = None,
+        dimensions: list[int] = None,
+        instances: list[int] = None,
+    ) -> "DataManager":
+        selected_data_sets = deepcopy(self.data_sets)
 
-    def select(self, function_id: int, **kwargs):
-        pass
+        ## dataset filters
+        if function_ids is not None:
+            selected_data_sets = [
+                x for x in selected_data_sets if x.function.id in function_ids
+            ]
+
+        if algorithms is not None:
+            selected_data_sets = [
+                x for x in selected_data_sets if x.algorithm.name in algorithms
+            ]
+        
+        if experiment_attributes is not None:
+            for attr in experiment_attributes:
+                selected_data_sets = [
+                    x for x in selected_data_sets if attr in x.experiment_attributes
+                ]
+
+        if data_attributes is not None:
+            for attr in data_attributes:
+                selected_data_sets = [
+                    x for x in selected_data_sets if attr in x.data_attributes
+                ]
+        ## scenario_filters
+        if dimensions is not None:
+            for dset in selected_data_sets:
+                dset.scenarios = [scen for scen in dset.scenarios if scen.dimension in dimensions]
+                
+        ## run filter
+        if instances is not None:
+            for dset in selected_data_sets:
+                for scen in dset.scenarios:
+                    scen.runs = [run for run in scen.runs if run.instance in instances]
+
+        return DataManager(selected_data_sets)
+    
+    def any(self):
+        return len(self.data_sets) != 0
+    
+    def load(self):
+        breakpoint()

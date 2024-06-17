@@ -46,12 +46,28 @@ class TestManager(unittest.TestCase):
 
         self.assertEqual(len(manager.data_sets), 1)
 
-
     def test_add_folder(self):
         manager = DataManager()
         manager.add_folder(self.data_dir)
         self.assertEqual(len(manager.data_sets), 2)       
 
+    def test_select(self):
+        manager = DataManager()
+        manager.add_folder(self.data_dir)
+
+        selection = manager.select(
+            instances=[1],
+        )
+        df = selection.data_sets[0].scenarios[0].load()
+        self.assertEqual(len(df), 46)
+        self.assertEqual(max(df["run_id"]), 2)
+        self.assertEqual(min(df["run_id"]), 2)
+        self.assertTrue(selection.any())
+
+        selection = manager.select(function_ids=[0])
+        self.assertFalse(selection.any())
+        
+        breakpoint()
 
 
 if __name__ == "__main__":

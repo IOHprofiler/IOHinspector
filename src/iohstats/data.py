@@ -36,6 +36,7 @@ class Solution:
 
 @dataclass
 class Run:
+    id: int
     instance: int
     evals: int
     best: Solution
@@ -68,13 +69,14 @@ class Scenario:
             data["dimension"],
             data["path"],
             [
-                Run(run["instance"], run["evals"], best=Solution(**run["best"]))
-                for run in data["runs"]
+                Run(run_id, run["instance"], run["evals"], best=Solution(**run["best"]))
+                for run_id, run in enumerate(data["runs"], 1)
             ],
         )
 
     def load(self) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame"""
+
         with open(self.data_file) as f:
             header = next(f).strip().split()
 
@@ -91,6 +93,7 @@ class Scenario:
                 pl.col("evaluations").cast(pl.UInt64),
                 run_id=(pl.col("evaluations") == 1).cum_sum(),
             )
+            .filter(pl.col("run_id").is_in([r.id for r in self.runs]))
         )
         return dt
 
@@ -145,7 +148,7 @@ class Dataset:
                 data["algorithm"]["name"],
                 data["algorithm"]["info"],
             ),
-            [tuple(x.items()) for x in data["experiment_attributes"]],
+            [tuple(x.items())[0] for x in data["experiment_attributes"]],
             data["attributes"],
             [
                 Scenario.from_dict(scen, os.path.dirname(filepath))
