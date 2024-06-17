@@ -17,9 +17,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+  "matplotlib",
   "numpy",
   "pandas",
-  "matplotlib"  
+  "polars",  
 ]
 
 [project.urls]

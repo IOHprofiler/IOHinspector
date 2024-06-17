@@ -2,7 +2,7 @@ import os
 import unittest
 import warnings
 
-import pandas as pd
+import polars as pl
 
 from iohstats import DataManager
 
@@ -28,7 +28,7 @@ class TestManager(unittest.TestCase):
         manager.add_json(self.json_files[0])
         data = manager.data_sets[0]
         df = data.scenarios[0].load()
-        self.assertTrue(isinstance(df, pd.DataFrame))
+        self.assertTrue(isinstance(df, pl.DataFrame))
         self.assertEqual(max(df["run_id"]), 15)
         self.assertEqual(min(df["run_id"]), 1)
         self.assertEqual(len(df), 659)

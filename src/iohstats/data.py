@@ -3,7 +3,7 @@ import json
 from dataclasses import dataclass, field
 
 import numpy as np
-import pandas as pd
+import polars as pl
 
 
 def check_keys(data: dict, required_keys: list[str]):
@@ -73,13 +73,26 @@ class Scenario:
             ],
         )
 
-    def load(self) -> pd.DataFrame:
+    def load(self) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame"""
+        with open(self.data_file) as f:
+            header = next(f).strip().split()
 
-        dt = pd.read_csv(self.data_file, sep=" ", decimal=",")
-        dt = dt[dt["raw_y"] != "raw_y"].astype(float)
-        dt["run_id"] = np.cumsum(dt["evaluations"] == 1)
-        return dt.reset_index(drop=True)
+        dt = (
+            pl.read_csv(
+                self.data_file,
+                separator=" ",
+                decimal_comma=True,
+                schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
+                ignore_errors=True,
+            )
+            .drop_nulls()
+            .with_columns(
+                pl.col("evaluations").cast(pl.UInt64),
+                run_id=(pl.col("evaluations") == 1).cum_sum(),
+            )
+        )
+        return dt
 
 
 @dataclass
@@ -96,7 +109,7 @@ class Dataset:
     @staticmethod
     def from_json(json_file: str):
         """Construct a dataset object from a json file"""
-        
+
         if not os.path.isfile(json_file):
             raise FileNotFoundError(f"{json_file} not found")
 
