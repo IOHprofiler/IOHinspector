@@ -10,6 +10,7 @@ def align_data(
     x_col: str = "evaluations",
     y_col: str = "raw_y",
     output: str = "long",
+    maximization: bool = False,
 ) -> pd.DataFrame:
     """Align data based on function evaluation counts
 
@@ -20,16 +21,27 @@ def align_data(
         x_col (str, optional): function evaluation column Defaults to 'evaluations'.
         y_col (str, optional): function value column. Defaults to 'raw_y'.
         output (str, optional): whether to return a long or wide dataframe as output. Defaults to 'long'.
+        maximization (bool, optional): whether the data comes from maximization or minimization. Defaults to False (minimization).
 
     Returns:
         pd.DataFrame: Alligned DataFrame
     """
+
     evals_df = pd.DataFrame({x_col: evals})
 
     def merge_asof_group(group):
-        merged = pd.merge_asof(
-            evals_df, group, left_on=x_col, right_on=x_col, direction="backward"
-        )
+        if maximization:
+            group[y_col] = group[y_col].cummax()
+        else:
+            group[y_col] = group[y_col].cummin()
+        if x_col != "evaluations" and not maximization:
+            merged = pd.merge_asof(
+                evals_df, group, left_on=x_col, right_on=x_col, direction="forward"
+            )
+        else:
+            merged = pd.merge_asof(
+                evals_df, group, left_on=x_col, right_on=x_col, direction="backward"
+            )
         for col in group_cols:
             merged[col] = group[col].iloc[0]
         return merged
