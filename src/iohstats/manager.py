@@ -37,8 +37,8 @@ class DataManager:
                 f"{json_file} is already loaded. Skipping file", RuntimeWarning
             )
             return
-
-        self.data_sets.append(Dataset.from_json(json_file))
+        data_set = Dataset.from_json(json_file)
+        self.data_sets.append(data_set)
 
     def select(
         self,
@@ -73,6 +73,7 @@ class DataManager:
                 selected_data_sets = [
                     x for x in selected_data_sets if attr in x.data_attributes
                 ]
+                
         ## scenario_filters
         if dimensions is not None:
             for dset in selected_data_sets:
