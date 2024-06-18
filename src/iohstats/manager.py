@@ -1,10 +1,9 @@
 import os
-
 import warnings
 from dataclasses import dataclass, field
 from copy import deepcopy
 
-from .data import Dataset
+from .data import Dataset, Function, Algorithm
 
 
 @dataclass
@@ -40,6 +39,9 @@ class DataManager:
         data_set = Dataset.from_json(json_file)
         self.data_sets.append(data_set)
 
+    def __add__(self, other: "DataManager") -> "DataManager":
+        return DataManager(deepcopy(self.data_sets) + deepcopy(other.data_sets))
+
     def select(
         self,
         function_ids: list[int] = None,
@@ -73,7 +75,7 @@ class DataManager:
                 selected_data_sets = [
                     x for x in selected_data_sets if attr in x.data_attributes
                 ]
-                
+
         ## scenario_filters
         if dimensions is not None:
             for dset in selected_data_sets:
@@ -86,6 +88,51 @@ class DataManager:
                     scen.runs = [run for run in scen.runs if run.instance in instances]
 
         return DataManager(selected_data_sets)
+    
+    @property
+    def functions(self) -> tuple[Function]:
+        return tuple([x.function for x in self.data_sets])
+    
+    @property
+    def algorithms(self) -> tuple[Algorithm]:
+        return tuple([x.algorithm for x in self.data_sets])
+    
+    @property
+    def experiment_attributes(self) -> tuple[tuple[str, str]]:
+        attrs = []
+        for data_set in self.data_sets:
+            for attr in data_set.experiment_attributes:
+                if attr not in attrs:
+                    attrs.append(attr)
+        return tuple(attrs)
+    
+    @property
+    def data_attributes(self) -> tuple[str]:
+        attrs = []
+        for data_set in self.data_sets:
+            for attr in data_set.data_attributes:
+                if attr not in attrs:
+                    attrs.append(attr)
+        return tuple(attrs)
+    
+    @property
+    def dimensions(self) -> tuple[int]:
+        dims = []
+        for data_set in self.data_sets:
+            for scen in data_set.scenarios:
+                if scen.dim not in dims:
+                    dims.append(scen.dim)
+        return tuple(dims)
+    
+    @property
+    def instances(self) -> tuple[int]:
+        iids = []
+        for data_set in self.data_sets:
+            for scen in data_set.scenarios:
+                for run in scen.runs:
+                    if run.instance not in iids:
+                        iids.append(run.instancem)
+        return tuple(iids)
     
     def any(self):
         return len(self.data_sets) != 0
