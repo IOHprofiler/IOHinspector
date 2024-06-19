@@ -1,21 +1,21 @@
 from typing import Iterable
 
-import pandas as pd
+import polars as pl
 
 
 def align_data(
-    df: pd.DataFrame,
+    df: pl.DataFrame,
     evals: Iterable[int],
     group_cols: Iterable[str],
     x_col: str = "evaluations",
     y_col: str = "raw_y",
     output: str = "long",
     maximization: bool = False,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Align data based on function evaluation counts
 
     Args:
-        df (pd.DataFrame): DataFrame containing at minimum x, y and group columns specified in further parameters
+        df (pl.DataFrame): DataFrame containing at minimum x, y and group columns specified in further parameters
         evals (Iterable[int]): list containing the function evaluation values at which to align
         group_cols (Iterable[str]): columns to use for grouping
         x_col (str, optional): function evaluation column Defaults to 'evaluations'.
@@ -24,29 +24,27 @@ def align_data(
         maximization (bool, optional): whether the data comes from maximization or minimization. Defaults to False (minimization).
 
     Returns:
-        pd.DataFrame: Alligned DataFrame
+        pl.DataFrame: Alligned DataFrame
     """
 
-    evals_df = pd.DataFrame({x_col: evals})
+    evals_df = pl.DataFrame({x_col: evals})
 
     def merge_asof_group(group):
         if maximization:
-            group[y_col] = group[y_col].cummax()
+            group = group.with_columns(group[y_col].cum_max().alias(y_col))
         else:
-            group[y_col] = group[y_col].cummin()
+            group = group.with_columns(group[y_col].cum_min().alias(y_col))
+
         if x_col != "evaluations" and not maximization:
-            merged = pd.merge_asof(
-                evals_df, group, left_on=x_col, right_on=x_col, direction="forward"
-            )
+            merged = evals_df.join_asof(group, on=x_col, strategy="forward")
         else:
-            merged = pd.merge_asof(
-                evals_df, group, left_on=x_col, right_on=x_col, direction="backward"
-            )
+            merged = evals_df.join_asof(group, on=x_col, strategy="backward")
+
         for col in group_cols:
-            merged[col] = group[col].iloc[0]
+            merged = merged.with_columns(pl.lit(group[col][0]).alias(col))
         return merged
 
-    result_df = df.groupby(group_cols).apply(merge_asof_group).reset_index(drop=True)
+    result_df = df.group_by(*group_cols).map_groups(merge_asof_group)
 
     if output == "long":
         return result_df
