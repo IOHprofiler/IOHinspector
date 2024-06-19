@@ -1,11 +1,11 @@
 from typing import Iterable
 
 import polars as pl
-
+import numpy as np
 
 def align_data(
     df: pl.DataFrame,
-    evals: Iterable[int],
+    evals: Iterable[int|float],
     group_cols: Iterable[str],
     x_col: str = "evaluations",
     y_col: str = "raw_y",
@@ -30,15 +30,19 @@ def align_data(
     evals_df = pl.DataFrame({x_col: evals})
 
     def merge_asof_group(group):
-        if maximization:
-            group = group.with_columns(group[y_col].cum_max().alias(y_col))
-        else:
-            group = group.with_columns(group[y_col].cum_min().alias(y_col))
+        fval_col = x_col
+        if x_col == 'evaluations':
+            fval_col = y_col
 
-        if x_col != "evaluations" and not maximization:
-            merged = evals_df.join_asof(group, on=x_col, strategy="forward")
+        if maximization:
+            group = group.with_columns(group[fval_col].cum_max().alias(fval_col))
         else:
-            merged = evals_df.join_asof(group, on=x_col, strategy="backward")
+            group = group.with_columns(group[fval_col].cum_min().alias(fval_col))
+
+        if x_col != "evaluations" and maximization:
+            merged = evals_df.join_asof(group.sort(x_col), on=x_col, strategy="forward").fill_null(np.inf)
+        else:
+            merged = evals_df.join_asof(group.sort(x_col), on=x_col, strategy="backward").fill_null(np.inf)
 
         for col in group_cols:
             merged = merged.with_columns(pl.lit(group[col][0]).alias(col))

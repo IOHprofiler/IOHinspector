@@ -141,38 +141,85 @@ def plot_eaf(data):
     plt.show()
 
 
+def _running_time(data : DataSet,
+                 custom_op : typing.Callable[[pl.Series], float] = None):
+    """Internal function for getting fixed-budget information. 
+
+    Args:
+        data (DataSet): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in 
+        this object determine the axes of the final performance (most data will have 'raw_y', 'evaluations' and ['algId'] as defaults)
+        custom_op (callable, optional): Any custom aggregation . Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
+    
+    #Bookkeeping to ensure flexibility of analyses
+    free_variables = data.free_variables
+    eval_variable = data.eval_variable
+    evaluation_variable = data.evaluation_variable #To think about whether this should always be int or not (cpu time?)
+
+    #Getting alligned data (to check if e.g. limits should be args for this function)
+    f_values = get_sequence(data.min_fval, data.max_fval, 50, 'target')
+    data_aligned = data.get_aligned_target(f_values, output='long')
+
+    budget = data.max_budget
+
+    group_variables = free_variables + [evaluation_variable]
+    aggregations = [
+        pl.mean(eval_variable).alias('mean'),
+        pl.min(eval_variable).alias('min'),
+        pl.max(eval_variable).alias('max'),
+        pl.median(eval_variable).alias('median'),
+        pl.std(eval_variable).alias('std'),
+        pl.col(eval_variable).is_finite().mean().alias('success_ratio'),
+        pl.col(eval_variable).is_finite().sum().alias('success_count'),
+        (pl.col(eval_variable).replace(np.inf, budget).sum() / pl.col(eval_variable).is_finite().sum()).alias('ERT'),
+        (pl.col(eval_variable).replace(np.inf, budget * 10).sum() / pl.col(eval_variable).count()).alias('PAR-10')
+    ]
+
+    if custom_op is not None:
+        aggregations.append(pl.col(eval_variable).apply(lambda s: custom_op(s)).alias(custom_op.__name__))
+
+    dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
+
+    return dt_plot.sort(evaluation_variable).to_parndas() 
 
 #### Multi-objective
 
 from pygmo import hypervolume
 from scipy.spatial.distance import cdist
 
-def group_hv(group):
+def group_hv_cumulative(group : pl.DataFrame, objective_columns : Iterable, reference_point : np.ndarray):
     group = group.with_columns(
-        pl.Series(name="igd", values=[hypervolume(np.array(group[['y1', 'y2']])[:i]).compute(([100,100])) for i in range(1, len(group)+1)])
+        pl.Series(name="hv", values=[hypervolume(np.array(group[objective_columns])[:i]).compute((reference_point)) for i in range(1, len(group)+1)])
     )
     return group
     
-def group_igd_cumulative(group):
-    pf = np.array([[10,0], [0,10]])
-    points = np.array(group[['y1', 'y2']])
-    group['igd'] = np.mean(np.minimum.accumulate(cdist(pf, points), axis=1), axis=0)
+def group_igd_cumulative(group, objective_columns : Iterable, reference_set : np.ndarray):
+    points = np.array(group[objective_columns])
+    group = group.with_columns(
+        pl.Series(name="igd", values=np.mean(np.minimum.accumulate(cdist(reference_set, points), axis=1), axis=0))
+    )
     return group
 
-def group_igdplus_cumulative(group):
-    pf = np.array([[10,0], [0,10]])
-    points = np.array(group[['y1', 'y2']])
-    group['igd+'] = cdist(pf, points, metric=lambda x,y : np.sqrt(np.clip(y-x, 0, None)**2).sum())
+def group_igdplus_cumulative(group, objective_columns : Iterable, reference_set : np.ndarray):
+    points = np.array(group[objective_columns])
+    group = group.with_columns(
+        pl.Series(name="igd+", values=np.mean(np.minimum.accumulate(cdist(reference_set, points, metric=lambda x,y : np.sqrt(np.clip(y-x, 0, None)**2).sum()), axis=1), axis=0))
+    )
     return group
 
-
-group_hv(df2.filter(pl.col('run_id') == 1))
-
-def cumulative_non_dominated(objectives):
+def group_nondominated_cumulative(group, objective_columns : Iterable):
+    objectives = np.array(group[objective_columns])
     is_efficient = np.ones(objectives.shape[0], dtype = bool)
     for i, c in enumerate(objectives[1:]):
         if is_efficient[i+1]:
             is_efficient[i+1:][is_efficient[i+1:]] = np.any(objectives[i+1:][is_efficient[i+1:]]<c, axis=1)  # Keep any later point with a lower cost
             is_efficient[i+1] = True  # And keep self
-    return is_efficient
+    group = group.with_columns(
+        pl.Series(name="nondominated", values=is_efficient)
+    )
+    return group
+
 
