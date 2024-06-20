@@ -1,18 +1,7 @@
 import polars as pl
 import numpy as np
 
-import typing
-
-import matplotlib
-matplotlib.rcParams['pdf.fonttype'] = 42
-matplotlib.rcParams['ps.fonttype'] = 42
-
-from matplotlib.patches import Polygon
-import seaborn as sbs
-import matplotlib.pyplot as plt
-
-font = {'size'   : 24}
-plt.rc('font', **font)
+from typing import Iterable, Callable
 
 
 def get_sequence(min : float, max : float, len : float, scale_log : bool = False, cast_to_int : bool = False) -> np.ndarray:
@@ -45,7 +34,7 @@ def _geometric_mean(series: pl.Series) -> float:
 
 
 def _convergence(data : DataSet,
-                 custom_op : typing.Callable[[pl.Series], float] = None):
+                 custom_op : Callable[[pl.Series], float] = None):
     """Internal function for getting fixed-budget information. 
 
     Args:
@@ -142,7 +131,7 @@ def plot_eaf(data):
 
 
 def _running_time(data : DataSet,
-                 custom_op : typing.Callable[[pl.Series], float] = None):
+                 custom_op : Callable[[pl.Series], float] = None):
     """Internal function for getting fixed-budget information. 
 
     Args:
@@ -190,36 +179,49 @@ def _running_time(data : DataSet,
 from pygmo import hypervolume
 from scipy.spatial.distance import cdist
 
-def group_hv_cumulative(group : pl.DataFrame, objective_columns : Iterable, reference_point : np.ndarray):
-    group = group.with_columns(
-        pl.Series(name="hv", values=[hypervolume(np.array(group[objective_columns])[:i]).compute((reference_point)) for i in range(1, len(group)+1)])
-    )
-    return group
+class Anytime_IGD:
+    def __init__(self, reference_set : np.ndarray):
+        self.reference_set = reference_set
+
+    def __call__(self, group : pl.DataFrame, objective_columns : Iterable) -> pl.DataFrame:
+        points = np.array(group[objective_columns])
+        group = group.with_columns(
+            pl.Series(name="igd", values=np.mean(np.minimum.accumulate(cdist(self.reference_set, points), axis=1), axis=0))
+        )
+        return group
     
-def group_igd_cumulative(group, objective_columns : Iterable, reference_set : np.ndarray):
-    points = np.array(group[objective_columns])
-    group = group.with_columns(
-        pl.Series(name="igd", values=np.mean(np.minimum.accumulate(cdist(reference_set, points), axis=1), axis=0))
-    )
-    return group
+class Anytime_IGDPlus:
+    def __init__(self, reference_set : np.ndarray):
+        self.reference_set = reference_set
 
-def group_igdplus_cumulative(group, objective_columns : Iterable, reference_set : np.ndarray):
-    points = np.array(group[objective_columns])
-    group = group.with_columns(
-        pl.Series(name="igd+", values=np.mean(np.minimum.accumulate(cdist(reference_set, points, metric=lambda x,y : np.sqrt(np.clip(y-x, 0, None)**2).sum()), axis=1), axis=0))
-    )
-    return group
+    def __call__(self, group : pl.DataFrame, objective_columns : Iterable) -> pl.DataFrame:
+        points = np.array(group[objective_columns])
+        group = group.with_columns(
+            pl.Series(name="igd+", values=np.mean(np.minimum.accumulate(cdist(self.reference_set, points, metric=lambda x,y : np.sqrt(np.clip(y-x, 0, None)**2).sum()), axis=1), axis=0))
+        )
+        return group
+    
+class Anytime_HyperVolume:
+    def __init__(self, reference_point : np.ndarray):
+        self.reference_point = reference_point
 
-def group_nondominated_cumulative(group, objective_columns : Iterable):
-    objectives = np.array(group[objective_columns])
-    is_efficient = np.ones(objectives.shape[0], dtype = bool)
-    for i, c in enumerate(objectives[1:]):
-        if is_efficient[i+1]:
-            is_efficient[i+1:][is_efficient[i+1:]] = np.any(objectives[i+1:][is_efficient[i+1:]]<c, axis=1)  # Keep any later point with a lower cost
-            is_efficient[i+1] = True  # And keep self
-    group = group.with_columns(
-        pl.Series(name="nondominated", values=is_efficient)
-    )
-    return group
-
+    def __call__(self, group : pl.DataFrame, objective_columns : Iterable, reference_set : np.ndarray) -> pl.DataFrame:
+        group = group.with_columns(
+            pl.Series(name="hv", values=[hypervolume(np.array(group[objective_columns])[:i]).compute((self.reference_point)) for i in range(1, len(group)+1)])
+        )
+        return group
+    
+class Anytime_NonDominated:
+    def __call__(self, group : pl.DataFrame, objective_columns : Iterable):
+        objectives = np.array(group[objective_columns])
+        is_efficient = np.ones(objectives.shape[0], dtype = bool)
+        for i, c in enumerate(objectives[1:]):
+            if is_efficient[i+1]:
+                is_efficient[i+1:][is_efficient[i+1:]] = np.any(objectives[i+1:][is_efficient[i+1:]]<c, axis=1)  # Keep any later point with a lower cost
+                is_efficient[i+1] = True  # And keep self
+        group = group.with_columns(
+            pl.Series(name="nondominated", values=is_efficient)
+        )
+        return group
+    
 
