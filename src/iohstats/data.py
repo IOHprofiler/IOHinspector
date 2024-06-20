@@ -5,6 +5,20 @@ from dataclasses import dataclass, field
 import numpy as np
 import polars as pl
 
+METADATA_SCHEMA = [
+    ("data_id", pl.UInt64),
+    ("algorithm_name", pl.String),
+    ("algorithm_info", pl.String),
+    ("suite", pl.String),
+    ("function_name", pl.String),
+    ("function_id", pl.UInt16),
+    ("dimension", pl.UInt16),
+    ("instance", pl.UInt16),
+    ("run_id", pl.UInt32),
+    ("evals", pl.UInt64),
+    ("best_y", pl.Float64),
+]
+
 
 def check_keys(data: dict, required_keys: list[str]):
     for key in required_keys:
@@ -36,11 +50,22 @@ class Solution:
 
 @dataclass
 class Run:
+    data_id: int
     id: int
     instance: int
     evals: int
     best: Solution
-
+    
+    __lookup__ = {}
+    __current_id__ = 1
+    
+    @staticmethod
+    def hash(key: str):
+        if (value:=Run.__lookup__.get(key)):
+            return value
+        Run.__lookup__[key] = Run.__current_id__
+        Run.__current_id__ += 1
+        
 
 @dataclass
 class Scenario:
@@ -69,19 +94,26 @@ class Scenario:
             data["dimension"],
             data["path"],
             [
-                Run(run_id, run["instance"], run["evals"], best=Solution(**run["best"]))
+                Run(
+                    Run.hash(f"{data['path']}_{run_id}"),
+                    run_id,
+                    run["instance"],
+                    run["evals"],
+                    best=Solution(**run["best"]),
+                )
                 for run_id, run in enumerate(data["runs"], 1)
             ],
         )
 
-    def load(self) -> pl.DataFrame:
+    def load(self, monotonic=False, maximize=True) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame"""
 
         with open(self.data_file) as f:
             header = next(f).strip().split()
 
+        key_lookup = dict([(r.id, r.data_id) for r in self.runs])
         dt = (
-            pl.read_csv(
+            pl.scan_csv(
                 self.data_file,
                 separator=" ",
                 decimal_comma=True,
@@ -94,7 +126,20 @@ class Scenario:
                 run_id=(pl.col("evaluations") == 1).cum_sum(),
             )
             .filter(pl.col("run_id").is_in([r.id for r in self.runs]))
+            .with_columns(
+                data_id=pl.col("run_id").map_elements(key_lookup.__getitem__, return_dtype=pl.UInt64)
+            )
         )
+
+        if monotonic:
+            if maximize:
+                dt = dt.with_columns(pl.col("raw_y").cum_max().over("run_id"))
+            else:
+                dt = dt.with_columns(pl.col("raw_y").cum_min().over("run_id"))
+
+            dt = dt.filter(pl.col("raw_y").diff().fill_null(1.0).abs() > 0.0)
+
+        dt = dt.collect()
         return dt
 
 
@@ -119,6 +164,25 @@ class Dataset:
         with open(json_file) as f:
             data = json.load(f)
             return Dataset.from_dict(data, json_file)
+
+    @property
+    def overview(self) -> pl.DataFrame:
+        meta_data = [
+            self.algorithm.name,
+            self.algorithm.info,
+            self.suite,
+            self.function.name,
+            self.function.id,
+        ]
+        records = []
+        for scen in self.scenarios:
+            for run in scen.runs:
+                records.append(
+                    [run.data_id]
+                    + meta_data
+                    + [scen.dimension, run.instance, run.id, run.evals, run.best.y]
+                )
+        return pl.DataFrame(records, schema=METADATA_SCHEMA)
 
     @staticmethod
     def from_dict(data: dict, filepath: str):
@@ -155,6 +219,3 @@ class Dataset:
                 for scen in data["scenarios"]
             ],
         )
-
-    def load_scenario(self, dimension: int):
-        pass
