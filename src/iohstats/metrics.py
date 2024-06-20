@@ -206,11 +206,39 @@ class Anytime_HyperVolume:
         self.reference_point = reference_point
 
     def __call__(self, group : pl.DataFrame, objective_columns : Iterable, reference_set : np.ndarray) -> pl.DataFrame:
+        if len(objective_columns == 2):
+            hvs = self._incremental_hv(group[objective_columns])
+        else:
+            hvs = [hypervolume(np.array(group[objective_columns])[:i]).compute((self.reference_point)) for i in range(1, len(group)+1)]
         group = group.with_columns(
-            pl.Series(name="hv", values=[hypervolume(np.array(group[objective_columns])[:i]).compute((self.reference_point)) for i in range(1, len(group)+1)])
+            pl.Series(name="hv", values=hvs)
         )
         return group
     
+    def _incremental_hv(self, points):
+        sorted_array = [[-np.inf, self.reference_point[1]], [self.reference_point[0], -np.inf]]
+        current_hypervolume = 0.0
+        all_hv = []
+        hv_contributions = {}
+        for point in points:
+            dominated_points = [p for p in sorted_array if not np.any(point>p)]
+            point = tuple(point)
+            for dom_point in dominated_points:
+                current_hypervolume -= hv_contributions[dom_point]
+
+            sorted_array = [p for p in sorted_array if p not in dominated_points]
+
+            index = next((i for i, p in enumerate(sorted_array) if p[0] > point[0] or (p[0] == point[0] and p[1] > point[1])), len(sorted_array))
+            sorted_array.insert(index, point)
+            left_neighbor = sorted_array[index - 1]
+            right_neighbor = sorted_array[index + 1]
+
+            hv_contributions[point] = (left_neighbor[1] - point[1]) * (right_neighbor[0] - point[0])
+            current_hypervolume += hv_contributions[point]
+        
+            all_hv.append(current_hypervolume)
+        return all_hv
+
 class Anytime_NonDominated:
     def __call__(self, group : pl.DataFrame, objective_columns : Iterable):
         objectives = np.array(group[objective_columns])
