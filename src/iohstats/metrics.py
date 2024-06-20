@@ -113,22 +113,6 @@ def get_aocc(data : DataSet,
 
     return aoccs
 
-def plot_eaf(data):
-    dt_eaf = _eaf(data).drop(['raw_y', 'run_id'])
-    fig, ax = plt.subplots(figsize=(16,9))
-    quantiles = np.arange(0,1+(0.05/2), 0.05)
-    colors = sbs.color_palette('viridis', n_colors=len(quantiles))
-    for quant, color in zip(quantiles[::-1], colors[::-1]):
-        poly = np.array(dt_eaf.group_by('evaluations').quantile(0.1).sort('evaluations'))
-        poly = np.append(poly, np.array([[max(poly[:,0]), 0]]), axis=0)
-        poly2 = np.repeat(poly,2, axis=0)
-        poly2[2::2, 1] = poly[:,1][:-1]
-        ax.add_patch(Polygon(poly2, facecolor = color))
-    plt.ylim(0,1)
-    plt.xlim(1,10000000)
-    plt.xscale('log')
-    plt.show()
-
 
 def _running_time(data : DataSet,
                  custom_op : Callable[[pl.Series], float] = None):
