@@ -65,6 +65,7 @@ class Run:
             return value
         Run.__lookup__[key] = Run.__current_id__
         Run.__current_id__ += 1
+        return Run.__lookup__[key]
         
 
 @dataclass
