@@ -3,6 +3,7 @@ import numpy as np
 
 from typing import Iterable, Callable
 
+from functools import partial
 
 def get_sequence(min : float, max : float, len : float, scale_log : bool = False, cast_to_int : bool = False) -> np.ndarray:
     """Create sequence of points, used for subselecting targets / budgets for allignment and data processing
@@ -33,7 +34,7 @@ def _geometric_mean(series: pl.Series) -> float:
     return np.exp(np.log(series).mean())
 
 
-def _convergence(data : DataSet,
+def aggegate_convergence(data : pl.DataFrame,
                  custom_op : Callable[[pl.Series], float] = None):
     """Internal function for getting fixed-budget information. 
 
@@ -90,7 +91,7 @@ def _eaf_transform(long, lb = 1e-8, ub = 1e8, scale_log = True, maximization = F
         (1-pl.col("eaf")).alias('eaf')
     )
 
-def _eaf(data : DataSet, 
+def _eaf(data : pl.DataFrame, 
                      ):
     #same as _convergence, but apply use _eaf_transform and make 'eaf' the fval_variable
     pass
@@ -102,7 +103,7 @@ def _aocc(group):
         ((pl.col('evaluations').diff(n=1, null_behavior="ignore") * (pl.col('eaf').shift(1)))/max_budget).alias('aocc_contribution')
     )
 
-def get_aocc(data : DataSet, 
+def get_aocc(data : pl.DataFrame, 
                      ):
     df = get_unaligned(data)
     #TODO: add column to each group with max budget
@@ -114,7 +115,7 @@ def get_aocc(data : DataSet,
     return aoccs
 
 
-def _running_time(data : DataSet,
+def aggegate_running_time(data : pl.DataFrame,
                  custom_op : Callable[[pl.Series], float] = None):
     """Internal function for getting fixed-budget information. 
 
@@ -189,8 +190,8 @@ class Anytime_HyperVolume:
     def __init__(self, reference_point : np.ndarray):
         self.reference_point = reference_point
 
-    def __call__(self, group : pl.DataFrame, objective_columns : Iterable, reference_set : np.ndarray) -> pl.DataFrame:
-        if len(objective_columns == 2):
+    def __call__(self, group : pl.DataFrame, objective_columns : Iterable) -> pl.DataFrame:
+        if len(objective_columns) == 2:
             hvs = self._incremental_hv(group[objective_columns])
         else:
             hvs = [hypervolume(np.array(group[objective_columns])[:i]).compute((self.reference_point)) for i in range(1, len(group)+1)]
@@ -203,23 +204,23 @@ class Anytime_HyperVolume:
         sorted_array = [[-np.inf, self.reference_point[1]], [self.reference_point[0], -np.inf]]
         current_hypervolume = 0.0
         all_hv = []
-        hv_contributions = {}
-        for point in points:
-            dominated_points = [p for p in sorted_array if not np.any(point>p)]
+        for point in np.array(points):
+            dominated_idxs = [i for i,p in enumerate(sorted_array) if point[0] <= p[0] and point[1] <= p[1] and (point[0] < p[0] or point[1] < p[1])]
             point = tuple(point)
-            for dom_point in dominated_points:
-                current_hypervolume -= hv_contributions[dom_point]
+            if len(dominated_idxs) > 0:
+                index = min(dominated_idxs)
+                for _ in dominated_idxs:
+                    dom_point = sorted_array[index]
+                    left_neighbor = sorted_array[index - 1]
+                    right_neighbor = sorted_array[index + 1]
+                    current_hypervolume -= (left_neighbor[1] - dom_point[1]) * (right_neighbor[0] - dom_point[0])
+                    sorted_array = [p for p in sorted_array if p is not dom_point]
 
-            sorted_array = [p for p in sorted_array if p not in dominated_points]
-
-            index = next((i for i, p in enumerate(sorted_array) if p[0] > point[0] or (p[0] == point[0] and p[1] > point[1])), len(sorted_array))
+            index = next((i for i, p in enumerate(sorted_array) if p[0] > point[0] or (p[0] == point[0] and p[1] < point[1])), len(sorted_array))
             sorted_array.insert(index, point)
             left_neighbor = sorted_array[index - 1]
             right_neighbor = sorted_array[index + 1]
-
-            hv_contributions[point] = (left_neighbor[1] - point[1]) * (right_neighbor[0] - point[0])
-            current_hypervolume += hv_contributions[point]
-        
+            current_hypervolume += (left_neighbor[1] - point[1]) * (right_neighbor[0] - point[0])
             all_hv.append(current_hypervolume)
         return all_hv
 
@@ -236,4 +237,19 @@ class Anytime_NonDominated:
         )
         return group
     
-
+class Final_NonDominated:
+    def __call__(self, group : pl.DataFrame, objective_columns : Iterable):
+        objectives = np.array(group[objective_columns])
+        is_efficient = np.ones(objectives.shape[0], dtype = bool)
+        for i, c in enumerate(objectives):
+            if is_efficient[i]:
+                is_efficient[is_efficient] = np.any(objectives[is_efficient]<c, axis=1)  # Keep any later point with a lower cost
+                is_efficient[i] = True  # And keep self
+        group = group.with_columns(
+            pl.Series(name="final_nondominated", values=is_efficient)
+        )
+        return group
+    
+def add_indicator(df : pl.DataFrame, indicator : object, objective_columns : Iterable):
+    indicator_callable = partial(indicator, objective_columns = objective_columns)
+    return df.group_by('data_id').map_groups(indicator_callable)
