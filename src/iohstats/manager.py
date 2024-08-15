@@ -105,6 +105,9 @@ class DataManager:
                     scen.runs = [run for run in scen.runs if run.instance in instances]
 
         return DataManager(selected_data_sets)
+    
+    def select_indexes(self, idxs):
+        return DataManager([self.data_sets[idx] for idx in idxs])
 
     @property
     def functions(self) -> tuple[Function]:

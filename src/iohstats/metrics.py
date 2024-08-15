@@ -4,6 +4,9 @@ import numpy as np
 from typing import Iterable, Callable
 
 from functools import partial
+from .align import align_data
+
+import pandas as pd
 
 def get_sequence(min : float, max : float, len : float, scale_log : bool = False, cast_to_int : bool = False) -> np.ndarray:
     """Create sequence of points, used for subselecting targets / budgets for allignment and data processing
@@ -35,7 +38,14 @@ def _geometric_mean(series: pl.Series) -> float:
 
 
 def aggegate_convergence(data : pl.DataFrame,
-                 custom_op : Callable[[pl.Series], float] = None):
+                          evaluation_variable : str = 'evaluations',
+                          fval_variable : str = 'raw_y',
+                          free_variables : Iterable[str] = ['algorithm_name'],
+                          f_min : float = None,
+                          f_max : float = None,
+                          max_budget : int = None,
+                 custom_op : Callable[[pl.Series], float] = None,
+                 return_as_pandas : bool = True):
     """Internal function for getting fixed-budget information. 
 
     Args:
@@ -47,43 +57,42 @@ def aggegate_convergence(data : pl.DataFrame,
         _type_: _description_
     """
     
-    #Bookkeeping to ensure flexibility of analyses
-    free_variables = data.free_variables
-    fval_variable = data.fval_variable
-    evaluation_variable = data.evaluation_variable #To think about whether this should always be int or not (cpu time?)
-
     #Getting alligned data (to check if e.g. limits should be args for this function)
-    x_values = get_sequence(data.min_budget, data.max_budget, 50, 'budget')
-    data_aligned = data.get_aligned(x_values, output='long')
-
+    if f_min is None:
+        f_min = data[evaluation_variable].min()
+    if f_max is None:
+        f_max = data[evaluation_variable].max()
+    f_values = get_sequence(f_min, f_max, 50, scale_log=True)
     group_variables = free_variables + [evaluation_variable]
+    data_aligned = align_data(data.cast({evaluation_variable : pl.Int64}), f_values, group_cols=['data_id'] + free_variables, x_col=evaluation_variable, y_col=fval_variable, maximization=True)
+
     aggregations = [
         pl.mean(fval_variable).alias('mean'),
         pl.min(fval_variable).alias('min'),
         pl.max(fval_variable).alias('max'),
         pl.median(fval_variable).alias('median'),
         pl.std(fval_variable).alias('std'),
-        pl.col(fval_variable).apply(lambda s: _geometric_mean(s)).alias('geometric_mean'),
+        pl.col(fval_variable).map_elements(lambda s: _geometric_mean(s), return_dtype=pl.Float64).alias('geometric_mean'),
     ]
 
     if custom_op is not None:
-        aggregations.append(pl.col(fval_variable).apply(lambda s: custom_op(s)).alias(custom_op.__name__))
-
+        aggregations.append(pl.col(evaluation_variable).map_elements(lambda s: custom_op(s), return_dtype=pl.Float64).alias(custom_op.__name__))
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
+    if return_as_pandas:
+        return dt_plot.sort(evaluation_variable).to_pandas() 
+    return dt_plot.sort(evaluation_variable)
 
-    return dt_plot.sort(evaluation_variable).to_parndas() 
-
-def _eaf_transform(long, lb = 1e-8, ub = 1e8, scale_log = True, maximization = False):
+def transform_fval(data, lb = 1e-8, ub = 1e8, scale_log = True, maximization = False, fval_col = 'raw_y'):
     
     if scale_log:
         lb = np.log10(lb)
         ub = np.log10(ub)
-        res = long.with_columns(
-            ((pl.col("raw_y").log10() - lb)/(ub-lb)).clip(0,1).alias('eaf')
+        res = data.with_columns(
+            ((pl.col(fval_col).log10() - lb)/(ub-lb)).clip(0,1).alias('eaf')
         )
     else:
-        res = long.with_columns(
-            ((pl.col("raw_y") - lb)/(ub-lb)).clip(0,1).alias('eaf')
+        res = data.with_columns(
+            ((pl.col(fval_col) - lb)/(ub-lb)).clip(0,1).alias('eaf')
         )
     if maximization: 
         return res
@@ -91,10 +100,6 @@ def _eaf_transform(long, lb = 1e-8, ub = 1e8, scale_log = True, maximization = F
         (1-pl.col("eaf")).alias('eaf')
     )
 
-def _eaf(data : pl.DataFrame, 
-                     ):
-    #same as _convergence, but apply use _eaf_transform and make 'eaf' the fval_variable
-    pass
 
 def _aocc(group):
     new_row = pl.DataFrame({'evaluations': [0,max_budget], 'eaf': [group['eaf'].min(),group['eaf'].max()]})
@@ -105,18 +110,81 @@ def _aocc(group):
 
 def get_aocc(data : pl.DataFrame, 
                      ):
-    df = get_unaligned(data)
+    # df = get_unaligned(data)
     #TODO: add column to each group with max budget
 
-    eaf = _eaf_transform(df)
-    aocc_contribs = eaf.group_by(*['run_id']).map_groups(_aocc)
-    aoccs = aocc_contribs.group_by(*['run_id']).agg(pl.col('aocc_contribution').sum()).mean().drop('run_id')
+    eaf = _eaf_transform(data)
+    aocc_contribs = eaf.group_by(*['data_id']).map_groups(_aocc)
+    aoccs = aocc_contribs.group_by(*['data_id']).agg(pl.col('aocc_contribution').sum()).mean()
 
     return aoccs
 
+def get_glicko2_ratings(data : pl.DataFrame, 
+                        alg_vars : Iterable[str] = ['algorithm_name'],
+                        fid_vars : Iterable[str] = ['function_name'],
+                        perf_var : str = 'raw_y',
+                        nrounds : int = 5,
+                        ):
+    from skelo import Glicko2Estimator
+    alg_vars = ['algorithm_name', 'algorithm_info']
+    fid_vars = ['function_name']
+    perf_var = 'hv'
+    players = data[alg_vars].unique()
+    n_players = players.shape[0]
+    fids = data[fid_vars].unique()
+    aligned_comps = data.pivot(index=alg_vars, columns=fid_vars, values=perf_var, aggregate_function=pl.element())
+    comp_arr = np.array(aligned_comps[aligned_comps.columns[len(alg_vars):]])
+
+    nrounds = 5
+    rng = np.random.default_rng()
+    fids_shuffled = [i for i in range(len(fids))]
+    p1_order = [i for i in range(n_players)]
+    p2_order = [i for i in range(n_players)]
+    records = []
+    for round in range(nrounds):
+        rng.shuffle(fids_shuffled)
+        for fid in fids_shuffled:
+            rng.shuffle(p1_order)
+            for p1 in p1_order:
+                rng.shuffle(p2_order)
+                for p2 in p2_order:
+                    if p1 == p2:
+                        continue
+                    s1 = rng.choice(comp_arr[p1][fid], 1)[0]
+                    s2 = rng.choice(comp_arr[p2][fid], 1)[0]
+                    if not np.isfinite(s1):
+                        if not np.isfinite(s2):
+                            won = 0.5
+                        else:
+                            won = 0.0
+                    else:
+                        if not np.isfinite(s2):
+                            won = 1.0
+                        elif s1 == s2:
+                            won = 0.5
+                        else:
+                            won = float(s1 < s2)
+
+                    records.append([round, p1, p2, won])
+    dt_comp = pd.DataFrame.from_records(records, columns = ['round', 'p1', 'p2', 'outcome'])
+    model = Glicko2Estimator(key1_field='p1', key2_field='p2', timestamp_field='round').fit(dt_comp, dt_comp['outcome'])
+    ratings = np.array(model.rating_model.to_frame()[np.isnan(model.rating_model.to_frame()['valid_to'])]['rating'])
+    rating_dt = pd.DataFrame([[rating[0] for rating in ratings],
+              [rating[1] for rating in ratings],
+              players[players.columns[0]],
+              players[players.columns[1]]]).transpose()
+    rating_dt.columns = ['Rating', 'Deviation', players.columns[0], players.columns[1]]
+    return rating_dt
 
 def aggegate_running_time(data : pl.DataFrame,
-                 custom_op : Callable[[pl.Series], float] = None):
+                          evaluation_variable : str = 'evaluations',
+                          fval_variable : str = 'raw_y',
+                          free_variables : Iterable[str] = ['algorithm_name'],
+                          f_min : float = None,
+                          f_max : float = None,
+                          max_budget : int = None,
+                 custom_op : Callable[[pl.Series], float] = None,
+                 return_as_pandas : bool = True):
     """Internal function for getting fixed-budget information. 
 
     Args:
@@ -128,40 +196,39 @@ def aggegate_running_time(data : pl.DataFrame,
         _type_: _description_
     """
     
-    #Bookkeeping to ensure flexibility of analyses
-    free_variables = data.free_variables
-    eval_variable = data.eval_variable
-    evaluation_variable = data.evaluation_variable #To think about whether this should always be int or not (cpu time?)
-
     #Getting alligned data (to check if e.g. limits should be args for this function)
-    f_values = get_sequence(data.min_fval, data.max_fval, 50, 'target')
-    data_aligned = data.get_aligned_target(f_values, output='long')
+    if f_min is None:
+        f_min = data[fval_variable].min()
+    if f_max is None:
+        f_max = data[fval_variable].max()
+    f_values = get_sequence(f_min, f_max, 50, scale_log=True)
+    group_variables = free_variables + [fval_variable]
+    data_aligned = align_data(data, f_values, group_cols=['data_id'] + free_variables, x_col=fval_variable, y_col=evaluation_variable, maximization=True)
+    if max_budget is None:
+        max_budget = data[evaluation_variable].max()
 
-    budget = data.max_budget
-
-    group_variables = free_variables + [evaluation_variable]
     aggregations = [
-        pl.mean(eval_variable).alias('mean'),
-        pl.min(eval_variable).alias('min'),
-        pl.max(eval_variable).alias('max'),
-        pl.median(eval_variable).alias('median'),
-        pl.std(eval_variable).alias('std'),
-        pl.col(eval_variable).is_finite().mean().alias('success_ratio'),
-        pl.col(eval_variable).is_finite().sum().alias('success_count'),
-        (pl.col(eval_variable).replace(np.inf, budget).sum() / pl.col(eval_variable).is_finite().sum()).alias('ERT'),
-        (pl.col(eval_variable).replace(np.inf, budget * 10).sum() / pl.col(eval_variable).count()).alias('PAR-10')
+        pl.mean(evaluation_variable).alias('mean'),
+        pl.min(evaluation_variable).alias('min'),
+        pl.max(evaluation_variable).alias('max'),
+        pl.median(evaluation_variable).alias('median'),
+        pl.std(evaluation_variable).alias('std'),
+        pl.col(evaluation_variable).is_finite().mean().alias('success_ratio'),
+        pl.col(evaluation_variable).is_finite().sum().alias('success_count'),
+        (pl.col(evaluation_variable).replace(np.inf, max_budget).sum() / pl.col(evaluation_variable).is_finite().sum()).alias('ERT'),
+        (pl.col(evaluation_variable).replace(np.inf, max_budget * 10).sum() / pl.col(evaluation_variable).count()).alias('PAR-10')
     ]
 
     if custom_op is not None:
-        aggregations.append(pl.col(eval_variable).apply(lambda s: custom_op(s)).alias(custom_op.__name__))
-
+        aggregations.append(pl.col(evaluation_variable).apply(lambda s: custom_op(s)).alias(custom_op.__name__))
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
-
-    return dt_plot.sort(evaluation_variable).to_parndas() 
+    if return_as_pandas:
+        return dt_plot.sort(fval_variable).to_pandas() 
+    return dt_plot.sort(fval_variable)
 
 #### Multi-objective
 
-from pygmo import hypervolume
+from moocore import hypervolume
 from scipy.spatial.distance import cdist
 
 class Anytime_IGD:
@@ -191,10 +258,12 @@ class Anytime_HyperVolume:
         self.reference_point = reference_point
 
     def __call__(self, group : pl.DataFrame, objective_columns : Iterable) -> pl.DataFrame:
+        #clip is here to avoid negative values; note that this assumes minimization for all objectives
+        obj_vals = np.clip(np.array(group[objective_columns]), None, self.reference_point)
         if len(objective_columns) == 2:
-            hvs = self._incremental_hv(group[objective_columns])
+            hvs = self._incremental_hv(obj_vals)
         else:
-            hvs = [hypervolume(np.array(group[objective_columns])[:i]).compute((self.reference_point)) for i in range(1, len(group)+1)]
+            hvs = [hypervolume(obj_vals[:i], ref = self.reference_point) for i in range(1, len(group)+1)]
         group = group.with_columns(
             pl.Series(name="hv", values=hvs)
         )
