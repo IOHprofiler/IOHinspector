@@ -17,7 +17,7 @@ class DataManager:
 
     def __post_init__(self):
         for data_set in self.data_sets:
-            self.overview = self.overview.extend(data_set.overview)
+            self.extend_overview(data_set)
 
     def add_folder(self, folder_name: str):
         """Add a folder with ioh generated data"""
@@ -48,10 +48,32 @@ class DataManager:
         data_set = Dataset.from_json(json_file)
         self.add_data_set(data_set)
 
+    def extend_overview(self, data_set: Dataset):
+        """ "Include a new data set in the manager"""
+        columns = set(self.overview.schema.keys())
+        ds_columns = set(data_set.overview.schema.keys())
+
+        new_columns = list(ds_columns - columns)
+        missing_columns = list(columns - ds_columns)
+
+        ds_overview = data_set.overview.with_columns(
+            *(
+                pl.lit(None, dtype=self.overview.schema[name]).alias(name)
+                for name in missing_columns
+            )
+        )
+        self.overview = self.overview.with_columns(
+            *(
+                pl.lit(None, dtype=data_set.overview.schema[name]).alias(name)
+                for name in new_columns
+            )
+        )
+        self.overview = self.overview.extend(ds_overview.select(self.overview.columns))
+
     def add_data_set(self, data_set: Dataset):
         """Only use this to add data sets"""
         self.data_sets.append(data_set)
-        self.overview = self.overview.extend(data_set.overview)
+        self.extend_overview(data_set)
 
     def __add__(self, other: "DataManager") -> "DataManager":
         # TODO: filter on overlap
@@ -59,6 +81,7 @@ class DataManager:
 
     def select(
         self,
+        data_ids: list[int] = None,
         function_ids: list[int] = None,
         algorithms: list[str] = None,
         experiment_attributes: list[tuple[str, str]] = None,
@@ -66,7 +89,16 @@ class DataManager:
         dimensions: list[int] = None,
         instances: list[int] = None,
     ) -> "DataManager":
+
         selected_data_sets = deepcopy(self.data_sets)
+
+        if data_ids is not None:
+            for dset in selected_data_sets:
+                for scen in dset.scenarios:
+                    scen.runs = [run for run in scen.runs if run.data_id in data_ids]
+
+                dset.scenarios = [scen for scen in dset.scenarios if any(scen.runs)]
+            return DataManager([x for x in selected_data_sets if any(x.scenarios)])
 
         ## dataset filters
         if function_ids is not None:
@@ -105,7 +137,7 @@ class DataManager:
                     scen.runs = [run for run in scen.runs if run.instance in instances]
 
         return DataManager(selected_data_sets)
-    
+
     def select_indexes(self, idxs):
         return DataManager([self.data_sets[idx] for idx in idxs])
 
@@ -153,6 +185,10 @@ class DataManager:
                     if run.instance not in iids:
                         iids.append(run.instancem)
         return tuple(iids)
+    
+    @property
+    def n_runs(self):
+        return len(self.overview)
 
     @property
     def any(self):
@@ -162,18 +198,28 @@ class DataManager:
         self,
         monotonic: bool = True,
         include_meta_data: bool = False,
+        include_columns: list[str] = None,
     ) -> pl.DataFrame:
         if not self.any:
             return pl.DataFrame()
-        
-        data = []  
+
+        data = []
         for data_set in self.data_sets:
             for scen in data_set.scenarios:
                 df = scen.load(monotonic, data_set.function.maximization)
                 data.append(df)
-                
-        data = pl.concat(data)  
-        
-        if include_meta_data:
-            data = self.overview.join(data, on=("data_id", "run_id"))   
+
+        data = pl.concat(data)
+
+        if include_meta_data or include_columns is not None:
+            if include_columns is None:
+                include_columns = self.overview.columns
+
+            for c in ("data_id", "run_id",):
+                if c not in include_columns:
+                    include_columns.append(c)
+            
+            data = self.overview.select(include_columns).join(
+                data, on=("data_id", "run_id")
+            )
         return data

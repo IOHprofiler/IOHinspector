@@ -1,5 +1,6 @@
 import os
 import json
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -26,6 +27,27 @@ def check_keys(data: dict, required_keys: list[str]):
             raise ValueError(
                 f"data dict doesn't contain ioh format required key: {key}"
             )
+
+
+def try_eval(value: str):
+    try:
+        return eval(value)
+    except:
+        return value
+
+
+def get_polars_type(value):
+    if isinstance(value, bool):
+        return pl.Boolean
+    if isinstance(value, int):
+        return pl.Int64
+    if isinstance(value, float):
+        return pl.Float64
+    if isinstance(value, str):
+        return pl.String
+
+    warnings.warn(f"{type(value)} is not mapped to polars dtype", UserWarning)
+    return pl.Object
 
 
 @dataclass
@@ -55,18 +77,18 @@ class Run:
     instance: int
     evals: int
     best: Solution
-    
+
     __lookup__ = {}
     __current_id__ = 1
-    
+
     @staticmethod
     def hash(key: str):
-        if (value:=Run.__lookup__.get(key)):
+        if value := Run.__lookup__.get(key):
             return value
         Run.__lookup__[key] = Run.__current_id__
         Run.__current_id__ += 1
         return Run.__lookup__[key]
-        
+
 
 @dataclass
 class Scenario:
@@ -128,7 +150,9 @@ class Scenario:
             )
             .filter(pl.col("run_id").is_in([r.id for r in self.runs]))
             .with_columns(
-                data_id=pl.col("run_id").map_elements(key_lookup.__getitem__, return_dtype=pl.UInt64)
+                data_id=pl.col("run_id").map_elements(
+                    key_lookup.__getitem__, return_dtype=pl.UInt64
+                )
             )
         )
 
@@ -175,6 +199,14 @@ class Dataset:
             self.function.name,
             self.function.id,
         ]
+
+        exattr_names, exattr_values = zip(*self.experiment_attributes)
+        exattr_values = list(map(try_eval, exattr_values))
+        exattr_schema = [
+            (name, get_polars_type(value))
+            for name, value in zip(exattr_names, exattr_values)
+        ]
+
         records = []
         for scen in self.scenarios:
             for run in scen.runs:
@@ -182,8 +214,9 @@ class Dataset:
                     [run.data_id]
                     + meta_data
                     + [scen.dimension, run.instance, run.id, run.evals, run.best.y]
+                    + exattr_values
                 )
-        return pl.DataFrame(records, schema=METADATA_SCHEMA)
+        return pl.DataFrame(records, schema=METADATA_SCHEMA + exattr_schema) 
 
     @staticmethod
     def from_dict(data: dict, filepath: str):
