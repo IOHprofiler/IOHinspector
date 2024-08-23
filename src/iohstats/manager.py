@@ -6,7 +6,7 @@ from copy import deepcopy
 import polars as pl
 
 from .data import Dataset, Function, Algorithm, METADATA_SCHEMA
-
+from glob import glob
 
 @dataclass
 class DataManager:
@@ -25,12 +25,13 @@ class DataManager:
         if not os.path.isdir(folder_name):
             raise FileNotFoundError(f"{folder_name} not found")
 
-        json_files = [
-            fname
-            for f in os.listdir(folder_name)
-            if os.path.isfile(fname := os.path.join(folder_name, f))
-            and f.endswith(".json")
-        ]
+        # json_files = [
+        #     fname
+        #     for f in os.listdir(folder_name)
+        #     if os.path.isfile(fname := os.path.join(folder_name, f))
+        #     and f.endswith(".json")
+        # ]
+        json_files = glob(f"{folder_name}/**/*.json", recursive = True)
         if not any(json_files):
             raise FileNotFoundError(f"{folder_name} does not contain any json files")
 

@@ -199,13 +199,16 @@ class Dataset:
             self.function.name,
             self.function.id,
         ]
-
-        exattr_names, exattr_values = zip(*self.experiment_attributes)
-        exattr_values = list(map(try_eval, exattr_values))
-        exattr_schema = [
-            (name, get_polars_type(value))
-            for name, value in zip(exattr_names, exattr_values)
-        ]
+        if self.experiment_attributes:
+            exattr_names, exattr_values = zip(*self.experiment_attributes)
+            exattr_values = list(map(try_eval, exattr_values))
+            exattr_schema = [
+                (name, get_polars_type(value))
+                for name, value in zip(exattr_names, exattr_values)
+            ]
+        else:
+            exattr_values = []
+            exattr_schema = []
 
         records = []
         for scen in self.scenarios:
@@ -231,11 +234,16 @@ class Dataset:
             "function_name",
             "maximization",
             "algorithm",
-            "experiment_attributes",
+            # "experiment_attributes",
             "attributes",
             "scenarios",
         )
         check_keys(data, required_keys)
+
+        if "experiment_attributes" in data:
+            experiment_attributes = [tuple(x.items())[0] for x in data["experiment_attributes"]]
+        else:
+            experiment_attributes = None
 
         return Dataset(
             filepath,
@@ -246,7 +254,7 @@ class Dataset:
                 data["algorithm"]["name"],
                 data["algorithm"]["info"],
             ),
-            [tuple(x.items())[0] for x in data["experiment_attributes"]],
+            experiment_attributes,
             data["attributes"],
             [
                 Scenario.from_dict(scen, os.path.dirname(filepath))
