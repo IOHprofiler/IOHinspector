@@ -321,3 +321,14 @@ def aggegate_running_time(
     if return_as_pandas:
         return dt_plot.sort(fval_variable).to_pandas()
     return dt_plot.sort(fval_variable)
+
+def add_normalized_objectives(data: pl.DataFrame, obj_cols: Iterable[str]):
+    """_summary_
+
+    Args:
+        df (_type_): _description_
+        obj_cols (_type_): _description_
+    """
+    return data.with_columns([(data[colname]/data[colname].max()).alias(f'obj{idx + 1}') for idx, colname in enumerate(obj_cols)])
+
+

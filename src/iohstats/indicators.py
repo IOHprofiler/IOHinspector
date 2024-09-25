@@ -1,5 +1,11 @@
-from moocore import hypervolume
-from scipy.spatial.distance import cdist
+from moocore import (
+    hypervolume,
+    igd_plus,
+    epsilon_additive,
+    epsilon_mult,
+    is_nondominated,
+    filter_dominated,
+)
 
 import polars as pl
 import numpy as np
@@ -8,119 +14,7 @@ from typing import Iterable, Callable
 
 from functools import partial
 
-class Anytime_IGD:
-    def __init__(self, reference_set: np.ndarray):
-        self.reference_set = reference_set
-
-    def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable
-    ) -> pl.DataFrame:
-        points = np.array(group[objective_columns])
-        group = group.with_columns(
-            pl.Series(
-                name="igd",
-                values=np.mean(
-                    np.minimum.accumulate(cdist(self.reference_set, points), axis=1),
-                    axis=0,
-                ),
-            )
-        )
-        return group
-
-
-class Anytime_IGDPlus:
-    def __init__(self, reference_set: np.ndarray):
-        self.reference_set = reference_set
-
-    def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable
-    ) -> pl.DataFrame:
-        points = np.array(group[objective_columns])
-        group = group.with_columns(
-            pl.Series(
-                name="igd+",
-                values=np.mean(
-                    np.minimum.accumulate(
-                        cdist(
-                            self.reference_set,
-                            points,
-                            metric=lambda x, y: np.sqrt(
-                                np.clip(y - x, 0, None) ** 2
-                            ).sum(),
-                        ),
-                        axis=1,
-                    ),
-                    axis=0,
-                ),
-            )
-        )
-        return group
-
-
-class Anytime_HyperVolume:
-    def __init__(self, reference_point: np.ndarray):
-        self.reference_point = reference_point
-
-    def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable
-    ) -> pl.DataFrame:
-        # clip is here to avoid negative values; note that this assumes minimization for all objectives
-        obj_vals = np.clip(
-            np.array(group[objective_columns]), None, self.reference_point
-        )
-        if len(objective_columns) == 2:
-            hvs = self._incremental_hv(obj_vals)
-        else:
-            hvs = [
-                hypervolume(obj_vals[:i], ref=self.reference_point)
-                for i in range(1, len(group) + 1)
-            ]
-        group = group.with_columns(pl.Series(name="hv", values=hvs))
-        return group
-
-    def _incremental_hv(self, points):
-        sorted_array = [
-            [-np.inf, self.reference_point[1]],
-            [self.reference_point[0], -np.inf],
-        ]
-        current_hypervolume = 0.0
-        all_hv = []
-        for point in np.array(points):
-            dominated_idxs = [
-                i
-                for i, p in enumerate(sorted_array)
-                if point[0] <= p[0]
-                and point[1] <= p[1]
-                and (point[0] < p[0] or point[1] < p[1])
-            ]
-            point = tuple(point)
-            if len(dominated_idxs) > 0:
-                index = min(dominated_idxs)
-                for _ in dominated_idxs:
-                    dom_point = sorted_array[index]
-                    left_neighbor = sorted_array[index - 1]
-                    right_neighbor = sorted_array[index + 1]
-                    current_hypervolume -= (left_neighbor[1] - dom_point[1]) * (
-                        right_neighbor[0] - dom_point[0]
-                    )
-                    sorted_array = [p for p in sorted_array if p is not dom_point]
-
-            index = next(
-                (
-                    i
-                    for i, p in enumerate(sorted_array)
-                    if p[0] > point[0] or (p[0] == point[0] and p[1] < point[1])
-                ),
-                len(sorted_array),
-            )
-            sorted_array.insert(index, point)
-            left_neighbor = sorted_array[index - 1]
-            right_neighbor = sorted_array[index + 1]
-            current_hypervolume += (left_neighbor[1] - point[1]) * (
-                right_neighbor[0] - point[0]
-            )
-            all_hv.append(current_hypervolume)
-        return all_hv
+from pymoo.util.ref_dirs import get_reference_directions
 
 
 class Anytime_NonDominated:
@@ -131,8 +25,8 @@ class Anytime_NonDominated:
             if is_efficient[i + 1]:
                 is_efficient[i + 1 :][is_efficient[i + 1 :]] = np.any(
                     objectives[i + 1 :][is_efficient[i + 1 :]] < c, axis=1
-                )  # Keep any later point with a lower cost
-                is_efficient[i + 1] = True  # And keep self
+                )
+                is_efficient[i + 1] = True
         group = group.with_columns(pl.Series(name="nondominated", values=is_efficient))
         return group
 
@@ -140,19 +34,269 @@ class Anytime_NonDominated:
 class Final_NonDominated:
     def __call__(self, group: pl.DataFrame, objective_columns: Iterable):
         objectives = np.array(group[objective_columns])
-        is_efficient = np.ones(objectives.shape[0], dtype=bool)
-        for i, c in enumerate(objectives):
-            if is_efficient[i]:
-                is_efficient[is_efficient] = np.any(
-                    objectives[is_efficient] < c, axis=1
-                )  # Keep any later point with a lower cost
-                is_efficient[i] = True  # And keep self
-        group = group.with_columns(
-            pl.Series(name="final_nondominated", values=is_efficient)
+        return group.with_columns(
+            pl.Series(name="final_nondominated", values=is_nondominated(objectives))
         )
-        return group
 
 
-def add_indicator(df: pl.DataFrame, indicator: object, objective_columns: Iterable):
-    indicator_callable = partial(indicator, objective_columns=objective_columns)
+def add_indicator(
+    df: pl.DataFrame, indicator: object, objective_columns: Iterable, **kwargs
+):
+    """Function to add an inidcator to a DataFrame
+
+    Args:
+        df (pl.DataFrame): _description_
+        indicator (object): _description_
+        objective_columns (Iterable): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    indicator_callable = partial(
+        indicator, objective_columns=objective_columns, **kwargs
+    )
     return df.group_by("data_id").map_groups(indicator_callable)
+
+
+class Anytime_HyperVolume:
+    def __init__(self, reference_point: np.ndarray):
+        """Function to calculate the Hypervolume metric over time. Used as an input to the 'add_indicator' function.
+
+        Args:
+            reference_set (np.ndarray): The reference point for the HV calculation.
+        """
+        self.reference_point = reference_point
+
+    @property
+    def var_name(self):
+        return "HyperVolume"
+
+    def __call__(
+        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+    ) -> pl.DataFrame:
+        """
+        Args:
+            group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
+            objective_columns (Iterable): Which columns are the objectives
+            evals (Iterable[int]): At which evaluations the operation should be performed.
+            Note that using more evaluations will make the code slower.
+
+        Returns:
+            pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
+        """
+        obj_vals = np.clip(
+            np.array(group[objective_columns]), None, self.reference_point
+        )
+        evals_dt = group["evaluations"]
+        hvs = [
+            hypervolume(obj_vals[: (evals_dt <= eval).sum()], ref=self.reference_point)
+            for eval in evals
+        ]
+        return (
+            pl.DataFrame(
+                [
+                    pl.Series(name="evaluations", values=evals, dtype=pl.UInt64),
+                    pl.Series(name="HyperVolume", values=hvs),
+                ]
+            )
+            .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
+            .fill_null(np.inf)
+            .drop(objective_columns)
+        )
+
+
+class Anytime_Epsilon:
+    def __init__(self, reference_point: np.ndarray, version: str = "additive"):
+        """Function to calculate the Epsilon indicator over time. Used as an input to the 'add_indicator' function.
+
+        Args:
+            reference_set (np.ndarray): The reference point for the HV calculation.
+            version (str): Whether to use the additive or multiplicative version of this indicator.
+        """
+        self.reference_point = reference_point
+        if version == "additive":
+            self.indicator = epsilon_additive
+            self._var_name = "Epsilon_Additive"
+        else:
+            self.indicator = epsilon_mult
+            self._var_name = "Epsilon_Mult"
+
+    @property
+    def var_name(self):
+        return self._var_name
+
+    def __call__(
+        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+    ) -> pl.DataFrame:
+        """
+        Args:
+            group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
+            objective_columns (Iterable): Which columns are the objectives
+            evals (Iterable[int]): At which evaluations the operation should be performed.
+            Note that using more evaluations will make the code slower.
+
+        Returns:
+            pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
+        """
+        obj_vals = np.clip(
+            np.array(group[objective_columns]), None, self.reference_point
+        )
+        evals_dt = group["evaluations"]
+        hvs = [
+            self.indicator(
+                filter_dominated(obj_vals[: (evals_dt <= eval).sum()]),
+                ref=self.reference_point,
+            )
+            for eval in evals
+        ]
+        return (
+            pl.DataFrame(
+                [
+                    pl.Series(name="evaluations", values=evals, dtype=pl.UInt64),
+                    pl.Series(name=self._var_name, values=hvs),
+                ]
+            )
+            .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
+            .fill_null(np.inf)
+            .drop(objective_columns)
+        )
+
+
+class Anytime_IGDPlus:
+    def __init__(self, reference_set: np.ndarray):
+        """Function to calculate the IGD+ metric over time. Used as an input to the 'add_indicator' function.
+
+        Args:
+            reference_set (np.ndarray): The reference set for the IGD+ calculation. Note that larger sets make
+            the calculation slower
+        """
+        self.reference_set = reference_set
+
+    @property
+    def var_name(self):
+        return "IGD+"
+
+    def __call__(
+        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+    ) -> pl.DataFrame:
+        """
+
+        Args:
+            group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
+            objective_columns (Iterable): Which columns are the objectives
+            evals (Iterable[int]): At which evaluations the operation should be performed.
+            Note that using more evaluations will make the code slower.
+
+        Returns:
+            pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
+        """
+        obj_vals = np.array(group[objective_columns])
+        evals_dt = group["evaluations"]
+        igds = [
+            igd_plus(
+                filter_dominated(obj_vals[: (evals_dt <= eval).sum()]),
+                ref=self.reference_set,
+            )
+            for eval in evals
+        ]
+        return (
+            pl.DataFrame(
+                [
+                    pl.Series(name="evaluations", values=evals, dtype=pl.UInt64),
+                    pl.Series(name="IGD+", values=igds),
+                ]
+            )
+            .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
+            .fill_null(np.inf)
+            .drop(objective_columns)
+        )
+
+
+def get_reference_set(
+    data: pl.DataFrame, obj_cols: Iterable[str], max_size: int = 1000
+) -> np.ndarray:
+    """Get a (subsampled) reference set from a set of data
+
+    Args:
+        data (pl.DataFrame): The dataframe from which to extract the objective values
+        obj_cols (Iterable[str]): The names of the objectives in 'data'
+        max_size (int, optional): The maximum number of points in the reference set. Defaults to 1000.
+
+    Returns:
+        np.ndarray: The filtered reference set
+    """
+    obj_vals = np.array(data[obj_cols])
+    ref_set = filter_dominated(obj_vals)
+    if len(ref_set) < max_size:
+        return ref_set
+    return ref_set[np.random.choice(len(ref_set), size=max_size)]
+
+
+def _tchebycheff(weight_vec, ideal_point, point):
+    tch_val = -np.inf
+    for w, z, f in zip(weight_vec, ideal_point, point):
+        tch_val = max(tch_val, w * abs(f - z))
+    return tch_val
+
+
+def _r2(weight_vec_set, ideal_point, point_set):
+    sum_tch = 0
+    for w in weight_vec_set:
+        min_tch = np.inf
+        for p in point_set:
+            tch = _tchebycheff(w, ideal_point, p)
+            min_tch = min(min_tch, tch)
+        sum_tch += min_tch
+    return sum_tch / len(weight_vec_set)
+
+
+class Anytime_R2:
+    def __init__(self, n_ref_dirs: int, ideal_point: np.ndarray):
+        """Function to calculate the R2 indicator over time. Used as an input to the 'add_indicator' function.
+
+        Args:
+            n_ref_dirs (int): How many reference directions to use. Reference directions are generated based on pymoo's 'energy' method.
+            ideal_point (np.ndarray): The ideal point for the R2 calculations
+        """
+        self.ref_dirs = get_reference_directions("energy", len(ideal_point), n_ref_dirs)
+        self.ideal_point = ideal_point
+
+    @property
+    def var_name(self):
+        return "R2"
+
+    def __call__(
+        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+    ) -> pl.DataFrame:
+        """
+
+        Args:
+            group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
+            objective_columns (Iterable): Which columns are the objectives
+            evals (Iterable[int]): At which evaluations the operation should be performed.
+            Note that using more evaluations will make the code slower.
+
+        Returns:
+            pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
+        """
+        obj_vals = np.array(group[objective_columns])
+        evals_dt = group["evaluations"]
+        igds = [
+            _r2(
+                self.ref_dirs,
+                self.ideal_point,
+                filter_dominated(obj_vals[: (evals_dt <= eval).sum()]),
+            )
+            for eval in evals
+        ]
+        return (
+            pl.DataFrame(
+                [
+                    pl.Series(name="evaluations", values=evals, dtype=pl.UInt64),
+                    pl.Series(name=self.var_name, values=igds),
+                ]
+            )
+            .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
+            .fill_null(np.inf)
+            .drop(objective_columns)
+        )
