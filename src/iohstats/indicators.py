@@ -70,7 +70,11 @@ class Anytime_HyperVolume:
     @property
     def var_name(self):
         return "HyperVolume"
-
+    
+    @property
+    def minimize(self):
+        return False   
+    
     def __call__(
         self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
     ) -> pl.DataFrame:
@@ -124,7 +128,11 @@ class Anytime_Epsilon:
     @property
     def var_name(self):
         return self._var_name
-
+    
+    @property
+    def minimize(self):
+        return True   
+    
     def __call__(
         self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
     ) -> pl.DataFrame:
@@ -172,6 +180,10 @@ class Anytime_IGDPlus:
         """
         self.reference_set = reference_set
 
+    @property
+    def minimize(self):
+        return True   
+    
     @property
     def var_name(self):
         return "IGD+"
@@ -264,6 +276,10 @@ class Anytime_R2:
     @property
     def var_name(self):
         return "R2"
+    
+    @property
+    def minimize(self):
+        return True        
 
     def __call__(
         self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]

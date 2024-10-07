@@ -1,7 +1,7 @@
 import polars as pl
 import numpy as np
 
-from typing import Iterable, Callable
+from typing import Iterable, Callable, Optional
 
 from functools import partial
 from .align import align_data
@@ -322,13 +322,20 @@ def aggegate_running_time(
         return dt_plot.sort(fval_variable).to_pandas()
     return dt_plot.sort(fval_variable)
 
-def add_normalized_objectives(data: pl.DataFrame, obj_cols: Iterable[str]):
-    """_summary_
+def add_normalized_objectives(data: pl.DataFrame, obj_cols: Iterable[str], max_vals: Optional[pl.DataFrame] = None):
+    """Add new normalized columns to provided dataframe based on the provided objective columns
 
     Args:
-        df (_type_): _description_
-        obj_cols (_type_): _description_
+        data (pl.DataFrame): The original dataframe
+        obj_cols (Iterable[str]): The names of each objective column
+        max_vals (Optional[pl.DataFrame]): If provided, these values will be used as the maxima instead of the values found in `data`
+
+    Returns:
+        _type_: The original `data` DataFrame with a new column 'objI' added for each objective, for I=1...len(obj_cols)
     """
-    return data.with_columns([(data[colname]/data[colname].max()).alias(f'obj{idx + 1}') for idx, colname in enumerate(obj_cols)])
+    if type(max_vals) == pl.DataFrame:
+        return data.with_columns([(data[colname]/max_vals[colname].max()).alias(f'obj{idx + 1}') for idx, colname in enumerate(obj_cols)])
+    else:
+        return data.with_columns([(data[colname]/data[colname].max()).alias(f'obj{idx + 1}') for idx, colname in enumerate(obj_cols)])
 
 

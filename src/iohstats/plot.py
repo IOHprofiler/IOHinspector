@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.rcParams["pdf.fonttype"] = 42
 matplotlib.rcParams["ps.fonttype"] = 42
 
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 import seaborn as sbs
 import matplotlib.pyplot as plt
 
@@ -17,6 +17,13 @@ from .indicators import add_indicator, Final_NonDominated
 from typing import Iterable, Optional
 import polars as pl
 import numpy as np
+
+from moocore import eaf, eafdiff
+import pandas as pd
+
+from robustranking import Benchmark
+from robustranking.comparison import MOBootstrapComparison, BootstrapComparison
+from robustranking.utils.plots import plot_ci_list, plot_line_ranks
 
 # tradeoff between simple (few parameters) and flexible. Maybe many parameter but everything with clear defaults?
 # Can also make sure any useful function for data processing is available separately for more flexibility
@@ -98,7 +105,7 @@ def single_function_fixedtarget():
     raise NotImplementedError
 
 
-def plot_eaf(
+def plot_eaf_singleobj(
     data: pl.DataFrame,
     min_budget: int = None,
     max_budget: int = None,
@@ -146,9 +153,109 @@ def plot_eaf(
     return long
 
 
-def eaf_diffs():
-    # either use moocore or the approximation version
-    raise NotImplementedError
+def plot_eaf_pareto(
+    data: pl.DataFrame,
+    x_column: str,
+    y_column: str,
+    min_y: float = 0,
+    max_y: float = 1,
+    scale_xlog: bool = False,
+    scale_ylog: bool = False,
+    filename_fig: Optional[str] = None,
+):
+    """Plot the EAF for two arbitrary data columns. For the EAF-plot for single-objective
+    optimization runs, the 'plot_eaf_singleobj' provides a simpler interface.
+
+    Args:
+        data (pl.DataFrame): _description_
+        x_column (str): _description_
+        y_column (str): _description_
+    """
+
+    eaf_data = eaf(np.array(data[[x_column, y_column, "data_id"]]))
+    eaf_data_df = pd.DataFrame(eaf_data)
+
+    fig, ax = plt.subplots(figsize=(16, 9))
+    colors = sbs.color_palette("viridis", n_colors=eaf_data_df[2].nunique())
+    eaf_data_df = eaf_data_df.sort_values(0)
+    min_x = np.min(eaf_data_df[0])
+    max_x = np.max(eaf_data_df[0])
+    if min_y is None:
+        min_y = np.min(eaf_data_df[1])
+    if max_y is None:
+        max_y = np.max(eaf_data_df[1])
+    for i, color in zip(eaf_data_df[2].unique(), colors[::-1]):
+        poly = np.array(eaf_data_df[eaf_data_df[2] == i][[0, 1]])
+        # poly = np.append(poly, np.array([[max(poly[:, 0]), max(poly[:, 1])]]), axis=0)
+        # poly = np.append(poly, np.array([[min(poly[:, 0]), max(poly[:, 1])]]), axis=0)
+        poly = np.append(poly, np.array([[max_x, max_y]]), axis=0)
+        poly = np.append(poly, np.array([[min(poly[:, 0]), max_y]]), axis=0)
+        poly2 = np.repeat(poly, 2, axis=0)
+        poly2[2::2, 1] = poly[:, 1][:-1]
+        ax.add_patch(Polygon(poly2, facecolor=color))
+    # ax.add_colorbar()
+    plt.ylim(min_y, max_y)
+    plt.xlim(min_x, max_x)
+    ax.set_axisbelow(True)
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=0, vmax=1))
+    sm.set_array([])
+    plt.colorbar(sm, ax=ax)
+    if scale_ylog:
+        plt.yscale("log")
+    if scale_xlog:
+        plt.xscale("log")
+    plt.grid(which="both", zorder=100)
+    plt.tight_layout()
+    if filename_fig:
+        plt.savefig(filename_fig)
+        plt.close()
+
+
+def eaf_diffs(
+    data1: pl.DataFrame,
+    data2: pl.DataFrame,
+    x_column: str,
+    y_column: str,
+    min_y: float = 0,
+    max_y: float = 1,
+    scale_xlog: bool = False,
+    scale_ylog: bool = False,
+    filename_fig: Optional[str] = None,
+):
+    # TODO: add an approximation version to speed up plotting
+    x = np.array(data1[[x_column, y_column, "data_id"]])
+    y = np.array(data2[[x_column, y_column, "data_id"]])
+    eaf_diff_rect = eafdiff(x, y, rectangles=True)
+    color_dict = {
+        k: v
+        for k, v in zip(
+            np.unique(eaf_diff_rect[:, -1]),
+            sbs.color_palette("viridis", n_colors=len(np.unique(eaf_diff_rect[:, -1]))),
+        )
+    }
+    fig, ax = plt.subplots(figsize=(16, 9))
+    for rect in eaf_diff_rect:
+        ax.add_patch(
+            Rectangle(
+                (rect[0], rect[1]),
+                rect[2] - rect[0],
+                rect[3] - rect[1],
+                facecolor=color_dict[rect[-1]],
+            )
+        )
+    if min_y is None:
+        min_y = np.min(x[1])
+    if max_y is None:
+        max_y = np.max(x[1])
+    plt.ylim(min_y, max_y)
+    if scale_ylog:
+        plt.yscale("log")
+    if scale_xlog:
+        plt.xscale("log")
+    plt.tight_layout()
+    if filename_fig:
+        plt.savefig(filename_fig)
+        plt.close()
 
 
 def ecdf(
@@ -224,20 +331,23 @@ def plot_paretofronts_2d(
     plt.show()
     return df
 
-def plot_indicator_over_time(data: pl.DataFrame,
-                           obj_colums: Iterable[str],
-                           indicator: object,
-                           evals_min: int = 0,
-                           evals_max: int = 50_000,
-                           nr_eval_steps: int = 50,
-                           free_variable: str = 'algorithm_name',
-                           filename_fig: Optional[str] = None,
-                           filename_dataframe: Optional[str] = None):
+
+def plot_indicator_over_time(
+    data: pl.DataFrame,
+    obj_columns: Iterable[str],
+    indicator: object,
+    evals_min: int = 0,
+    evals_max: int = 50_000,
+    nr_eval_steps: int = 50,
+    free_variable: str = "algorithm_name",
+    filename_fig: Optional[str] = None,
+    filename_dataframe: Optional[str] = None,
+):
     """_summary_
 
     Args:
         data (pl.DataFrame): _description_
-        obj_colums (Iterable[str]): _description_
+        obj_columns (Iterable[str]): _description_
         indicator (object): _description_
         evals_min (int, optional): _description_. Defaults to 0.
         evals_max (int, optional): _description_. Defaults to 50_000.
@@ -247,14 +357,18 @@ def plot_indicator_over_time(data: pl.DataFrame,
         filename_dataframe (Optional[str], optional): _description_. Defaults to None.
     """
 
-    evals = get_sequence(evals_min, evals_max, nr_eval_steps, cast_to_int=True, scale_log=True)
-    df = add_indicator(data, indicator, objective_columns = obj_colums, evals = evals).to_pandas()
+    evals = get_sequence(
+        evals_min, evals_max, nr_eval_steps, cast_to_int=True, scale_log=True
+    )
+    df = add_indicator(
+        data, indicator, objective_columns=obj_columns, evals=evals
+    ).to_pandas()
 
-    plt.figure(figsize=(16,9))
-    sbs.lineplot(df, x='evaluations', y=indicator.var_name, hue=free_variable)
+    plt.figure(figsize=(16, 9))
+    sbs.lineplot(df, x="evaluations", y=indicator.var_name, hue=free_variable, palette=sbs.color_palette(n_colors=len(np.unique(data[free_variable]))))
     plt.xlabel("Evaluations")
     plt.xlim(evals_min, evals_max)
-    plt.xscale('log')
+    plt.xscale("log")
     plt.grid()
     plt.tight_layout()
     if filename_fig:
@@ -264,3 +378,82 @@ def plot_indicator_over_time(data: pl.DataFrame,
         plt.show()
     if filename_dataframe:
         df.to_csv(filename_dataframe)
+
+
+def plot_robustrank_over_time(
+    data: pl.DataFrame,
+    obj_columns: Iterable[str],
+    evals: Iterable[int],
+    indicator: object,
+    filename_fig: Optional[str] = None,
+):
+    df = add_indicator(
+        data, indicator, objective_columns=obj_columns, evals=evals
+    ).to_pandas()
+    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
+    dt_pivoted = pd.pivot(
+        df_part,
+        index=["algorithm_name", "run_id"],
+        columns=["evaluations"],
+        values=[indicator.var_name],
+    ).reset_index()
+    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+    benchmark = Benchmark()
+    benchmark.from_pandas(dt_pivoted, "algorithm_name", "run_id", evals)
+
+    comparison = MOBootstrapComparison(
+        benchmark,
+        alpha=0.05,
+        minimise=indicator.minimize,
+        bootstrap_runs=1000,
+        aggregation_method=np.mean,
+    )
+    fig, axs = plt.subplots(1, 4, figsize=(16, 9), sharey=True)
+    for ax, runtime in zip(axs.ravel(), benchmark.objectives):
+        plot_ci_list(comparison, objective=runtime, ax=ax)
+        if runtime != evals[0]:
+            ax.set_ylabel("")
+        if runtime != evals[-1]:
+            ax.get_legend().remove()
+        ax.set_title(runtime)
+
+    plt.tight_layout()
+    if filename_fig:
+        plt.savefig(filename_fig)
+        plt.close()
+
+def plot_robustrank_changes(
+    data: pl.DataFrame,
+    obj_columns: Iterable[str],
+    evals: Iterable[int],
+    indicator: object,
+    filename_fig: Optional[str] = None,
+):
+    df = add_indicator(
+        data, indicator, objective_columns=obj_columns, evals=evals
+    ).to_pandas()
+    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
+    dt_pivoted = pd.pivot(
+        df_part,
+        index=["algorithm_name", "run_id"],
+        columns=["evaluations"],
+        values=[indicator.var_name],
+    ).reset_index()
+    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+    
+    comparisons = {
+    f"{eval}" : BootstrapComparison(
+        Benchmark().from_pandas(dt_pivoted, "algorithm_name", "run_id", eval),
+        alpha=0.05,
+        minimise=indicator.minimize,
+        bootstrap_runs=1000,
+    ) for eval in evals
+    }
+
+    fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+    plot_line_ranks(comparisons, ax=ax)
+
+    plt.tight_layout()
+    if filename_fig:
+        plt.savefig(filename_fig)
+        plt.close()
