@@ -4,7 +4,7 @@ import warnings
 
 import polars as pl
 
-from iohstats import DataManager
+from iohinspector import DataManager
 
 from pprint import pprint
 
