@@ -42,15 +42,33 @@ class Final_NonDominated:
 def add_indicator(
     df: pl.DataFrame, indicator: object, objective_columns: Iterable, **kwargs
 ):
-    """Function to add an inidcator to a DataFrame
+    """Adds an indicator to a Polars DataFrame.
+
+    This function applies a specified indicator function to groups of data 
+    within a Polars DataFrame, grouped by the "data_id" column. The indicator 
+    is applied to the specified objective columns, along with any additional 
+    keyword arguments.
 
     Args:
-        df (pl.DataFrame): _description_
-        indicator (object): _description_
-        objective_columns (Iterable): _description_
+        df (pl.DataFrame): 
+            The Polars DataFrame containing the data to which the indicator 
+            will be added. It must contain a column named "data_id" for 
+            grouping purposes.
+        indicator (object): 
+            A callable object (e.g., a function) that computes the desired 
+            indicator. It must accept `objective_columns` and any additional 
+            arguments passed via `kwargs`.
+        objective_columns (Iterable): 
+            An iterable of column names in the DataFrame that the indicator 
+            function will process.
+        **kwargs: 
+            Additional keyword arguments to be passed to the `indicator` 
+            callable.
 
     Returns:
-        _type_: _description_
+        pl.DataFrame: 
+            A new Polars DataFrame with the computed indicator applied to each 
+            group of data.
     """
     indicator_callable = partial(
         indicator, objective_columns=objective_columns, **kwargs

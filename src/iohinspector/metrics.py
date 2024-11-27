@@ -57,9 +57,10 @@ def aggegate_convergence(
     evaluation_variable: str = "evaluations",
     fval_variable: str = "raw_y",
     free_variables: Iterable[str] = ["algorithm_name"],
-    f_min: float = None,
-    f_max: float = None,
+    x_min: int = None,
+    x_max: int = None,
     custom_op: Callable[[pl.Series], float] = None,
+    maximization: bool = False,
     return_as_pandas: bool = True,
 ):
     """Internal function for getting fixed-budget information.
@@ -74,19 +75,19 @@ def aggegate_convergence(
     """
 
     # Getting alligned data (to check if e.g. limits should be args for this function)
-    if f_min is None:
-        f_min = data[evaluation_variable].min()
-    if f_max is None:
-        f_max = data[evaluation_variable].max()
-    f_values = get_sequence(f_min, f_max, 50, scale_log=True)
+    if x_min is None:
+        x_min = data[evaluation_variable].min()
+    if x_max is None:
+        x_max = data[evaluation_variable].max()
+    x_values = get_sequence(x_min, x_max, 50, scale_log=True, cast_to_int=True)
     group_variables = free_variables + [evaluation_variable]
     data_aligned = align_data(
         data.cast({evaluation_variable: pl.Int64}),
-        f_values,
+        x_values,
         group_cols=["data_id"] + free_variables,
         x_col=evaluation_variable,
         y_col=fval_variable,
-        maximization=True,
+        maximization=maximization,
     )
 
     aggregations = [
@@ -178,13 +179,14 @@ def get_glicko2_ratings(
     alg_vars: Iterable[str] = ["algorithm_name"],
     fid_vars: Iterable[str] = ["function_name"],
     perf_var: str = "raw_y",
-    nrounds: int = 5,
+    nrounds: int = 25,
 ):
-    from skelo import Glicko2Estimator
-
-    alg_vars = ["algorithm_name", "algorithm_info"]
-    fid_vars = ["function_name"]
-    perf_var = "hv"
+    try:
+        from skelo.model.glicko2 import Glicko2Estimator
+    except:
+        print("This functionality requires the 'skelo' package, which is not found. Please install it to use this function")
+        return
+    
     players = data[alg_vars].unique()
     n_players = players.shape[0]
     fids = data[fid_vars].unique()
@@ -242,11 +244,10 @@ def get_glicko2_ratings(
         [
             [rating[0] for rating in ratings],
             [rating[1] for rating in ratings],
-            players[players.columns[0]],
-            players[players.columns[1]],
+            *players[players.columns],
         ]
     ).transpose()
-    rating_dt.columns = ["Rating", "Deviation", players.columns[0], players.columns[1]]
+    rating_dt.columns = ["Rating", "Deviation", *players.columns]
     return rating_dt
 
 
@@ -263,7 +264,7 @@ def aggegate_running_time(
     custom_op: Callable[[pl.Series], float] = None,
     return_as_pandas: bool = True,
 ):
-    """Internal function for getting fixed-budget information.
+    """Internal function for getting fixed-target information.
 
     Args:
         data (DataSet): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
