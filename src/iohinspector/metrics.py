@@ -181,6 +181,18 @@ def get_glicko2_ratings(
     perf_var: str = "raw_y",
     nrounds: int = 25,
 ):
+    """_summary_
+
+    Args:
+        data (pl.DataFrame): _description_
+        alg_vars (Iterable[str], optional): _description_. Defaults to ["algorithm_name"].
+        fid_vars (Iterable[str], optional): _description_. Defaults to ["function_name"].
+        perf_var (str, optional): _description_. Defaults to "raw_y".
+        nrounds (int, optional): _description_. Defaults to 25.
+
+    Returns:
+        _type_: _description_
+    """
     try:
         from skelo.model.glicko2 import Glicko2Estimator
     except:

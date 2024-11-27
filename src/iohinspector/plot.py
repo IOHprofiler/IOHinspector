@@ -299,7 +299,7 @@ def plot_eaf_pareto(
     ax.set_axisbelow(True)
     sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=0, vmax=1))
     sm.set_array([])
-    ax.colorbar(sm, ax=ax)
+    plt.colorbar(sm, ax=ax)
     if scale_ylog:
         ax.set_yscale("log")
     if scale_xlog:

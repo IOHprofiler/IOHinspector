@@ -36,7 +36,7 @@ class WrapperProblem:
         pymoo_problem,
         algorithm_name: str = "pymoo_algorithm",
         folder_name: str = "pymoo_folder",
-        root: str = "pymoo.Experiment",
+        root: str = "MO_Data",
         fid: int = 1,
         exp_attributes: dict = None,
         **kwargs
@@ -54,7 +54,6 @@ class WrapperProblem:
         )
         for k,v in exp_attributes.items():
             self.logger.add_experiment_attribute(k, v)
-        self.logger.add_experiment_attribute('nadir_point', f"{pymoo_problem.nadir_point().tobytes()}")
         self.meta_data = ioh.MetaData(
             fid,
             1,
@@ -144,42 +143,32 @@ class WrapperProblem:
 
 
 def run_experiment():
-    problems_zdt = [f"zdt{i}" for i in range(1,7)]
-    problems_dtlz = [f"dtlz{i}" for i in range(1,8)]
-    problems = problems_dtlz + problems_zdt
-    for popsize in [250,10,25,100]:
-        for idx, problem_name in enumerate(problems):
-            problem = get_problem(problem_name)
-            exp_attrs = {'popsize' : f"{popsize}"}
-            wrapper_problem = WrapperProblem(problem, algorithm_name=f"NSGA2", algorithm_info=f"{popsize}", exp_attributes=exp_attrs, fid=idx, folder_name=f"NSGA_{popsize}")
-            algorithm = NSGA2(pop_size=popsize)
-            for i in range(5):
-                res = minimize(wrapper_problem, algorithm, ("n_eval", 50000), seed=i, verbose=True)
-                print(wrapper_problem.num_evaluations, res.X.shape, popsize)
-                wrapper_problem.evaluate(res.X, return_values_of=['F', 'G', 'H'], return_as_dictionary = True)
-                print(wrapper_problem.num_evaluations)
-                wrapper_problem.reset()
-            wrapper_problem = WrapperProblem(problem, algorithm_name=f"SMS-EMOA", algorithm_info=f"{popsize}", exp_attributes=exp_attrs, fid=idx, folder_name=f"SMSEMOA_{popsize}")
-            algorithm = SMSEMOA(pop_size=popsize)
-            for i in range(5):
-                res = minimize(wrapper_problem, algorithm, ("n_eval", 50000), seed=i, verbose=True)
-                print(wrapper_problem.num_evaluations, res.X.shape, popsize)
-                wrapper_problem.evaluate(res.X, return_values_of=['F', 'G', 'H'], return_as_dictionary = True)
-                print(wrapper_problem.num_evaluations)
-                wrapper_problem.reset()
-            
+    problems = ['zdt1', 'zdt2']
+    popsize = 10
 
-
+    for idx, problem_name in enumerate(problems):
+        problem = get_problem(problem_name)
+        exp_attrs = {'popsize' : f"{popsize}"}
+        wrapper_problem = WrapperProblem(problem, algorithm_name=f"NSGA2", algorithm_info=f"{popsize}", exp_attributes=exp_attrs, fid=idx, folder_name=f"NSGA_{popsize}")
+        algorithm = NSGA2(pop_size=popsize)
+        for i in range(5):
+            res = minimize(wrapper_problem, algorithm, ("n_eval", 2000), seed=i, verbose=True)
+            print(wrapper_problem.num_evaluations, res.X.shape, popsize)
+            #After the run is finished, we evaluate the points returned by the algorithm to be able to look at the final algorithm recommendation as well
+            wrapper_problem.evaluate(res.X, return_values_of=['F', 'G', 'H'], return_as_dictionary = True)
+            print(wrapper_problem.num_evaluations)
+            wrapper_problem.reset()
+        wrapper_problem = WrapperProblem(problem, algorithm_name=f"SMS-EMOA", algorithm_info=f"{popsize}", exp_attributes=exp_attrs, fid=idx, folder_name=f"SMSEMOA_{popsize}")
+        algorithm = SMSEMOA(pop_size=popsize)
+        for i in range(5):
+            res = minimize(wrapper_problem, algorithm, ("n_eval", 2000), seed=i, verbose=True)
+            print(wrapper_problem.num_evaluations, res.X.shape, popsize)
+            #After the run is finished, we evaluate the points returned by the algorithm to be able to look at the final algorithm recommendation as well
+            wrapper_problem.evaluate(res.X, return_values_of=['F', 'G', 'H'], return_as_dictionary = True)
+            print(wrapper_problem.num_evaluations)
+            wrapper_problem.reset()
 
 if __name__ == "__main__":
     import shutil
-    shutil.rmtree("pymoo.Experiment", True)
-    # problem = get_problem("zdt1")
-    # exp_attrs = {'popsize' : '100'}
-    # wrapper_problem = WrapperProblem(problem, algorithm_name="NSGA2", exp_attributes=exp_attrs)
-    # # wrapper_problem.logger.add_experiment_attribute('popsize', '100')
-    # algorithm = NSGA2(pop_size=100)
-    # for i in range(5):
-    #     res = minimize(wrapper_problem, algorithm, ("n_eval", 2000), seed=i, verbose=True)
-    #     wrapper_problem.reset()
+    shutil.rmtree("MO_Data", True)
     run_experiment()
