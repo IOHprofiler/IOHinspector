@@ -4,7 +4,7 @@ import warnings
 
 import polars as pl
 
-from iohstats import DataManager
+from iohinspector import DataManager
 
 from pprint import pprint
 
@@ -17,11 +17,13 @@ class TestManager(unittest.TestCase):
     def setUp(self):
         self.data_dir, *_ = os.listdir(DATA_DIR)
         self.data_dir = os.path.join(DATA_DIR, self.data_dir)
-        self.json_files = [
-            fname
-            for f in os.listdir(self.data_dir)
-            if os.path.isfile((fname := os.path.join(self.data_dir, f)))
-        ]
+        self.json_files = sorted(
+            [
+                fname
+                for f in os.listdir(self.data_dir)
+                if os.path.isfile((fname := os.path.join(self.data_dir, f)))
+            ]
+        )
 
     def test_add_json(self):
         manager = DataManager()
@@ -49,25 +51,70 @@ class TestManager(unittest.TestCase):
     def test_add_folder(self):
         manager = DataManager()
         manager.add_folder(self.data_dir)
-        self.assertEqual(len(manager.data_sets), 2)       
+        self.assertEqual(len(manager.data_sets), 2)
 
     def test_select(self):
         manager = DataManager()
         manager.add_folder(self.data_dir)
 
-        selection = manager.select(
-            instances=[1],
-        )
-        df = selection.data_sets[0].scenarios[0].load()
+        selection = manager.select(instances=[1], function_ids=[10001])
+        df = selection.load(monotonic=False)
+        self.assertEqual(df.shape[1], 4)
         self.assertEqual(len(df), 46)
         self.assertEqual(max(df["run_id"]), 2)
         self.assertEqual(min(df["run_id"]), 2)
-        self.assertTrue(selection.any())
+        self.assertTrue(selection.any)
+
+        df = selection.load(monotonic=True)
+        self.assertEqual(len(df), 26)
+        self.assertEqual(df.shape[1], 4)
+        self.assertEqual(max(df["run_id"]), 2)
+        self.assertEqual(min(df["run_id"]), 2)
+        self.assertTrue(selection.any)
+
+        df = selection.load(monotonic=True, include_meta_data=True)
+        self.assertEqual(len(df), 26)
+        self.assertEqual(df.shape[1], 23)
+        self.assertEqual(max(df["run_id"]), 2)
+        self.assertEqual(min(df["run_id"]), 2)
+        self.assertTrue(selection.any)
 
         selection = manager.select(function_ids=[0])
-        self.assertFalse(selection.any())
+        self.assertFalse(selection.any)
+        df = selection.load()
+        self.assertEqual(len(df), 0)
+
+        selection1 = manager.select(instances=[1], function_ids=[10001])
+
+        selection2 = manager.select(instances=[2], function_ids=[10001])
+        selection = selection1 + selection2
+        df = selection.load()
+        self.assertEqual(len(df), 55)
+        self.assertEqual(df.shape[1], 4)
+        self.assertEqual(min(df["run_id"]), 2)
+        self.assertEqual(max(df["run_id"]), 3)
+        self.assertTrue(selection.any)
+
+    def test_align(self):
+        manager = DataManager()
+        manager.add_folder(self.data_dir)
+
+        selection = manager.select(instances=[1], function_ids=[10001])
+        df = selection.load(monotonic=True)
+        self.assertGreater(df["raw_y"].diff().min(), 0.0)
+
+    def test_select_on_data_id(self):
+        manager = DataManager()
+        manager.add_folder(self.data_dir)
+
+        selection = manager.select(data_ids=[20, 21, 22])
+        self.assertEqual(selection.n_runs, 3)
         
-        breakpoint()
+    def test_load_subset_columns(self):
+        manager = DataManager()
+        manager.add_folder(self.data_dir)
+        selection = manager.select([1]).load(include_columns=["function_id"])
+        self.assertListEqual(selection.columns, ["function_id", "data_id", "run_id", "evaluations", "raw_y"])
 
 
 if __name__ == "__main__":
