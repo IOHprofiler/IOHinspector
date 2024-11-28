@@ -8,6 +8,7 @@ from pymoo.optimize import minimize
 from pymoo.algorithms.moo.sms import SMSEMOA
 
 
+
 class Container:
     @property
     def names(self):
@@ -138,9 +139,6 @@ class WrapperProblem:
     
     def __del__(self, *args, **kwargs):
         self.logger.close()
-        # return super().__del__(*args, **kwargs)
-
-
 
 def run_experiment():
     problems = ['zdt1', 'zdt2']
@@ -172,3 +170,4 @@ if __name__ == "__main__":
     import shutil
     shutil.rmtree("MO_Data", True)
     run_experiment()
+
