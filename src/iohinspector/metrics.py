@@ -63,15 +63,22 @@ def aggegate_convergence(
     maximization: bool = False,
     return_as_pandas: bool = True,
 ):
-    """Internal function for getting fixed-budget information.
+    """Function to aggregate performance on a fixed-budget perspective
 
     Args:
-        data (DataSet): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
+        data (pl.DataFrame): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
         this object determine the axes of the final performance (most data will have 'raw_y', 'evaluations' and ['algId'] as defaults)
-        custom_op (callable, optional): Any custom aggregation . Defaults to None.
+        evaluation_variable (str, optional): Column name for evaluation number. Defaults to "evaluations".
+        fval_variable (str, optional): Column name for function value. Defaults to "raw_y".
+        free_variables (Iterable[str], optional): Column name for free variables (variables over which performance should not be aggregated). Defaults to ["algorithm_name"].
+        x_min (int, optional): Minimum evaulation value to use. Defaults to None (minimum present in data).
+        x_max (int, optional): Maximum evaulation value to use. Defaults to None (maximum present in data).
+        custom_op (Callable[[pl.Series], float], optional): Custom aggregation method for performance values. Defaults to None.
+        maximization (bool, optional): Whether performance metric is being maximized or not. Defaults to False.
+        return_as_pandas (bool, optional): Whether the data should be returned as Pandas (True) or Polars (False) object. Defaults to True.
 
     Returns:
-        _type_: _description_
+        DataFrame: Depending on 'return_as_pandas', a pandas or polars DataFrame with the aggregated performance values
     """
 
     # Getting alligned data (to check if e.g. limits should be args for this function)
@@ -114,8 +121,26 @@ def aggegate_convergence(
 
 
 def transform_fval(
-    data, lb=1e-8, ub=1e8, scale_log=True, maximization=False, fval_col="raw_y"
+    data: pl.DataFrame,
+      lb:float=1e-8, 
+      ub:float=1e8, 
+      scale_log:bool=True, 
+      maximization:bool=False, 
+      fval_col:str="raw_y"
 ):
+    """Helper function to transform function values (min-max normalization based on provided bounds and scaling)
+
+    Args:
+        data (pl.DataFrame): The data object to use for getting the performance.
+        lb (float, optional): Lower bound for scaling of function values. Defaults to 1e-8.
+        ub (float, optional): Upper bound for scaling of function values. Defaults to 1e8.
+        scale_log (bool, optional): Whether function values should be log-scaled before scaling. Defaults to True.
+        maximization (bool, optional): Whether function values is being maximized. Defaults to False.
+        fval_col (str, optional): Which column in data to use. Defaults to "raw_y".
+
+    Returns:
+        _type_: a copy of the original data with a new column 'eaf' with the scaled function values (which is always to be maximized)
+    """
     if scale_log:
         lb = np.log10(lb)
         ub = np.log10(ub)
@@ -164,6 +189,17 @@ def get_aocc(
     fval_col: str = "eaf",
     group_cols: Iterable[str] = ["function_name", "algorithm_name"],
 ):
+    """Helper function for AOCC calculations
+
+    Args:
+        data (pl.DataFrame): The data object to use for getting the performance.
+        max_budget (int): Maxium value of evaluations to use
+        fval_col (str, optional): Which data column specifies the performance value. Defaults to "eaf".
+        group_cols (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["function_name", "algorithm_name"].
+
+    Returns:
+        pl.DataFrame: a polars dataframe with the area under the EAF (=area over convergence curve)
+    """
     aocc_contribs = data.group_by(*["data_id"]).map_groups(
         partial(_aocc, max_budget=max_budget, fval_col=fval_col)
     )
@@ -181,17 +217,19 @@ def get_glicko2_ratings(
     perf_var: str = "raw_y",
     nrounds: int = 25,
 ):
-    """_summary_
+    """Method to calculate Glicko2 ratings of a set of algorithm on a set of problems. 
+    Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
+    For each round, a sampled performance value is taken from the data and used to determine the winner. 
 
     Args:
-        data (pl.DataFrame): _description_
-        alg_vars (Iterable[str], optional): _description_. Defaults to ["algorithm_name"].
-        fid_vars (Iterable[str], optional): _description_. Defaults to ["function_name"].
-        perf_var (str, optional): _description_. Defaults to "raw_y".
-        nrounds (int, optional): _description_. Defaults to 25.
+        data (pl.DataFrame): The data object to use for getting the performance.
+        alg_vars (Iterable[str], optional): Which variables specific the algortihms which will compete. Defaults to ["algorithm_name"].
+        fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
+        perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
+        nrounds (int, optional): How many round should be played. Defaults to 25.
 
     Returns:
-        _type_: _description_
+        pd.DataFrame: Pandas dataframe with rating, deviation and volatility for each 'alg_vars' combination
     """
     try:
         from skelo.model.glicko2 import Glicko2Estimator
@@ -210,7 +248,6 @@ def get_glicko2_ratings(
     )
     comp_arr = np.array(aligned_comps[aligned_comps.columns[len(alg_vars) :]])
 
-    nrounds = 5
     rng = np.random.default_rng()
     fids_shuffled = [i for i in range(len(fids))]
     p1_order = [i for i in range(n_players)]
@@ -238,7 +275,7 @@ def get_glicko2_ratings(
                         elif s1 == s2:
                             won = 0.5
                         else:
-                            won = float(s1 < s2)
+                            won = float(s1 < s2) #TODO: maximization argument!
 
                     records.append([round, p1, p2, won])
     dt_comp = pd.DataFrame.from_records(
@@ -276,15 +313,24 @@ def aggegate_running_time(
     custom_op: Callable[[pl.Series], float] = None,
     return_as_pandas: bool = True,
 ):
-    """Internal function for getting fixed-target information.
+    """Function to aggregate performance on a fixed-target perspective
 
     Args:
-        data (DataSet): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
+        data (pl.DataFrame): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
         this object determine the axes of the final performance (most data will have 'raw_y', 'evaluations' and ['algId'] as defaults)
-        custom_op (callable, optional): Any custom aggregation . Defaults to None.
+        evaluation_variable (str, optional): Column name for evaluation number. Defaults to "evaluations".
+        fval_variable (str, optional): Column name for function value. Defaults to "raw_y".
+        free_variables (Iterable[str], optional): Column name for free variables (variables over which performance should not be aggregated). Defaults to ["algorithm_name"].
+        f_min (int, optional): Minimum function value to use. Defaults to None (minimum present in data).
+        f_max (int, optional): Maximum function value to use. Defaults to None (maximum present in data).
+        scale_flog (bool): Whether or not function values should be scaled logarithmically for the x-axis. Defaults to True.
+        max_budget: If present, what budget value should be the maximum considered. Defaults to None.
+        custom_op (Callable[[pl.Series], float], optional): Custom aggregation method for performance values. Defaults to None.
+        maximization (bool, optional): Whether performance metric is being maximized or not. Defaults to False.
+        return_as_pandas (bool, optional): Whether the data should be returned as Pandas (True) or Polars (False) object. Defaults to True.
 
     Returns:
-        _type_: _description_
+        DataFrame: Depending on 'return_as_pandas', a pandas or polars DataFrame with the aggregated performance values
     """
 
     # Getting alligned data (to check if e.g. limits should be args for this function)

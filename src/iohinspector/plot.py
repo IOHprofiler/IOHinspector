@@ -181,12 +181,29 @@ def single_function_fixedbudget(
 def heatmap_single_run(
     data: pl.DataFrame,
     var_cols: Iterable[str],
+    eval_col: str = 'evaluations',
     scale_xlog: bool = True,
     x_mins: Iterable[float] = [-5],
     x_maxs: Iterable[float] = [5],
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
 ):
+    """Create a heatmap showing the search space points evaluated in a single run
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        var_cols (Iterable[str]): The variables which correspond to the searchspace variable columns
+        eval_col (str): The variable corresponding to evaluations. Defaults to 'evaluations'
+        scale_xlog (bool, optional): Whether the evaluations should be log-scaled. Defaults to True.
+        x_mins (Iterable[float], optional): Minimum bound for the variables. Should be of the same length as 'var_cols'. Defaults to [-5].
+        x_maxs (Iterable[float], optional): Maximum bound for the variables. Should be of the same length as 'var_cols'.. Defaults to [5].
+        ax (matplotlib.axes._axes.Axes, optional): Axis on which to create the plot. Defaults to None.
+        file_name (Optional[str], optional): If ax is not given, filename to save the plot. Defaults to None.
+
+    Returns:
+        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+    """
+    assert(data["data_id"].n_unique() == 1)
     dt_plot = data[var_cols].transpose().to_pandas()
     dt_plot.columns = list(data["evaluations"])
     dt_plot = (dt_plot - x_mins) / (x_maxs - x_mins)
@@ -214,6 +231,23 @@ def plot_eaf_singleobj(
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
 ):
+    """Plot the EAF for a single objective column agains budget. For the EAF-plot for multiple objective
+    columns, see 'plot_eaf_pareto'.
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        n_quantiles (int, optional): Number of discrete levels in the EAF. Defaults to 100.
+        eval_var (str, optional): The variable corresponding to evaluations. Defaults to 'evaluations'
+        fval_var (str, optional): The variable corresponding to function values. Defaults to "raw_y".
+        scale_xlog (bool, optional): Whether the evaluations should be log-scaled. Defaults to True.
+        min_budget (Iterable[float], optional): Minimum bound for the variables. Should be of the same length as 'var_cols'. Defaults to [-5].
+        max_budget (Iterable[float], optional): Maximum bound for the variables. Should be of the same length as 'var_cols'.. Defaults to [5].
+        ax (matplotlib.axes._axes.Axes, optional): Axis on which to create the plot. Defaults to None.
+        file_name (Optional[str], optional): If ax is not given, filename to save the plot. Defaults to None.
+
+    Returns:
+        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+    """
     if min_budget is None:
         min_budget = data[eval_var].min()
     if max_budget is None:
@@ -267,9 +301,15 @@ def plot_eaf_pareto(
     optimization runs, the 'plot_eaf_singleobj' provides a simpler interface.
 
     Args:
-        data (pl.DataFrame): _description_
-        x_column (str): _description_
-        y_column (str): _description_
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        x_column (str, optional): The variable corresponding to the first objective. 
+        y_column (str, optional): The variable corresponding to the second objective. 
+        min_y (float): Minimum value for the second objective.
+        max_y (float): Maximum value for the second objective.
+        scale_xlog (bool, optional): Whether the first objective should be log-scaled. Defaults to False.
+        scale_ylog (bool, optional): Whether the second objective should be log-scaled. Defaults to False.
+        ax (matplotlib.axes._axes.Axes, optional): Axis on which to create the plot. Defaults to None.
+        file_name (Optional[str], optional): If ax is not given, filename to save the plot. Defaults to None.
     """
 
     eaf_data = eaf(np.array(data[[x_column, y_column, "data_id"]]))
@@ -322,6 +362,20 @@ def eaf_diffs(
     ax: matplotlib.axes._axes.Axes = None,
     filename_fig: Optional[str] = None,
 ):
+    """Plot the EAF differences between two datasets.
+
+    Args:
+        data1 (pl.DataFrame): The DataFrame which contains the full performance trajectory for algorithm 1. Should be generated from a DataManager.
+        data2 (pl.DataFrame): The DataFrame which contains the full performance trajectory for algorithm 2. Should be generated from a DataManager.
+        x_column (str, optional): The variable corresponding to the first objective. 
+        y_column (str, optional): The variable corresponding to the second objective. 
+        min_y (float): Minimum value for the second objective.
+        max_y (float): Maximum value for the second objective.
+        scale_xlog (bool, optional): Whether the first objective should be log-scaled. Defaults to False.
+        scale_ylog (bool, optional): Whether the second objective should be log-scaled. Defaults to False.
+        ax (matplotlib.axes._axes.Axes, optional): Axis on which to create the plot. Defaults to None.
+        file_name (Optional[str], optional): If ax is not given, filename to save the plot. Defaults to None.
+    """
     # TODO: add an approximation version to speed up plotting
     x = np.array(data1[[x_column, y_column, "data_id"]])
     y = np.array(data2[[x_column, y_column, "data_id"]])
@@ -370,6 +424,24 @@ def plot_ecdf(
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
 ):
+    """Function to plot empirical cumulative distribution function (Based on EAF)
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        eval_var (str, optional): Column in 'data' which corresponds to the number of evaluations. Defaults to "evaluations".
+        fval_var (str, optional): Column in 'data' which corresponds to the performance measure. Defaults to "raw_y".
+        free_vars (Iterable[str], optional): Columns in 'data' which correspond to the variables which will be used to distinguish between lines in the plot. Defaults to ["algorithm_name"].
+        x_min (float, optional): Minimum value to use for the 'eval_var', if not present the min of that column will be used. Defaults to None.
+        x_max (float, optional): Maximum value to use for the 'eval_var', if not present the max of that column will be used. Defaults to None.
+        maximization (bool, optional): Boolean indicating whether the 'fval_var' is being maximized. Defaults to False.
+        measures (Iterable[str], optional): List of measures which should be used in the plot. Valid options are 'geometric_mean', 'mean', 'median', 'min', 'max'. Defaults to ['geometric_mean'].
+        scale_xlog (bool, optional): Should the x-axis be log-scaled. Defaults to True.
+        ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
+        file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+        
+    Returns:
+        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+    """
     if x_min is None:
         x_min = data[eval_var].min()
     if x_max is None:
@@ -429,7 +501,24 @@ def plot_glicko2_ranking(data,
                     fid_vars: Iterable[str] = ["function_name"],
                     perf_var: str = "raw_y",
                     nrounds: int = 25,
-                    ax: matplotlib.axes._axes.Axes = None):
+                    ax: matplotlib.axes._axes.Axes = None,
+                    file_name: str = None):
+    """Method to plot Glicko2 ratings of a set of algorithm on a set of problems. 
+    Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
+    For each round, a sampled performance value is taken from the data and used to determine the winner. 
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        alg_vars (Iterable[str], optional): Which variables specific the algortihms which will compete. Defaults to ["algorithm_name"].
+        fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
+        perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
+        nrounds (int, optional): How many round should be played. Defaults to 25.
+        ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
+        file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+        
+    Returns:
+        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+    """
  # candlestick plot based on average and volatility
     dt_glicko = get_glicko2_ratings(data,
                                     alg_vars,
@@ -450,7 +539,9 @@ def plot_glicko2_ranking(data,
         dt_glicko[alg_vars[0]], dt_glicko['Rating'], yerr=dt_glicko['Deviation'],
         fmt='o', color='blue', alpha=0.6, capsize=5, elinewidth=1.5
     )
-
+    if ax is None and file_name:
+        fig.tight_layout()
+        fig.savefig(file_name)
     return dt_glicko
 
 
@@ -475,7 +566,20 @@ def plot_paretofronts_2d(
     obj_vars: Iterable[str] = ["raw_y", "F2"],
     free_vars: Iterable[str] = ["algorithm_name"],
     ax: matplotlib.axes._axes.Axes = None,
+    file_name: str = None,
 ):
+    """Very basic plot to visualize pareto fronts
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        obj_vars (Iterable[str], optional): Which variables (length should be 2) to use for plotting. Defaults to ["raw_y", "F2"].
+        free_vars (Iterable[str], optional): Which varialbes should be used to distinguish between categories. Defaults to ["algorithm_name"].
+        ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
+        file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+        
+    Returns:
+        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+    """
     assert len(obj_vars) == 2
 
     df = add_indicator(data, Final_NonDominated(), obj_vars)
@@ -483,6 +587,9 @@ def plot_paretofronts_2d(
     if ax is None:
         fig, ax = plt.subplots(figsize=(16, 9))
     sbs.scatterplot(df, x=data.obj_vars[0], y=data.obj_vars[1], hue=free_vars, ax=ax)
+    if ax is None and file_name:
+        fig.tight_layout()
+        fig.savefig(file_name)
     return df
 
 
@@ -490,25 +597,27 @@ def plot_indicator_over_time(
     data: pl.DataFrame,
     obj_columns: Iterable[str],
     indicator: object,
+    eval_column: str = 'evaluations',
     evals_min: int = 0,
     evals_max: int = 50_000,
     nr_eval_steps: int = 50,
     free_variable: str = "algorithm_name",
     ax: matplotlib.axes._axes.Axes = None,
     filename_fig: Optional[str] = None,
-    filename_dataframe: Optional[str] = None,
 ):
-    """_summary_
+    """Convenience function to plot the anytime performance of a single indicator. 
 
     Args:
-        data (pl.DataFrame): _description_
-        obj_columns (Iterable[str]): _description_
-        indicator (object): _description_
-        evals_min (int, optional): _description_. Defaults to 0.
-        evals_max (int, optional): _description_. Defaults to 50_000.
-        nr_eval_steps (int, optional): _description_. Defaults to 50.
-        free_variable (str, optional): _description_. Defaults to 'algorithm_name'.
-        filename_fig (Optional[str], optional): _description_. Defaults to None.
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives. 
+        indicator (object): Indicator object from iohinspector.indicators
+        eval_column (Iterable[str], optional): Which columns in 'data' correspond to the objectives. Defaults to 'evaluations'.
+        evals_min (int, optional): Lower bound for eval_column. Defaults to 0.
+        evals_max (int, optional): Upper bound for eval_column. Defaults to 50_000.
+        nr_eval_steps (int, optional): Number of steps between lower and upper bounds of eval_column. Defaults to 50.
+        free_variable (str, optional): Variable which corresponds to category to differentiate in the plot. Defaults to 'algorithm_name'.
+        ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
+        file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
     """
 
     evals = get_sequence(
@@ -521,13 +630,13 @@ def plot_indicator_over_time(
         fig, ax = plt.subplots(1, 1, figsize=(16, 9))
     sbs.lineplot(
         df,
-        x="evaluations",
+        x=eval_column,
         y=indicator.var_name,
         hue=free_variable,
         palette=sbs.color_palette(n_colors=len(np.unique(data[free_variable]))),
         ax=ax,
     )
-    ax.set_xlabel("Evaluations")
+    ax.set_xlabel(eval_column)
     ax.set_xlim(evals_min, evals_max)
     ax.set_xscale("log")
     ax.grid()
@@ -545,6 +654,15 @@ def plot_robustrank_over_time(
     indicator: object,
     filename_fig: Optional[str] = None,
 ):
+    """Plot robust ranking at distinct timesteps
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives. 
+        evals (Iterable[int]): Timesteps at which to get the rankings
+        indicator (object): Indicator object from iohinspector.indicators
+        filename_fig (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+    """
     from robustranking import Benchmark
     from robustranking.comparison import MOBootstrapComparison, BootstrapComparison
     from robustranking.utils.plots import plot_ci_list, plot_line_ranks
@@ -592,6 +710,15 @@ def plot_robustrank_changes(
     indicator: object,
     filename_fig: Optional[str] = None,
 ):
+    """Plot robust ranking changes at distinct timesteps
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives. 
+        evals (Iterable[int]): Timesteps at which to get the rankings
+        indicator (object): Indicator object from iohinspector.indicators
+        filename_fig (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+    """
     from robustranking import Benchmark
     from robustranking.comparison import MOBootstrapComparison, BootstrapComparison
     from robustranking.utils.plots import plot_ci_list, plot_line_ranks
