@@ -457,7 +457,7 @@ def plot_ecdf(
         maximization=maximization,
     )
     dt_plot = (
-        transform_fval(data_aligned, fval_col=fval_var)
+        transform_fval(data_aligned, fval_col=fval_var, maximization=maximization)
         .group_by([eval_var] + free_vars)
         .mean()
         .sort(eval_var)

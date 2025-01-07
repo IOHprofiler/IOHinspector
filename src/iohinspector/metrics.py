@@ -237,8 +237,6 @@ def get_glicko2_ratings(
         print("This functionality requires the 'skelo' package, which is not found. Please install it to use this function")
         return
     
-    players = data[alg_vars].unique()
-    n_players = players.shape[0]
     fids = data[fid_vars].unique()
     aligned_comps = data.pivot(
         index=alg_vars,
@@ -246,6 +244,8 @@ def get_glicko2_ratings(
         values=perf_var,
         aggregate_function=pl.element(),
     )
+    players = aligned_comps[alg_vars]
+    n_players = players.shape[0]
     comp_arr = np.array(aligned_comps[aligned_comps.columns[len(alg_vars) :]])
 
     rng = np.random.default_rng()
