@@ -6,7 +6,7 @@ import numpy as np
 def align_data(
     df: pl.DataFrame,
     evals: Iterable[int|float],
-    group_cols: Iterable[str] = ['data_id'],
+    group_cols: Iterable[str] = ('data_id',),
     x_col: str = "evaluations",
     y_col: str = "raw_y",
     output: str = "long",

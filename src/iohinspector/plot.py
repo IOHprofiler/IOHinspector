@@ -20,7 +20,7 @@ from .metrics import (
     get_attractor_network
 )
 from .align import align_data
-from .indicators import add_indicator, Final_NonDominated
+from .indicators import add_indicator, final
 from typing import Iterable, Optional
 import polars as pl
 import numpy as np
@@ -583,7 +583,7 @@ def plot_paretofronts_2d(
     """
     assert len(obj_vars) == 2
 
-    df = add_indicator(data, Final_NonDominated(), obj_vars)
+    df = add_indicator(data, final.NonDominated(), obj_vars)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(16, 9))

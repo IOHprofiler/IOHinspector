@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "iohinspector"
 version = "0.0.1"
 authors = [
+  { name="Diederick Vermetten", email="d.vermetten@gmail.com" },
   { name="Jacob de Nobel", email="jacobdenobel@gmail.com" },
 ]
 description = "Package for managing IOH data"
@@ -18,12 +19,15 @@ classifiers = [
 ]
 dependencies = [
   "matplotlib",
+  "moocore",
   "numpy",
   "pandas",
   "polars",  
-  "robustranking",
-  "moocore"
+  "seaborn"
 ]
+
+[project.optional-dependencies]
+ranking = ["robustranking"]
 
 [tool.poetry.extras]
 glicko = ['skelo']

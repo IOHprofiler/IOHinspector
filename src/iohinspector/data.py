@@ -142,12 +142,13 @@ class Scenario:
                 decimal_comma=True,
                 schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
                 ignore_errors=True,
+                
             )
-            .drop_nulls()
             .with_columns(
                 pl.col("evaluations").cast(pl.UInt64),
                 run_id=(pl.col("evaluations") == 1).cum_sum(),
             )
+            .drop_nulls()
             .filter(pl.col("run_id").is_in([r.id for r in self.runs]))
             .with_columns(
                 data_id=pl.col("run_id").map_elements(
@@ -219,7 +220,7 @@ class Dataset:
                     + [scen.dimension, run.instance, run.id, run.evals, run.best.y]
                     + exattr_values
                 )
-        return pl.DataFrame(records, schema=METADATA_SCHEMA + exattr_schema) 
+        return pl.DataFrame(records, schema=METADATA_SCHEMA + exattr_schema, orient="row") 
 
     @staticmethod
     def from_dict(data: dict, filepath: str):
