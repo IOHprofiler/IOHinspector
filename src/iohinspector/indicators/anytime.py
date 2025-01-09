@@ -10,7 +10,6 @@ from moocore import (
     epsilon_mult,
     filter_dominated,
 )
-from pymoo import get_reference_directions
 
 
 def get_reference_set(
@@ -230,58 +229,63 @@ class IGDPlus:
             .drop(objective_columns)
         )
 
+try:
+    from pymoo import get_reference_directions
+    class R2:
+        def __init__(self, n_ref_dirs: int, ideal_point: np.ndarray):
+            """Function to calculate the R2 indicator over time. Used as an input to the 'add_indicator' function.
 
-class R2:
-    def __init__(self, n_ref_dirs: int, ideal_point: np.ndarray):
-        """Function to calculate the R2 indicator over time. Used as an input to the 'add_indicator' function.
+            Args:
+                n_ref_dirs (int): How many reference directions to use. Reference directions are generated based on pymoo's 'energy' method.
+                ideal_point (np.ndarray): The ideal point for the R2 calculations
+            """
+            self.ref_dirs = get_reference_directions("energy", len(ideal_point), n_ref_dirs)
+            self.ideal_point = ideal_point
 
-        Args:
-            n_ref_dirs (int): How many reference directions to use. Reference directions are generated based on pymoo's 'energy' method.
-            ideal_point (np.ndarray): The ideal point for the R2 calculations
-        """
-        self.ref_dirs = get_reference_directions("energy", len(ideal_point), n_ref_dirs)
-        self.ideal_point = ideal_point
+        @property
+        def var_name(self):
+            return "R2"
 
-    @property
-    def var_name(self):
-        return "R2"
+        @property
+        def minimize(self):
+            return True
 
-    @property
-    def minimize(self):
-        return True
+        def __call__(
+            self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+        ) -> pl.DataFrame:
+            """
 
-    def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
-    ) -> pl.DataFrame:
-        """
+            Args:
+                group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
+                objective_columns (Iterable): Which columns are the objectives
+                evals (Iterable[int]): At which evaluations the operation should be performed.
+                Note that using more evaluations will make the code slower.
 
-        Args:
-            group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
-            objective_columns (Iterable): Which columns are the objectives
-            evals (Iterable[int]): At which evaluations the operation should be performed.
-            Note that using more evaluations will make the code slower.
-
-        Returns:
-            pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
-        """
-        obj_vals = np.array(group[objective_columns])
-        evals_dt = group["evaluations"]
-        igds = [
-            _r2(
-                self.ref_dirs,
-                self.ideal_point,
-                filter_dominated(obj_vals[: (evals_dt <= eval).sum()]),
+            Returns:
+                pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
+            """
+            obj_vals = np.array(group[objective_columns])
+            evals_dt = group["evaluations"]
+            igds = [
+                _r2(
+                    self.ref_dirs,
+                    self.ideal_point,
+                    filter_dominated(obj_vals[: (evals_dt <= eval).sum()]),
+                )
+                for eval in evals
+            ]
+            return (
+                pl.DataFrame(
+                    [
+                        pl.Series(name="evaluations", values=evals, dtype=pl.UInt64),
+                        pl.Series(name=self.var_name, values=igds),
+                    ]
+                )
+                .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
+                .fill_null(np.inf)
+                .drop(objective_columns)
             )
-            for eval in evals
-        ]
-        return (
-            pl.DataFrame(
-                [
-                    pl.Series(name="evaluations", values=evals, dtype=pl.UInt64),
-                    pl.Series(name=self.var_name, values=igds),
-                ]
-            )
-            .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
-            .fill_null(np.inf)
-            .drop(objective_columns)
-        )
+
+except ImportError:
+    import warnings
+    warnings.warn("R2 indicator is N/A without pymoo installed")

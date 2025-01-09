@@ -19,7 +19,7 @@ from .metrics import (
     get_glicko2_ratings,
     get_attractor_network
 )
-from .align import align_data
+from .align import align_data, turbo_align
 from .indicators import add_indicator, final
 from typing import Iterable, Optional
 import polars as pl
@@ -448,10 +448,10 @@ def plot_ecdf(
     if x_max is None:
         x_max = data[eval_var].max()
     x_values = get_sequence(x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True)
-    data_aligned = align_data(
-        data.cast({eval_var: pl.Int64}),
+    
+    data_aligned = turbo_align(
+        data,
         x_values,
-        group_cols=["data_id"] + free_vars,
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,

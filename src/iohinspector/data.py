@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import polars as pl
+from .align import turbo_align
 
 METADATA_SCHEMA = [
     ("data_id", pl.UInt64),
@@ -128,7 +129,7 @@ class Scenario:
             ],
         )
 
-    def load(self, monotonic=False, maximize=True) -> pl.DataFrame:
+    def load(self, monotonic=False, maximize=True, x_values = None) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame"""
 
         with open(self.data_file) as f:
@@ -157,15 +158,20 @@ class Scenario:
             )
         )
 
-        if monotonic:
+        if monotonic or x_values is not None:
             if maximize:
                 dt = dt.with_columns(pl.col("raw_y").cum_max().over("run_id"))
             else:
                 dt = dt.with_columns(pl.col("raw_y").cum_min().over("run_id"))
 
             dt = dt.filter(pl.col("raw_y").diff().fill_null(1.0).abs() > 0.0)
-
+            
+            
         dt = dt.collect()
+        
+        if x_values is not None:
+            dt = turbo_align(dt, x_values)                        
+        
         return dt
 
 
