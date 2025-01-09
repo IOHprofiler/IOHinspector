@@ -13,11 +13,11 @@ plt.rc("font", **font)
 from .manager import DataManager
 from .metrics import (
     aggegate_running_time,
-    transform_fval,
     get_sequence,
     aggegate_convergence,
     get_tournament_ratings,
-    get_attractor_network
+    get_attractor_network,
+    get_data_ecdf,
 )
 from .align import align_data
 from .indicators import add_indicator, final
@@ -182,7 +182,7 @@ def single_function_fixedbudget(
 def heatmap_single_run(
     data: pl.DataFrame,
     var_cols: Iterable[str],
-    eval_col: str = 'evaluations',
+    eval_col: str = "evaluations",
     scale_xlog: bool = True,
     x_mins: Iterable[float] = [-5],
     x_maxs: Iterable[float] = [5],
@@ -204,7 +204,7 @@ def heatmap_single_run(
     Returns:
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
-    assert(data["data_id"].n_unique() == 1)
+    assert data["data_id"].n_unique() == 1
     dt_plot = data[var_cols].transpose().to_pandas()
     dt_plot.columns = list(data["evaluations"])
     dt_plot = (dt_plot - x_mins) / (x_maxs - x_mins)
@@ -303,8 +303,8 @@ def plot_eaf_pareto(
 
     Args:
         data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        x_column (str, optional): The variable corresponding to the first objective. 
-        y_column (str, optional): The variable corresponding to the second objective. 
+        x_column (str, optional): The variable corresponding to the first objective.
+        y_column (str, optional): The variable corresponding to the second objective.
         min_y (float): Minimum value for the second objective.
         max_y (float): Maximum value for the second objective.
         scale_xlog (bool, optional): Whether the first objective should be log-scaled. Defaults to False.
@@ -368,8 +368,8 @@ def eaf_diffs(
     Args:
         data1 (pl.DataFrame): The DataFrame which contains the full performance trajectory for algorithm 1. Should be generated from a DataManager.
         data2 (pl.DataFrame): The DataFrame which contains the full performance trajectory for algorithm 2. Should be generated from a DataManager.
-        x_column (str, optional): The variable corresponding to the first objective. 
-        y_column (str, optional): The variable corresponding to the second objective. 
+        x_column (str, optional): The variable corresponding to the first objective.
+        y_column (str, optional): The variable corresponding to the second objective.
         min_y (float): Minimum value for the second objective.
         max_y (float): Maximum value for the second objective.
         scale_xlog (bool, optional): Whether the first objective should be log-scaled. Defaults to False.
@@ -421,6 +421,10 @@ def plot_ecdf(
     scale_xlog: bool = True,
     x_min: int = None,
     x_max: int = None,
+    x_values: Iterable[int] = None,
+    y_min: int = None,
+    y_max: int = None,
+    scale_ylog: bool = True,
     maximization: bool = False,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
@@ -434,40 +438,40 @@ def plot_ecdf(
         free_vars (Iterable[str], optional): Columns in 'data' which correspond to the variables which will be used to distinguish between lines in the plot. Defaults to ["algorithm_name"].
         x_min (float, optional): Minimum value to use for the 'eval_var', if not present the min of that column will be used. Defaults to None.
         x_max (float, optional): Maximum value to use for the 'eval_var', if not present the max of that column will be used. Defaults to None.
+        x_values (Iterable[int], optional): List of x-values at which to plot the ECDF. If not provided, the x_min, x_max and scale_xlog arguments will be used to sample these points.
+        scale_xlog (bool, optional): Should the x-axis be log-scaled. Defaults to True.
+        y_min (float, optional): Minimum value to use for the 'fval_var', if not present the min of that column will be used. Defaults to None.
+        y_max (float, optional): Maximum value to use for the 'fval_var', if not present the max of that column will be used. Defaults to None.
+        scale_ylog (bool, optional): Should the y-values be log-scaled before normalization. Defaults to True.
         maximization (bool, optional): Boolean indicating whether the 'fval_var' is being maximized. Defaults to False.
         measures (Iterable[str], optional): List of measures which should be used in the plot. Valid options are 'geometric_mean', 'mean', 'median', 'min', 'max'. Defaults to ['geometric_mean'].
-        scale_xlog (bool, optional): Should the x-axis be log-scaled. Defaults to True.
         ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
         file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
-        
+
     Returns:
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
-    if x_min is None:
-        x_min = data[eval_var].min()
-    if x_max is None:
-        x_max = data[eval_var].max()
-    x_values = get_sequence(x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True)
-    data_aligned = align_data(
-        data.cast({eval_var: pl.Int64}),
-        x_values,
-        group_cols=["data_id"] + free_vars,
-        x_col=eval_var,
-        y_col=fval_var,
+
+    dt_plot = get_data_ecdf(
+        data=data,
+        fval_var=fval_var,
+        eval_var=eval_var,
+        free_vars=free_vars,
         maximization=maximization,
+        x_values=x_values,
+        x_min=x_min,
+        x_max=x_max,
+        scale_xlog=scale_xlog,
+        y_min=y_min,
+        y_max=y_max,
+        scale_ylog=scale_ylog,
     )
-    dt_plot = (
-        transform_fval(data_aligned, fval_col=fval_var, maximization=maximization)
-        .group_by([eval_var] + free_vars)
-        .mean()
-        .sort(eval_var)
-    ).to_pandas()
     if ax is None:
         fig, ax = plt.subplots(figsize=(16, 9))
     if len(free_vars) == 1:
         hue_arg = free_vars[0]
         style_arg = free_vars[0]
-    else: 
+    else:
         style_arg = free_vars[0]
         hue_arg = dt_plot[free_vars[1:]].apply(tuple, axis=1)
 
@@ -497,17 +501,19 @@ def multi_function_fixedtarget():
     raise NotImplementedError
 
 
-def plot_tournament_ranking(data,
-                    alg_vars: Iterable[str] = ["algorithm_name"],
-                    fid_vars: Iterable[str] = ["function_name"],
-                    perf_var: str = "raw_y",
-                    nrounds: int = 25,
-                    maximization: bool = False,
-                    ax: matplotlib.axes._axes.Axes = None,
-                    file_name: str = None):
-    """Method to plot ELO ratings of a set of algorithm on a set of problems. 
+def plot_tournament_ranking(
+    data,
+    alg_vars: Iterable[str] = ["algorithm_name"],
+    fid_vars: Iterable[str] = ["function_name"],
+    perf_var: str = "raw_y",
+    nrounds: int = 25,
+    maximization: bool = False,
+    ax: matplotlib.axes._axes.Axes = None,
+    file_name: str = None,
+):
+    """Method to plot ELO ratings of a set of algorithm on a set of problems.
     Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
-    For each round, a sampled performance value is taken from the data and used to determine the winner. 
+    For each round, a sampled performance value is taken from the data and used to determine the winner.
 
     Args:
         data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
@@ -518,36 +524,32 @@ def plot_tournament_ranking(data,
         maximization (bool, optional): Whether the performance should be maximized. Defaults to False.
         ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
         file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
-        
+
     Returns:
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
- # candlestick plot based on average and volatility
-    dt_elo = get_tournament_ratings(data,
-                                    alg_vars,
-                                    fid_vars,
-                                    perf_var,
-                                    nrounds, 
-                                    maximization)
-    if ax is None:
-        fig, ax = plt.subplots(1,1,figsize=(16,9))
-    sbs.pointplot(
-        data=dt_elo,
-        x=alg_vars[0],
-        y='Rating',
-        linestyle='none',
-        ax=ax  
+    # candlestick plot based on average and volatility
+    dt_elo = get_tournament_ratings(
+        data, alg_vars, fid_vars, perf_var, nrounds, maximization
     )
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+    sbs.pointplot(data=dt_elo, x=alg_vars[0], y="Rating", linestyle="none", ax=ax)
 
     ax.errorbar(
-        dt_elo[alg_vars[0]], dt_elo['Rating'], yerr=dt_elo['Deviation'],
-        fmt='o', color='blue', alpha=0.6, capsize=5, elinewidth=1.5
+        dt_elo[alg_vars[0]],
+        dt_elo["Rating"],
+        yerr=dt_elo["Deviation"],
+        fmt="o",
+        color="blue",
+        alpha=0.6,
+        capsize=5,
+        elinewidth=1.5,
     )
     if ax is None and file_name:
         fig.tight_layout()
         fig.savefig(file_name)
     return dt_elo
-
 
 
 def robustranking():
@@ -580,7 +582,7 @@ def plot_paretofronts_2d(
         free_vars (Iterable[str], optional): Which varialbes should be used to distinguish between categories. Defaults to ["algorithm_name"].
         ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
         file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
-        
+
     Returns:
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
@@ -601,7 +603,7 @@ def plot_indicator_over_time(
     data: pl.DataFrame,
     obj_columns: Iterable[str],
     indicator: object,
-    eval_column: str = 'evaluations',
+    eval_column: str = "evaluations",
     evals_min: int = 0,
     evals_max: int = 50_000,
     nr_eval_steps: int = 50,
@@ -609,11 +611,11 @@ def plot_indicator_over_time(
     ax: matplotlib.axes._axes.Axes = None,
     filename_fig: Optional[str] = None,
 ):
-    """Convenience function to plot the anytime performance of a single indicator. 
+    """Convenience function to plot the anytime performance of a single indicator.
 
     Args:
         data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives. 
+        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives.
         indicator (object): Indicator object from iohinspector.indicators
         eval_column (Iterable[str], optional): Which columns in 'data' correspond to the objectives. Defaults to 'evaluations'.
         evals_min (int, optional): Lower bound for eval_column. Defaults to 0.
@@ -662,7 +664,7 @@ def plot_robustrank_over_time(
 
     Args:
         data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives. 
+        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives.
         evals (Iterable[int]): Timesteps at which to get the rankings
         indicator (object): Indicator object from iohinspector.indicators
         filename_fig (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
@@ -718,7 +720,7 @@ def plot_robustrank_changes(
 
     Args:
         data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives. 
+        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives.
         evals (Iterable[int]): Timesteps at which to get the rankings
         indicator (object): Indicator object from iohinspector.indicators
         filename_fig (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
@@ -759,13 +761,13 @@ def plot_robustrank_changes(
 
 
 def plot_attractor_network(
-                        data, 
-                        coord_vars: Iterable[str] = ['x1', 'x2'],
-                        fval_var: str = 'raw_y',
-                        eval_var: str = 'evaluations',
-                        maximization: bool = False,
-                        beta=40, 
-                        epsilon=0.0001
+    data,
+    coord_vars: Iterable[str] = ["x1", "x2"],
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+    maximization: bool = False,
+    beta=40,
+    epsilon=0.0001,
 ):
     """Plot an attractor network from the provided data
 
@@ -783,45 +785,60 @@ def plot_attractor_network(
     """
     try:
         import networkx as nx
-    except:    
+    except:
         print("NetworkX is required to use this plot type")
         return
     from sklearn.decomposition import MDS
 
-    nodes, edges = get_attractor_network(data, 
-                                          maximization,
-                                          coord_vars,
-                                          fval_var, 
-                                          eval_var,
-                                          beta, 
-                                          epsilon)
+    nodes, edges = get_attractor_network(
+        data, maximization, coord_vars, fval_var, eval_var, beta, epsilon
+    )
     network = nx.DiGraph()
     for idx, row in nodes.iterrows():
-        network.add_node(idx, decision=np.array(row)[:len(coord_vars)], fitness=row['y'],
-                                hitcount=row['count'], evals=row['evals']/row['count'])
+        network.add_node(
+            idx,
+            decision=np.array(row)[: len(coord_vars)],
+            fitness=row["y"],
+            hitcount=row["count"],
+            evals=row["evals"] / row["count"],
+        )
 
     for _, row in edges.iterrows():
-        network.add_edge(row['start'], row['end'], weight=row['count'], evaldiff=row['stag_length_avg'])
+        network.add_edge(
+            row["start"],
+            row["end"],
+            weight=row["count"],
+            evaldiff=row["stag_length_avg"],
+        )
     network.remove_edges_from(nx.selfloop_edges(network))
 
-    decision_matrix = [network.nodes[node]['decision'] for node in network.nodes()]
+    decision_matrix = [network.nodes[node]["decision"] for node in network.nodes()]
     mds = MDS(n_components=1, random_state=0)
-    x_positions = mds.fit_transform(decision_matrix).flatten()  # Flatten to get 1D array for x-axis
-    y_positions = [network.nodes[node]['fitness'] for node in network.nodes()]
-    pos = {node: (x, y) for node, x, y in zip(network.nodes(), x_positions, y_positions)}
+    x_positions = mds.fit_transform(
+        decision_matrix
+    ).flatten()  # Flatten to get 1D array for x-axis
+    y_positions = [network.nodes[node]["fitness"] for node in network.nodes()]
+    pos = {
+        node: (x, y) for node, x, y in zip(network.nodes(), x_positions, y_positions)
+    }
 
-    hitcounts = [network.nodes[node]['hitcount'] for node in network.nodes()]
+    hitcounts = [network.nodes[node]["hitcount"] for node in network.nodes()]
     if len(hitcounts) > 1:
         min_hitcount = min(hitcounts)
         max_hitcount = max(hitcounts)
     # Node sizes and colors based on fitness values (as in your original code)
     if len(hitcounts) > 1 and np.std(hitcounts) > 0:
         node_sizes = [
-        100 + (400 * (network.nodes[node]['hitcount'] - min_hitcount) / (max_hitcount - min_hitcount))
-        for node in network.nodes()
+            100
+            + (
+                400
+                * (network.nodes[node]["hitcount"] - min_hitcount)
+                / (max_hitcount - min_hitcount)
+            )
+            for node in network.nodes()
         ]
     else:
-        node_sizes = [500]*len(hitcounts)
+        node_sizes = [500] * len(hitcounts)
     fitness_values = y_positions  # Reuse y_positions as they represent 'fitness'
     norm = plt.Normalize(min(fitness_values), max(fitness_values))
     node_colors = plt.cm.viridis(norm(fitness_values))
@@ -835,13 +852,13 @@ def plot_attractor_network(
         with_labels=False,
         node_size=node_sizes,
         node_color=node_colors[:, :3],
-        edge_color='gray',
+        edge_color="gray",
         width=2,
-        ax=ax
+        ax=ax,
     )
 
     # Add colorbar for fitness values
-    sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=norm)
     sm.set_array(fitness_values)
     plt.xlabel("MDS-reduced decision vector")
     plt.ylabel("fitness")
