@@ -8,6 +8,8 @@ from .align import align_data
 
 import pandas as pd
 
+from warnings import warn
+
 
 def get_sequence(
     min: float,
@@ -122,18 +124,18 @@ def aggegate_convergence(
 
 def transform_fval(
     data: pl.DataFrame,
-      lb:float=1e-8, 
-      ub:float=1e8, 
-      scale_log:bool=True, 
-      maximization:bool=False, 
-      fval_col:str="raw_y"
+    lb: float = 1e-8,
+    ub: float = 1e8,
+    scale_log: bool = True,
+    maximization: bool = False,
+    fval_col: str = "raw_y",
 ):
     """Helper function to transform function values (min-max normalization based on provided bounds and scaling)
 
     Args:
         data (pl.DataFrame): The data object to use for getting the performance.
-        lb (float, optional): Lower bound for scaling of function values. Defaults to 1e-8.
-        ub (float, optional): Upper bound for scaling of function values. Defaults to 1e8.
+        lb (float, optional): Lower bound for scaling of function values. If None, it is the max value found in data. Defaults to 1e-8.
+        ub (float, optional): Upper bound for scaling of function values. If None, it is the max value found in data. Defaults to 1e8.
         scale_log (bool, optional): Whether function values should be log-scaled before scaling. Defaults to True.
         maximization (bool, optional): Whether function values is being maximized. Defaults to False.
         fval_col (str, optional): Which column in data to use. Defaults to "raw_y".
@@ -141,6 +143,15 @@ def transform_fval(
     Returns:
         _type_: a copy of the original data with a new column 'eaf' with the scaled function values (which is always to be maximized)
     """
+    if ub == None:
+        ub = data[fval_col].max()
+    if lb == None:
+        lb = data[fval_col].min()
+        if lb <= 0 and scale_log:
+            lb = 1e-8
+            warnings.warn(
+                "If using logarithmic scaling, lb should be set to prevent errors in log-calculation. Lb is being overwritten to 1e-8 to avoid this."
+            )
     if scale_log:
         lb = np.log10(lb)
         ub = np.log10(ub)
@@ -206,20 +217,23 @@ def get_aocc(
     aoccs = aocc_contribs.group_by(["data_id"] + group_cols).agg(
         pl.col("aocc_contribution").sum()
     )
-    aoccs.group_by(group_cols).agg(pl.col("aocc_contribution").mean().alias("AOCC"))
-    return aoccs
+    return aoccs.group_by(group_cols).agg(
+        pl.col("aocc_contribution").mean().alias("AOCC")
+    )
 
 
-def get_glicko2_ratings(
+def get_tournament_ratings(
     data: pl.DataFrame,
     alg_vars: Iterable[str] = ["algorithm_name"],
     fid_vars: Iterable[str] = ["function_name"],
     perf_var: str = "raw_y",
     nrounds: int = 25,
+    maximization: bool = False,
 ):
-    """Method to calculate Glicko2 ratings of a set of algorithm on a set of problems. 
+    """Method to calculate ratings of a set of algorithm on a set of problems.
     Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
-    For each round, a sampled performance value is taken from the data and used to determine the winner. 
+    For each round, a sampled performance value is taken from the data and used to determine the winner.
+    This function uses the ELO rating scheme, as opposed to the Glicko2 scheme used in the IOHanalyzer. Deviations are estimated based on the last 5% of rounds.
 
     Args:
         data (pl.DataFrame): The data object to use for getting the performance.
@@ -227,16 +241,19 @@ def get_glicko2_ratings(
         fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
         perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
         nrounds (int, optional): How many round should be played. Defaults to 25.
+        maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
 
     Returns:
         pd.DataFrame: Pandas dataframe with rating, deviation and volatility for each 'alg_vars' combination
     """
     try:
-        from skelo.model.glicko2 import Glicko2Estimator
+        from skelo.model.elo import EloEstimator
     except:
-        print("This functionality requires the 'skelo' package, which is not found. Please install it to use this function")
+        print(
+            "This functionality requires the 'skelo' package, which is not found. Please install it to use this function"
+        )
         return
-    
+
     fids = data[fid_vars].unique()
     aligned_comps = data.pivot(
         index=alg_vars,
@@ -249,55 +266,44 @@ def get_glicko2_ratings(
     comp_arr = np.array(aligned_comps[aligned_comps.columns[len(alg_vars) :]])
 
     rng = np.random.default_rng()
-    fids_shuffled = [i for i in range(len(fids))]
-    p1_order = [i for i in range(n_players)]
-    p2_order = [i for i in range(n_players)]
+    fids = [i for i in range(len(fids))]
+    players = [i for i in range(n_players)]
     records = []
     for round in range(nrounds):
-        rng.shuffle(fids_shuffled)
-        for fid in fids_shuffled:
-            rng.shuffle(p1_order)
-            for p1 in p1_order:
-                rng.shuffle(p2_order)
-                for p2 in p2_order:
+        for fid in fids:
+            for p1 in players:
+                for p2 in players:
                     if p1 == p2:
                         continue
                     s1 = rng.choice(comp_arr[p1][fid], 1)[0]
                     s2 = rng.choice(comp_arr[p2][fid], 1)[0]
-                    if not np.isfinite(s1):
-                        if not np.isfinite(s2):
-                            won = 0.5
-                        else:
-                            won = 0.0
+                    if s1 == s2:
+                        won = 0.5
                     else:
-                        if not np.isfinite(s2):
-                            won = 1.0
-                        elif s1 == s2:
-                            won = 0.5
-                        else:
-                            won = float(s1 < s2) #TODO: maximization argument!
+                        won = abs(float(maximization) - float(s1 < s2))
 
                     records.append([round, p1, p2, won])
     dt_comp = pd.DataFrame.from_records(
         records, columns=["round", "p1", "p2", "outcome"]
     )
-    model = Glicko2Estimator(
-        key1_field="p1", key2_field="p2", timestamp_field="round"
-    ).fit(dt_comp, dt_comp["outcome"])
-    ratings = np.array(
-        model.rating_model.to_frame()[
-            np.isnan(model.rating_model.to_frame()["valid_to"])
-        ]["rating"]
+    dt_comp = dt_comp.sample(frac=1).sort_values("round")
+    model = EloEstimator(key1_field="p1", key2_field="p2", timestamp_field="round").fit(
+        dt_comp, dt_comp["outcome"]
     )
-    rating_dt = pd.DataFrame(
+    model_dt = model.rating_model.to_frame()
+    ratings = np.array(model_dt[np.isnan(model_dt["valid_to"])]["rating"])
+    deviations = (
+        model_dt.query(f"valid_from >= {nrounds * 0.95}").groupby("key")["rating"].std()
+    )
+    rating_dt_elo = pd.DataFrame(
         [
-            [rating[0] for rating in ratings],
-            [rating[1] for rating in ratings],
+            ratings,
+            deviations,
             *players[players.columns],
         ]
     ).transpose()
-    rating_dt.columns = ["Rating", "Deviation", *players.columns]
-    return rating_dt
+    rating_dt_elo.columns = ["Rating", "Deviation", *players.columns]
+    return rating_dt_elo
 
 
 def aggegate_running_time(
@@ -356,7 +362,10 @@ def aggegate_running_time(
         # pl.mean(evaluation_variable).alias("mean"),
         pl.col(evaluation_variable).replace(np.inf, max_budget).min().alias("min"),
         pl.col(evaluation_variable).replace(np.inf, max_budget).max().alias("max"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).median().alias("median"),
+        pl.col(evaluation_variable)
+        .replace(np.inf, max_budget)
+        .median()
+        .alias("median"),
         pl.col(evaluation_variable).replace(np.inf, max_budget).std().alias("std"),
         pl.col(evaluation_variable).is_finite().mean().alias("success_ratio"),
         pl.col(evaluation_variable).is_finite().sum().alias("success_count"),
@@ -381,7 +390,10 @@ def aggegate_running_time(
         return dt_plot.sort(fval_variable).to_pandas()
     return dt_plot.sort(fval_variable)
 
-def add_normalized_objectives(data: pl.DataFrame, obj_cols: Iterable[str], max_vals: Optional[pl.DataFrame] = None):
+
+def add_normalized_objectives(
+    data: pl.DataFrame, obj_cols: Iterable[str], max_vals: Optional[pl.DataFrame] = None
+):
     """Add new normalized columns to provided dataframe based on the provided objective columns
 
     Args:
@@ -393,30 +405,45 @@ def add_normalized_objectives(data: pl.DataFrame, obj_cols: Iterable[str], max_v
         _type_: The original `data` DataFrame with a new column 'objI' added for each objective, for I=1...len(obj_cols)
     """
     if type(max_vals) == pl.DataFrame:
-        return data.with_columns([(data[colname]/max_vals[colname].max()).alias(f'obj{idx + 1}') for idx, colname in enumerate(obj_cols)])
+        return data.with_columns(
+            [
+                (data[colname] / max_vals[colname].max()).alias(f"obj{idx + 1}")
+                for idx, colname in enumerate(obj_cols)
+            ]
+        )
     else:
-        return data.with_columns([(data[colname]/data[colname].max()).alias(f'obj{idx + 1}') for idx, colname in enumerate(obj_cols)])
+        return data.with_columns(
+            [
+                (data[colname] / data[colname].max()).alias(f"obj{idx + 1}")
+                for idx, colname in enumerate(obj_cols)
+            ]
+        )
 
 
 def _get_nodeidx(xloc, yval, nodes, epsilon):
     if len(nodes) == 0:
         return -1
-    candidates = nodes[np.isclose(nodes['y'], yval, atol = epsilon)]
+    candidates = nodes[np.isclose(nodes["y"], yval, atol=epsilon)]
     if len(candidates) == 0:
         return -1
-    idxs = np.all(np.isclose(np.array(candidates)[:, :len(xloc)], xloc, atol=epsilon), axis=1)
+    idxs = np.all(
+        np.isclose(np.array(candidates)[:, : len(xloc)], xloc, atol=epsilon), axis=1
+    )
     if any(idxs):
         return candidates[idxs].index[0]
     return -1
 
-def get_attractor_network(data, 
-                           coord_vars = ['x1', 'x2'],
-                           fval_var: str = 'raw_y',
-                           eval_var: str = 'evaluations',
-                           maximization: bool = False,
-                           beta=40, 
-                           epsilon=0.0001,
-                           eval_max = None):
+
+def get_attractor_network(
+    data,
+    coord_vars=["x1", "x2"],
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+    maximization: bool = False,
+    beta=40,
+    epsilon=0.0001,
+    eval_max=None,
+):
     """Create an attractor network from the provided data
 
     Args:
@@ -431,28 +458,30 @@ def get_attractor_network(data,
     Returns:
         pd.DataFrame, pd.DataFrame: two dataframes containing the nodes and edges of the network respectively.
     """
-        
+
     running_idx = 0
     running_edgeidx = 0
-    nodes = pd.DataFrame(columns=[*coord_vars, 'y', 'count', 'evals'])
-    edges = pd.DataFrame(columns=['start', 'end', 'count', 'stag_length_avg'])
+    nodes = pd.DataFrame(columns=[*coord_vars, "y", "count", "evals"])
+    edges = pd.DataFrame(columns=["start", "end", "count", "stag_length_avg"])
     if eval_max is None:
         eval_max = max(data[eval_var])
 
-    for run_id in data['data_id'].unique():
-        dt_group = data.filter(pl.col('data_id') == run_id, pl.col(eval_var) <= eval_max)
+    for run_id in data["data_id"].unique():
+        dt_group = data.filter(
+            pl.col("data_id") == run_id, pl.col(eval_var) <= eval_max
+        )
         if maximization:
             ys = np.maximum.accumulate(np.array(dt_group[fval_var]))
         else:
             ys = np.minimum.accumulate(np.array(dt_group[fval_var]))
         xs = np.array(dt_group[coord_vars])
 
-        stopping_points = np.where(np.abs(np.diff(ys, prepend=np.inf))>0)[0]
+        stopping_points = np.where(np.abs(np.diff(ys, prepend=np.inf)) > 0)[0]
         evals = np.array(dt_group[eval_var])
-        
+
         stagnation_lengths = np.diff(evals[stopping_points], append=eval_max)
-        edge_lengths = stagnation_lengths[stagnation_lengths>beta]
-        real_idxs = [stopping_points[i] for i in np.where(stagnation_lengths>beta)[0]]
+        edge_lengths = stagnation_lengths[stagnation_lengths > beta]
+        real_idxs = [stopping_points[i] for i in np.where(stagnation_lengths > beta)[0]]
 
         xloc = xs[real_idxs[0]]
         yval = ys[real_idxs[0]]
@@ -462,35 +491,103 @@ def get_attractor_network(data,
             node1 = running_idx
             running_idx += 1
         else:
-            nodes.loc[nodeidx, 'evals'] += evals[real_idxs[0]]
-            nodes.loc[nodeidx, 'count'] += 1
+            nodes.loc[nodeidx, "evals"] += evals[real_idxs[0]]
+            nodes.loc[nodeidx, "count"] += 1
             node1 = nodeidx
-        
+
         if len(real_idxs) == 1:
             continue
 
-        for i in range(len(real_idxs)-1):
-            xloc = xs[real_idxs[i+1]]
-            yval = ys[real_idxs[i+1]]
+        for i in range(len(real_idxs) - 1):
+            xloc = xs[real_idxs[i + 1]]
+            yval = ys[real_idxs[i + 1]]
             nodeidx = _get_nodeidx(xloc, yval, nodes, epsilon)
             if nodeidx == -1:
-                nodes.loc[running_idx] = [*xloc, yval, 1, evals[real_idxs[i+1]]]
+                nodes.loc[running_idx] = [*xloc, yval, 1, evals[real_idxs[i + 1]]]
                 node2 = running_idx
                 running_idx += 1
             else:
-                nodes.loc[nodeidx, 'evals'] += evals[real_idxs[i+1]]
-                nodes.loc[nodeidx, 'count'] += 1
+                nodes.loc[nodeidx, "evals"] += evals[real_idxs[i + 1]]
+                nodes.loc[nodeidx, "count"] += 1
                 node2 = nodeidx
 
             edgelen = edge_lengths[i]
             edge_idxs = edges.query(f"start == {node1} & end == {node2}").index
             if len(edge_idxs) == 0:
                 edges.loc[running_edgeidx] = [node1, node2, 1, edgelen]
-                running_edgeidx += 1 
+                running_edgeidx += 1
             else:
-                curr_count = edges.loc[edge_idxs[0]]['count']
-                curr_len = edges.loc[edge_idxs[0]]['stag_length_avg']
-                edges.loc[edge_idxs[0], 'stag_length_avg'] = (curr_len*curr_count + edgelen)/(curr_count+1)
-                edges.loc[edge_idxs[0], 'count'] += 1
+                curr_count = edges.loc[edge_idxs[0]]["count"]
+                curr_len = edges.loc[edge_idxs[0]]["stag_length_avg"]
+                edges.loc[edge_idxs[0], "stag_length_avg"] = (
+                    curr_len * curr_count + edgelen
+                ) / (curr_count + 1)
+                edges.loc[edge_idxs[0], "count"] += 1
             node1 = node2
     return nodes, edges
+
+
+def get_data_ecdf(
+    data,
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+    free_vars: Iterable[str] = ["algorithm_name"],
+    maximization: bool = False,
+    x_values: Iterable[int] = None,
+    x_min: int = None,
+    x_max: int = None,
+    scale_xlog: bool = True,
+    y_min: int = None,
+    y_max: int = None,
+    scale_ylog: bool = True,
+):
+    """Function to plot empirical cumulative distribution function (Based on EAF)
+
+    Args:
+        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
+        eval_var (str, optional): Column in 'data' which corresponds to the number of evaluations. Defaults to "evaluations".
+        fval_var (str, optional): Column in 'data' which corresponds to the performance measure. Defaults to "raw_y".
+        free_vars (Iterable[str], optional): Columns in 'data' which correspond to groups over which data should not be aggregated. Defaults to ["algorithm_name"].
+        maximization (bool, optional): Boolean indicating whether the 'fval_var' is being maximized. Defaults to False.
+        measures (Iterable[str], optional): List of measures which should be used in the plot. Valid options are 'geometric_mean', 'mean', 'median', 'min', 'max'. Defaults to ['geometric_mean'].
+        x_values (Iterable[int], optional): List of x-values at which to get the ECDF data. If not provided, the x_min, x_max and scale_xlog arguments will be used to sample these points.
+        scale_xlog (bool, optional): Should the x-samples be log-scaled. Defaults to True.
+        x_min (float, optional): Minimum value to use for the 'eval_var', if not present the min of that column will be used. Defaults to None.
+        x_max (float, optional): Maximum value to use for the 'eval_var', if not present the max of that column will be used. Defaults to None.
+        scale_ylog (bool, optional): Should the y-values be log-scaled before normalization. Defaults to True.
+        y_min (float, optional): Minimum value to use for the 'fval_var', if not present the min of that column will be used. Defaults to None.
+        y_max (float, optional): Maximum value to use for the 'fval_var', if not present the max of that column will be used. Defaults to None.
+
+    Returns:
+        pd.DataFrame: pandas dataframe of the ECDF data.
+    """
+    if x_values is None:
+        if x_min is None:
+            x_min = data[eval_var].min()
+        if x_max is None:
+            x_max = data[eval_var].max()
+        x_values = get_sequence(
+            x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True
+        )
+    data_aligned = align_data(
+        data.cast({eval_var: pl.Int64}),
+        x_values,
+        group_cols=["data_id"] + free_vars,
+        x_col=eval_var,
+        y_col=fval_var,
+        maximization=maximization,
+    )
+    dt_ecdf = (
+        transform_fval(
+            data_aligned,
+            fval_col=fval_var,
+            maximization=maximization,
+            lb=y_min,
+            ub=y_max,
+            scale_log=scale_ylog,
+        )
+        .group_by([eval_var] + free_vars)
+        .mean()
+        .sort(eval_var)
+    ).to_pandas()
+    return dt_ecdf
