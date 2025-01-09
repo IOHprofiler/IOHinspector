@@ -206,9 +206,7 @@ def get_aocc(
     aoccs = aocc_contribs.group_by(["data_id"] + group_cols).agg(
         pl.col("aocc_contribution").sum()
     )
-    aoccs.group_by(group_cols).agg(pl.col("aocc_contribution").mean().alias("AOCC"))
-    return aoccs
-
+    return aoccs.group_by(group_cols).agg(pl.col("aocc_contribution").mean().alias("AOCC"))
 
 def get_tournament_ratings(
     data: pl.DataFrame,

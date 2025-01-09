@@ -16,7 +16,7 @@ from .metrics import (
     transform_fval,
     get_sequence,
     aggegate_convergence,
-    get_glicko2_ratings,
+    get_tournament_ratings,
     get_attractor_network
 )
 from .align import align_data
@@ -497,14 +497,15 @@ def multi_function_fixedtarget():
     raise NotImplementedError
 
 
-def plot_glicko2_ranking(data,
+def plot_tournament_ranking(data,
                     alg_vars: Iterable[str] = ["algorithm_name"],
                     fid_vars: Iterable[str] = ["function_name"],
                     perf_var: str = "raw_y",
                     nrounds: int = 25,
+                    maximization: bool = False,
                     ax: matplotlib.axes._axes.Axes = None,
                     file_name: str = None):
-    """Method to plot Glicko2 ratings of a set of algorithm on a set of problems. 
+    """Method to plot ELO ratings of a set of algorithm on a set of problems. 
     Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
     For each round, a sampled performance value is taken from the data and used to determine the winner. 
 
@@ -514,6 +515,7 @@ def plot_glicko2_ranking(data,
         fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
         perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
         nrounds (int, optional): How many round should be played. Defaults to 25.
+        maximization (bool, optional): Whether the performance should be maximized. Defaults to False.
         ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
         file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
         
@@ -521,15 +523,16 @@ def plot_glicko2_ranking(data,
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
  # candlestick plot based on average and volatility
-    dt_glicko = get_glicko2_ratings(data,
+    dt_elo = get_tournament_ratings(data,
                                     alg_vars,
                                     fid_vars,
                                     perf_var,
-                                    nrounds)
+                                    nrounds, 
+                                    maximization)
     if ax is None:
         fig, ax = plt.subplots(1,1,figsize=(16,9))
     sbs.pointplot(
-        data=dt_glicko,
+        data=dt_elo,
         x=alg_vars[0],
         y='Rating',
         linestyle='none',
@@ -537,13 +540,13 @@ def plot_glicko2_ranking(data,
     )
 
     ax.errorbar(
-        dt_glicko[alg_vars[0]], dt_glicko['Rating'], yerr=dt_glicko['Deviation'],
+        dt_elo[alg_vars[0]], dt_elo['Rating'], yerr=dt_elo['Deviation'],
         fmt='o', color='blue', alpha=0.6, capsize=5, elinewidth=1.5
     )
     if ax is None and file_name:
         fig.tight_layout()
         fig.savefig(file_name)
-    return dt_glicko
+    return dt_elo
 
 
 
