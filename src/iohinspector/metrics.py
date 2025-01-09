@@ -210,16 +210,17 @@ def get_aocc(
     return aoccs
 
 
-def get_glicko2_ratings(
+def get_tournament_ratings(
     data: pl.DataFrame,
     alg_vars: Iterable[str] = ["algorithm_name"],
     fid_vars: Iterable[str] = ["function_name"],
     perf_var: str = "raw_y",
     nrounds: int = 25,
 ):
-    """Method to calculate Glicko2 ratings of a set of algorithm on a set of problems. 
+    """Method to calculate ratings of a set of algorithm on a set of problems. 
     Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
     For each round, a sampled performance value is taken from the data and used to determine the winner. 
+    This function uses the ELO rating scheme, as opposed to the Glicko2 scheme used in the IOHanalyzer. Deviations are estimated based on the last 5% of rounds.
 
     Args:
         data (pl.DataFrame): The data object to use for getting the performance.
@@ -232,7 +233,7 @@ def get_glicko2_ratings(
         pd.DataFrame: Pandas dataframe with rating, deviation and volatility for each 'alg_vars' combination
     """
     try:
-        from skelo.model.glicko2 import Glicko2Estimator
+        from skelo.model.glicko2 import EloEstimator
     except:
         print("This functionality requires the 'skelo' package, which is not found. Please install it to use this function")
         return
@@ -281,23 +282,25 @@ def get_glicko2_ratings(
     dt_comp = pd.DataFrame.from_records(
         records, columns=["round", "p1", "p2", "outcome"]
     )
-    model = Glicko2Estimator(
+    model = EloEstimator(
         key1_field="p1", key2_field="p2", timestamp_field="round"
     ).fit(dt_comp, dt_comp["outcome"])
+    model_dt = model.rating_model.to_frame()
     ratings = np.array(
-        model.rating_model.to_frame()[
-            np.isnan(model.rating_model.to_frame()["valid_to"])
+        model_dt[
+            np.isnan(model_dt["valid_to"])
         ]["rating"]
     )
-    rating_dt = pd.DataFrame(
+    deviations = model_dt.query(f'valid_from >= {nrounds * 0.95}').groupby('key')['rating'].std()
+    rating_dt_elo = pd.DataFrame(
         [
-            [rating[0] for rating in ratings],
-            [rating[1] for rating in ratings],
+            ratings,
+            deviations,
             *players[players.columns],
         ]
     ).transpose()
-    rating_dt.columns = ["Rating", "Deviation", *players.columns]
-    return rating_dt
+    rating_dt_elo.columns = ["Rating", "Deviation", *players.columns]
+    return rating_dt_elo
 
 
 def aggegate_running_time(
