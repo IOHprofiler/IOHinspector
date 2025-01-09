@@ -216,6 +216,7 @@ def get_tournament_ratings(
     fid_vars: Iterable[str] = ["function_name"],
     perf_var: str = "raw_y",
     nrounds: int = 25,
+    maximization: bool = False,
 ):
     """Method to calculate ratings of a set of algorithm on a set of problems. 
     Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
@@ -228,6 +229,7 @@ def get_tournament_ratings(
         fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
         perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
         nrounds (int, optional): How many round should be played. Defaults to 25.
+        maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
 
     Returns:
         pd.DataFrame: Pandas dataframe with rating, deviation and volatility for each 'alg_vars' combination
@@ -250,38 +252,27 @@ def get_tournament_ratings(
     comp_arr = np.array(aligned_comps[aligned_comps.columns[len(alg_vars) :]])
 
     rng = np.random.default_rng()
-    fids_shuffled = [i for i in range(len(fids))]
-    p1_order = [i for i in range(n_players)]
-    p2_order = [i for i in range(n_players)]
+    fids= [i for i in range(len(fids))]
+    players = [i for i in range(n_players)]
     records = []
     for round in range(nrounds):
-        rng.shuffle(fids_shuffled)
-        for fid in fids_shuffled:
-            rng.shuffle(p1_order)
-            for p1 in p1_order:
-                rng.shuffle(p2_order)
-                for p2 in p2_order:
+        for fid in fids:
+            for p1 in players:
+                for p2 in players:
                     if p1 == p2:
                         continue
                     s1 = rng.choice(comp_arr[p1][fid], 1)[0]
                     s2 = rng.choice(comp_arr[p2][fid], 1)[0]
-                    if not np.isfinite(s1):
-                        if not np.isfinite(s2):
-                            won = 0.5
-                        else:
-                            won = 0.0
+                    if s1 == s2:
+                        won = 0.5
                     else:
-                        if not np.isfinite(s2):
-                            won = 1.0
-                        elif s1 == s2:
-                            won = 0.5
-                        else:
-                            won = float(s1 < s2) #TODO: maximization argument!
+                        won = abs(float(maximization) - float(s1 < s2))
 
                     records.append([round, p1, p2, won])
     dt_comp = pd.DataFrame.from_records(
         records, columns=["round", "p1", "p2", "outcome"]
     )
+    dt_comp = dt_comp.sample(frac=1).sort_values('round')
     model = EloEstimator(
         key1_field="p1", key2_field="p2", timestamp_field="round"
     ).fit(dt_comp, dt_comp["outcome"])
