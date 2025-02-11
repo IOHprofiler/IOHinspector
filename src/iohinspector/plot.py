@@ -19,7 +19,7 @@ from .metrics import (
     get_attractor_network,
     get_data_ecdf,
 )
-from .align import align_data
+from .align import align_data, turbo_align
 from .indicators import add_indicator, final
 from typing import Iterable, Optional
 import polars as pl
@@ -452,11 +452,17 @@ def plot_ecdf(
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
 
-    dt_plot = get_data_ecdf(
-        data=data,
-        fval_var=fval_var,
-        eval_var=eval_var,
-        free_vars=free_vars,
+    if x_min is None:
+        x_min = data[eval_var].min()
+    if x_max is None:
+        x_max = data[eval_var].max()
+    x_values = get_sequence(x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True)
+    
+    data_aligned = turbo_align(
+        data,
+        x_values,
+        x_col=eval_var,
+        y_col=fval_var,
         maximization=maximization,
         x_values=x_values,
         x_min=x_min,

@@ -205,6 +205,7 @@ class DataManager:
         monotonic: bool = True,
         include_meta_data: bool = False,
         include_columns: list[str] = None,
+        x_values: list[str] = None
     ) -> pl.DataFrame:
         if not self.any:
             return pl.DataFrame()
@@ -212,7 +213,7 @@ class DataManager:
         data = []
         for data_set in self.data_sets:
             for scen in data_set.scenarios:
-                df = scen.load(monotonic, data_set.function.maximization)
+                df = scen.load(monotonic, data_set.function.maximization, x_values)
                 data.append(df)
 
         data = pl.concat(data)
