@@ -392,7 +392,7 @@ def aggegate_running_time(
 
 
 def add_normalized_objectives(
-    data: pl.DataFrame, obj_cols: Iterable[str], max_vals: Optional[pl.DataFrame] = None
+    data: pl.DataFrame, obj_cols: Iterable[str], max_vals: Optional[pl.DataFrame] = None, min_vals: Optional[pl.DataFrame] = None
 ):
     """Add new normalized columns to provided dataframe based on the provided objective columns
 
@@ -400,24 +400,25 @@ def add_normalized_objectives(
         data (pl.DataFrame): The original dataframe
         obj_cols (Iterable[str]): The names of each objective column
         max_vals (Optional[pl.DataFrame]): If provided, these values will be used as the maxima instead of the values found in `data`
+        min_vals (Optional[pl.DataFrame]): If provided, these values will be used as the minima instead of the values found in `data`
 
     Returns:
         _type_: The original `data` DataFrame with a new column 'objI' added for each objective, for I=1...len(obj_cols)
     """
     if type(max_vals) == pl.DataFrame:
-        return data.with_columns(
-            [
-                (data[colname] / max_vals[colname].max()).alias(f"obj{idx + 1}")
-                for idx, colname in enumerate(obj_cols)
-            ]
-        )
+        data_max = [max_vals[colname].max() for colname in obj_cols]
     else:
-        return data.with_columns(
-            [
-                (data[colname] / data[colname].max()).alias(f"obj{idx + 1}")
-                for idx, colname in enumerate(obj_cols)
-            ]
-        )
+        data_max = [data[colname].max() for colname in obj_cols]
+    if type(min_vals) == pl.DataFrame:
+        data_min = [min_vals[colname].min() for colname in obj_cols]
+    else:
+        data_min = [data[colname].min() for colname in obj_cols]
+    return data.with_columns(
+        [
+            ((data[colname] - data_min[idx]) / (data_max[idx] - data_min[idx])).alias(f"obj{idx + 1}")
+            for idx, colname in enumerate(obj_cols)
+        ]
+    )
 
 
 def _get_nodeidx(xloc, yval, nodes, epsilon):
@@ -572,7 +573,7 @@ def get_data_ecdf(
     data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),
         x_values,
-        group_cols=["data_id"] + free_vars,
+        group_cols=["data_id"],
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
