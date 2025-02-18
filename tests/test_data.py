@@ -28,7 +28,6 @@ class TestManager(unittest.TestCase):
     def test_add_json(self):
         manager = DataManager()
         manager.add_json(self.json_files[0])
-        breakpoint()
         data = manager.data_sets[0]
         df = data.scenarios[0].load()
         self.assertTrue(isinstance(df, pl.DataFrame))
