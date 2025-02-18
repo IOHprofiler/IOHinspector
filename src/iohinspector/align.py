@@ -1,3 +1,4 @@
+import warnings
 from typing import Iterable
 
 import polars as pl
@@ -28,6 +29,7 @@ def align_data(
         pl.DataFrame: Alligned DataFrame
     """
 
+    warnings.warn(DeprecationWarning, "Turbo align is favoured over this function")
     evals_df = pl.DataFrame({x_col: evals})
 
     def merge_asof_group(group):
@@ -64,7 +66,7 @@ def align_data(
 
 def turbo_align(
     df: pl.DataFrame,
-    evals: Iterable[int | float],
+    x_values: Iterable[int | float],
     x_col: str = "evaluations",
     y_col: str = "raw_y",
     output: str = "long",
@@ -91,8 +93,8 @@ def turbo_align(
     data_ids = df["data_id"].unique()
     x_vals = pl.DataFrame(
         { 
-            x_col: np.tile(evals, len(data_ids)),
-            "data_id": np.repeat(data_ids, len(evals)),
+            x_col: np.tile(x_values, len(data_ids)),
+            "data_id": np.repeat(data_ids, len(x_values)),
         },
         schema={x_col: df[x_col].dtype, "data_id": df['data_id'].dtype},
     )
@@ -105,7 +107,6 @@ def turbo_align(
         result_df = x_vals.join_asof(
             df, by="data_id", on=x_col, strategy="backward"
         )#.fill_null(np.inf)
-
           
               
     if output == "long":

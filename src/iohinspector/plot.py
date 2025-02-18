@@ -18,6 +18,8 @@ from .metrics import (
     get_tournament_ratings,
     get_attractor_network,
     get_data_ecdf,
+    transform_fval
+    
 )
 from .align import align_data, turbo_align
 from .indicators import add_indicator, final
@@ -457,21 +459,21 @@ def plot_ecdf(
     if x_max is None:
         x_max = data[eval_var].max()
     x_values = get_sequence(x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True)
-    
+
     data_aligned = turbo_align(
         data,
         x_values,
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
-        x_values=x_values,
-        x_min=x_min,
-        x_max=x_max,
-        scale_xlog=scale_xlog,
-        y_min=y_min,
-        y_max=y_max,
-        scale_ylog=scale_ylog,
     )
+    dt_plot = (
+        transform_fval(data_aligned, fval_col=fval_var, maximization=maximization)
+        .group_by([eval_var] + free_vars)
+        .mean()
+        .sort(eval_var)
+    ).to_pandas()
+    
     if ax is None:
         fig, ax = plt.subplots(figsize=(16, 9))
     if len(free_vars) == 1:

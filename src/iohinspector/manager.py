@@ -18,6 +18,12 @@ class DataManager:
     def __post_init__(self):
         for data_set in self.data_sets:
             self.extend_overview(data_set)
+            
+    def add_folders(self, folders: list[str]):
+        """Utility loop for adding multiple folders"""
+        
+        for folder in folders:
+            self.add_folder(folder)
 
     def add_folder(self, folder_name: str):
         """Add a folder with ioh generated data"""
@@ -25,12 +31,6 @@ class DataManager:
         if not os.path.isdir(folder_name):
             raise FileNotFoundError(f"{folder_name} not found")
 
-        # json_files = [
-        #     fname
-        #     for f in os.listdir(folder_name)
-        #     if os.path.isfile(fname := os.path.join(folder_name, f))
-        #     and f.endswith(".json")
-        # ]
         json_files = glob(f"{folder_name}/**/*.json", recursive = True)
         if not any(json_files):
             raise FileNotFoundError(f"{folder_name} does not contain any json files")

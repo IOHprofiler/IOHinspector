@@ -22,7 +22,8 @@ dependencies = [
   "moocore",
   "numpy",
   "pandas",
-  "polars",  
+  "polars",
+  "pyarrow",  
   "seaborn"
 ]
 
