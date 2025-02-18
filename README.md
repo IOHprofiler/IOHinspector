@@ -1,5 +1,9 @@
 # IOHinspector
 
+![Unittest](https://github.com/IOHprofiler/IOHinspector/workflows/Unittest/badge.svg) 
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/10ed9f762ecb450ab2c4e407dcb59caf)](https://app.codacy.com/gh/IOHprofiler/IOHinspector/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/73720e228a89480585bdde05d3806661)](https://www.codacy.com/gh/IOHprofiler/ModularCMAES/dashboard?utm_source=github.com&utm_medium=referral&utm_content=IOHprofiler/ModularCMAES&utm_campaign=Badge_Coverage)
+
 **IOHinspector** is a Python package designed for processing, analyzing, and visualizing benchmark data from iterative optimization heuristics (IOHs). Whether you're working with single-objective or multi-objective optimization problems, IOHinspector provides a collection of tools to gain insights into algorithm performance. 
 
 IOHinspector is a work-in-progress, and as such some features might be incomplete or have their call signatures changed or expanded when new updates release. As part of the IOHprofiler framework, our aim is to achieve feature parity with the [IOHanalyzer web-version](https://iohanalyzer.liacs.nl/). Additionally, this package serves as the basis for large-scale data processing, which is currently unspported on the web version.
