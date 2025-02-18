@@ -1,14 +1,15 @@
-import polars as pl
-import numpy as np
-
+from functools import partial
+from warnings import warn
 from typing import Iterable, Callable, Optional
 
-from functools import partial
+import polars as pl
+import numpy as np
+import pandas as pd
+from skelo.model.elo import EloEstimator
+
 from .align import align_data
 
-import pandas as pd
 
-from warnings import warn
 
 
 def get_sequence(
@@ -246,14 +247,6 @@ def get_tournament_ratings(
     Returns:
         pd.DataFrame: Pandas dataframe with rating, deviation and volatility for each 'alg_vars' combination
     """
-    try:
-        from skelo.model.elo import EloEstimator
-    except:
-        print(
-            "This functionality requires the 'skelo' package, which is not found. Please install it to use this function"
-        )
-        return
-
     fids = data[fid_vars].unique()
     aligned_comps = data.pivot(
         index=alg_vars,

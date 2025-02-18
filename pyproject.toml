@@ -18,18 +18,24 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "ioh",
   "matplotlib",
   "moocore",
   "numpy",
   "pandas",
-  "pymoo", 
   "polars",
   "pyarrow", 
   "robustranking", 
   "seaborn",
   "skelo"
 ]
+
+[project.optional-dependencies]
+test = [
+  "coverage"
+  "ioh",
+  "pymoo", 
+]
+
 
 [project.urls]
 Homepage = "https://github.com/IOHprofiler/iohinspector"

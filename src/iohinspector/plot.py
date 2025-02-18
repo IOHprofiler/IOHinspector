@@ -560,17 +560,17 @@ def plot_tournament_ranking(
 
 def robustranking():
     # to decide which plot(s) to use and what exact interface to define
-    raise NotImplementedError
+    raise NotImplementedError()
 
 
 def stats_comparison():
     # heatmap or graph of statistical comparisons
-    raise NotImplementedError
+    raise NotImplementedError()
 
 
 def winnning_fraction_heatmap():
     # nevergrad-like heatmap
-    raise NotImplementedError
+    raise NotImplementedError()
 
 
 def plot_paretofronts_2d(
