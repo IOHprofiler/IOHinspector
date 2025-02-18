@@ -33,7 +33,7 @@ dependencies = [
 test = [
   "coverage"
   "ioh",
-  "pymoo", 
+  "pymoo"
 ]
 
 
