@@ -287,5 +287,7 @@ try:
             )
 
 except ImportError:
-    import warnings
-    warnings.warn("R2 indicator is N/A without pymoo installed")
+    class R2:
+        def __init__(self, *args, **kwargs):
+            import warnings
+            warnings.warn("R2 indicator is N/A without pymoo installed")
