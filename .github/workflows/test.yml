@@ -31,7 +31,7 @@ jobs:
         coverage run -m --source=iohinspector unittest discover
         coverage report -m 
     - name: Upload coverage report
-      if: ${{ matrix.python-version == 3.12 }}
+      if: ${{ (matrix.python-version == 3.12) && (matrix.os == 'ubuntu-20.04') }}
       env:
         CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
       run: |
