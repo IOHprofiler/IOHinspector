@@ -19,14 +19,16 @@ pip install iohinspector
 ```
 
 ## Basic usage
-The basic usage of the framework is through the data manager object. A simple example is given below. This assumes that a folder created via the [IOHexperimenter](https://github.com/IOHprofiler/IOHexperimenter) called `data_path` exists and contains profiling data. This can be generated via the file [generate_test_data.py](tests%20generate_test_data.py) in the tests folder.
+The basic usage of the framework is through the data manager object. A simple example is given below. This assumes that a folder created via the [IOHexperimenter](https://github.com/IOHprofiler/IOHexperimenter) called `data` exists and contains profiling data. This can be generated via the file [generate_test_data.py](tests%20generate_test_data.py) in the tests folder.
 
 ```python
+import os
 from iohinspector import DataManager, plot_ecdf
 
 # Creating a data manager
 manager = DataManager()
-manager.add_folder('data_path')
+data_folders = [os.path.join('data', x) for x in os.listdir('data')]
+manager.add_folders(data_folders)
 
 # Loading & selecting data 
 selection = manager.select(function_ids=[1], algorithms=['algorithm_A', 'algorithm_B'])

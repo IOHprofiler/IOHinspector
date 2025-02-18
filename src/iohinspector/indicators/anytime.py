@@ -230,7 +230,7 @@ class IGDPlus:
         )
 
 try:
-    from pymoo import get_reference_directions
+    from pymoo.util.ref_dirs import get_reference_directions
     class R2:
         def __init__(self, n_ref_dirs: int, ideal_point: np.ndarray):
             """Function to calculate the R2 indicator over time. Used as an input to the 'add_indicator' function.

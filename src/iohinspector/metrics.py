@@ -267,12 +267,12 @@ def get_tournament_ratings(
 
     rng = np.random.default_rng()
     fids = [i for i in range(len(fids))]
-    players = [i for i in range(n_players)]
+    lplayers = [i for i in range(n_players)]
     records = []
-    for round in range(nrounds):
+    for r in range(nrounds):
         for fid in fids:
-            for p1 in players:
-                for p2 in players:
+            for p1 in lplayers:
+                for p2 in lplayers:
                     if p1 == p2:
                         continue
                     s1 = rng.choice(comp_arr[p1][fid], 1)[0]
@@ -282,7 +282,8 @@ def get_tournament_ratings(
                     else:
                         won = abs(float(maximization) - float(s1 < s2))
 
-                    records.append([round, p1, p2, won])
+                    records.append([r, p1, p2, won])
+                    
     dt_comp = pd.DataFrame.from_records(
         records, columns=["round", "p1", "p2", "outcome"]
     )

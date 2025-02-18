@@ -29,7 +29,7 @@ def align_data(
         pl.DataFrame: Alligned DataFrame
     """
 
-    warnings.warn(DeprecationWarning, "Turbo align is favoured over this function")
+    warnings.warn( "Turbo align is favoured over this function", DeprecationWarning)
     evals_df = pl.DataFrame({x_col: evals})
 
     def merge_asof_group(group):
@@ -72,7 +72,7 @@ def turbo_align(
     output: str = "long",
     maximization: bool = False,
 ):
-    """Align data based on function evaluation counts (fast)
+    """Align data based on function evaluation counts (fast
 
     Note:
         Assumes the data is monotonic!
@@ -91,23 +91,25 @@ def turbo_align(
     """
 
     data_ids = df["data_id"].unique()
+
     x_vals = pl.DataFrame(
         { 
-            x_col: np.tile(x_values, len(data_ids)),
-            "data_id": np.repeat(data_ids, len(x_values)),
+            x_col: np.repeat(x_values, len(data_ids)),
+            "data_id": np.tile(data_ids, len(x_values)),
         },
         schema={x_col: df[x_col].dtype, "data_id": df['data_id'].dtype},
     )
+    df = df.sort([x_col, 'data_id'])
     
     if x_col != "evaluations" and maximization:
         result_df = x_vals.join_asof(
             df, by="data_id", on=x_col, strategy="forward"
-        )#.fill_null(np.inf)
+        )
     else:
         result_df = x_vals.join_asof(
             df, by="data_id", on=x_col, strategy="backward"
-        )#.fill_null(np.inf)
-          
+        )
+        
               
     if output == "long":
         return result_df

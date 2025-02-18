@@ -1,34 +1,30 @@
+from typing import Iterable, Optional
+import polars as pl
+import numpy as np
+import pandas as pd
+from moocore import eaf, eafdiff
+
 import matplotlib
-
-matplotlib.rcParams["pdf.fonttype"] = 42
-matplotlib.rcParams["ps.fonttype"] = 42
-
+import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
 import seaborn as sbs
-import matplotlib.pyplot as plt
 
-font = {"size": 24}
-plt.rc("font", **font)
-
-from .manager import DataManager
 from .metrics import (
     aggegate_running_time,
     get_sequence,
     aggegate_convergence,
     get_tournament_ratings,
     get_attractor_network,
-    get_data_ecdf,
-    transform_fval
-    
+    transform_fval,
 )
 from .align import align_data, turbo_align
 from .indicators import add_indicator, final
-from typing import Iterable, Optional
-import polars as pl
-import numpy as np
 
-from moocore import eaf, eafdiff
-import pandas as pd
+
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
+font = {"size": 24}
+plt.rc("font", **font)
 
 
 # tradeoff between simple (few parameters) and flexible. Maybe many parameter but everything with clear defaults?
@@ -453,7 +449,6 @@ def plot_ecdf(
     Returns:
         pd.DataFrame: pandas dataframe of the exact data used to create the plot
     """
-
     if x_min is None:
         x_min = data[eval_var].min()
     if x_max is None:
@@ -473,7 +468,7 @@ def plot_ecdf(
         .mean()
         .sort(eval_var)
     ).to_pandas()
-    
+
     if ax is None:
         fig, ax = plt.subplots(figsize=(16, 9))
     if len(free_vars) == 1:
@@ -541,7 +536,8 @@ def plot_tournament_ranking(
         data, alg_vars, fid_vars, perf_var, nrounds, maximization
     )
     if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+        _, ax = plt.subplots(1, 1, figsize=(10, 5))
+
     sbs.pointplot(data=dt_elo, x=alg_vars[0], y="Rating", linestyle="none", ax=ax)
 
     ax.errorbar(
@@ -554,9 +550,11 @@ def plot_tournament_ranking(
         capsize=5,
         elinewidth=1.5,
     )
-    if ax is None and file_name:
-        fig.tight_layout()
-        fig.savefig(file_name)
+    ax.grid()
+
+    if file_name:
+        plt.tight_layout()
+        plt.savefig(file_name)
     return dt_elo
 
 

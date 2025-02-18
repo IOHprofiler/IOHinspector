@@ -18,20 +18,18 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+  "ioh",
   "matplotlib",
   "moocore",
   "numpy",
   "pandas",
+  "pymoo", 
   "polars",
-  "pyarrow",  
-  "seaborn"
+  "pyarrow", 
+  "robustranking", 
+  "seaborn",
+  "skelo"
 ]
-
-[project.optional-dependencies]
-ranking = ["robustranking"]
-
-[tool.poetry.extras]
-glicko = ['skelo']
 
 [project.urls]
 Homepage = "https://github.com/IOHprofiler/iohinspector"
