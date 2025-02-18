@@ -15,7 +15,7 @@ DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_data"))
 class TestManager(unittest.TestCase):
 
     def setUp(self):
-        self.data_folders = [os.path.join(DATA_DIR, x) for x in os.listdir(DATA_DIR)]
+        self.data_folders = [os.path.join(DATA_DIR, x) for x in sorted(os.listdir(DATA_DIR))]
         self.data_dir = self.data_folders[0]
         self.json_files = sorted(
             [
@@ -28,6 +28,7 @@ class TestManager(unittest.TestCase):
     def test_add_json(self):
         manager = DataManager()
         manager.add_json(self.json_files[0])
+        breakpoint()
         data = manager.data_sets[0]
         df = data.scenarios[0].load()
         self.assertTrue(isinstance(df, pl.DataFrame))
