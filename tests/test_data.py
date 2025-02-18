@@ -9,7 +9,7 @@ from iohinspector import DataManager, turbo_align, plot_ecdf
 from pprint import pprint
 
 BASE_DIR = os.path.dirname(__file__)
-DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "data"))
+DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_data"))
 
 
 class TestManager(unittest.TestCase):

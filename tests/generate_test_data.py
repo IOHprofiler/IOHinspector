@@ -6,7 +6,7 @@ import numpy as np
 
 
 BASE_DIR = os.path.dirname(__file__)
-DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "data"))
+DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_data"))
 
 
 def run(problem, algorithm_name):
