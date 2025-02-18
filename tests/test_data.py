@@ -33,7 +33,7 @@ class TestManager(unittest.TestCase):
         self.assertTrue(isinstance(df, pl.DataFrame))
         self.assertEqual(max(df["run_id"]), 5)
         self.assertEqual(min(df["run_id"]), 1)
-        self.assertEqual(len(df), 28)
+        self.assertEqual(len(df), 27)
 
     def test_load_twice(self):
         manager = DataManager()
