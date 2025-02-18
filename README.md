@@ -12,7 +12,7 @@ IOHinspector is a work-in-progress, and as such some features might be incomplet
 
 ## Installation
 
-Install IOHinspector via pip:
+The minamal suported Python version is 3.10. Install IOHinspector via pip:
 
 ```bash
 pip install iohinspector
