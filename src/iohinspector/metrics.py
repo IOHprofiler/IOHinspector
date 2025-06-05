@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from skelo.model.elo import EloEstimator
 
-from .align import align_data
+from .align import turbo_align
 
 
 
@@ -91,7 +91,7 @@ def aggegate_convergence(
         x_max = data[evaluation_variable].max()
     x_values = get_sequence(x_min, x_max, 50, scale_log=True, cast_to_int=True)
     group_variables = free_variables + [evaluation_variable]
-    data_aligned = align_data(
+    data_aligned = turbo_align(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
         group_cols=["data_id"] + free_variables,
@@ -340,7 +340,7 @@ def aggegate_running_time(
         f_max = data[fval_variable].max()
     f_values = get_sequence(f_min, f_max, 50, scale_log=scale_flog)
     group_variables = free_variables + [fval_variable]
-    data_aligned = align_data(
+    data_aligned = turbo_align(
         data,
         f_values,
         group_cols=["data_id"] + free_variables,
@@ -564,7 +564,7 @@ def get_data_ecdf(
         x_values = get_sequence(
             x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True
         )
-    data_aligned = align_data(
+    data_aligned = turbo_align(
         data.cast({eval_var: pl.Int64}),
         x_values,
         group_cols=["data_id"],
@@ -615,7 +615,7 @@ def get_trajectory(data: pl.DataFrame,
     else:
         max_fevals = traj_length + min_fevals
     x_values = np.arange(min_fevals, max_fevals + 1) 
-    data_aligned = align_data(
+    data_aligned = turbo_align(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
         group_cols=["data_id"] + free_variables,
