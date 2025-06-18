@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from skelo.model.elo import EloEstimator
 
-from .align import turbo_align
+from .align import turbo_align, align_data
 
 
 
@@ -91,7 +91,7 @@ def aggegate_convergence(
         x_max = data[evaluation_variable].max()
     x_values = get_sequence(x_min, x_max, 50, scale_log=True, cast_to_int=True)
     group_variables = free_variables + [evaluation_variable]
-    data_aligned = turbo_align(
+    data_aligned = align_data(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
         group_cols=["data_id"] + free_variables,
@@ -340,7 +340,7 @@ def aggegate_running_time(
         f_max = data[fval_variable].max()
     f_values = get_sequence(f_min, f_max, 50, scale_log=scale_flog)
     group_variables = free_variables + [fval_variable]
-    data_aligned = turbo_align(
+    data_aligned = align_data(
         data,
         f_values,
         group_cols=["data_id"] + free_variables,
@@ -352,23 +352,26 @@ def aggegate_running_time(
         max_budget = data[evaluation_variable].max()
 
     aggregations = [
-        pl.col(evaluation_variable).replace(np.inf, max_budget).mean().alias("mean"),
+        pl.col(evaluation_variable).mean().alias("mean"),
         # pl.mean(evaluation_variable).alias("mean"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).min().alias("min"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).max().alias("max"),
-        pl.col(evaluation_variable)
-        .replace(np.inf, max_budget)
-        .median()
-        .alias("median"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).std().alias("std"),
+        pl.col(evaluation_variable).min().alias("min"),
+        pl.col(evaluation_variable).max().alias("max"),
+        pl.col(evaluation_variable).median().alias("median"),
+        pl.col(evaluation_variable).std().alias("std"),
         pl.col(evaluation_variable).is_finite().mean().alias("success_ratio"),
         pl.col(evaluation_variable).is_finite().sum().alias("success_count"),
         (
-            pl.col(evaluation_variable).replace(np.inf, max_budget).sum()
-            / pl.col(evaluation_variable).is_finite().sum()
+            pl.when(pl.col(evaluation_variable).is_finite())
+            .then(pl.col(evaluation_variable))
+            .otherwise(max_budget)
+            .sum()
+            /pl.col(evaluation_variable).is_finite().sum()
         ).alias("ERT"),
         (
-            pl.col(evaluation_variable).replace(np.inf, max_budget * 10).sum()
+            pl.when(pl.col(evaluation_variable).is_finite())
+            .then(pl.col(evaluation_variable))
+            .otherwise(10 * max_budget)
+            .sum()
             / pl.col(evaluation_variable).count()
         ).alias("PAR-10"),
     ]
@@ -564,7 +567,7 @@ def get_data_ecdf(
         x_values = get_sequence(
             x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True
         )
-    data_aligned = turbo_align(
+    data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),
         x_values,
         group_cols=["data_id"],
@@ -615,7 +618,7 @@ def get_trajectory(data: pl.DataFrame,
     else:
         max_fevals = traj_length + min_fevals
     x_values = np.arange(min_fevals, max_fevals + 1) 
-    data_aligned = turbo_align(
+    data_aligned = align_data(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
         group_cols=["data_id"] + free_variables,
