@@ -128,6 +128,7 @@ class WrapperProblem:
                pymoo_evaluate_result["G"][i],
                pymoo_evaluate_result["H"][i]
             )
+            print(i,x,pymoo_evaluate_result["F"][i], pymoo_evaluate_result["G"][i], pymoo_evaluate_result["H"][i])
             self.logger.call(self.create_info(pymoo_evaluate_result["F"][i][0] + self.ideal_point()[0], x))
 
         return pymoo_evaluate_result
@@ -141,7 +142,7 @@ class WrapperProblem:
         self.logger.close()
 
 def run_experiment():
-    problems = ['zdt1', 'zdt2']
+    problems = ["dtlz1"]#,'zdt1', 'zdt2']
     popsize = 10
 
     for idx, problem_name in enumerate(problems):
