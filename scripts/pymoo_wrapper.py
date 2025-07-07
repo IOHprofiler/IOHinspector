@@ -142,7 +142,7 @@ class WrapperProblem:
         self.logger.close()
 
 def run_experiment():
-    problems = ["dtlz1"]#,'zdt1', 'zdt2']
+    problems = ['zdt1', 'zdt2']
     popsize = 10
 
     for idx, problem_name in enumerate(problems):
