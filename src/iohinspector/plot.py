@@ -151,7 +151,6 @@ def single_function_fixedbudget(
 
     dt_molt = dt_agg.melt(id_vars=[evaluation_variable] + free_variables)
     dt_plot = dt_molt[dt_molt["variable"].isin(measures)].sort_values(free_variables)
-
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(16, 9))
     sbs.lineplot(
@@ -167,8 +166,6 @@ def single_function_fixedbudget(
     if scale_ylog:
         ax.set_yscale("log")
 
-    if not maximization:
-        ax.set_xlim(ax.get_xlim()[::-1])
 
     if ax is None and file_name:
         fig.tight_layout()
