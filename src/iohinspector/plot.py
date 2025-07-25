@@ -378,6 +378,8 @@ def eaf_diffs(
     # TODO: add an approximation version to speed up plotting
     x = np.array(data1[[x_column, y_column, "data_id"]])
     y = np.array(data2[[x_column, y_column, "data_id"]])
+    print(x)
+    print(y)
     eaf_diff_rect = eafdiff(x, y, rectangles=True)
     color_dict = {
         k: v
@@ -402,6 +404,7 @@ def eaf_diffs(
     if max_y is None:
         max_y = np.max(x[1])
     ax.set_ylim(min_y, max_y)
+    ax.set_xlim((0,1000))
     if scale_ylog:
         ax.set_yscale("log")
     if scale_xlog:
@@ -794,7 +797,7 @@ def plot_attractor_network(
     except:
         print("NetworkX is required to use this plot type")
         return
-    from sklearn.decomposition import MDS
+    from sklearn.manifold import MDS
 
     nodes, edges = get_attractor_network(
         data, maximization, coord_vars, fval_var, eval_var, beta, epsilon
