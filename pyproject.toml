@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
   "matplotlib",
-  "moocore",
+  "moocore==0.1.7",
   "numpy",
   "pandas",
   "polars",
