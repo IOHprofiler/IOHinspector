@@ -1,3 +1,4 @@
+from email import header
 import os
 import json
 import warnings
@@ -179,10 +180,10 @@ class Scenario:
 
         with open(self.data_file) as f:
             header = process_header(next(f))
-
-        for i in range(self.dimension):
-            header.append(f"x{i}")
-
+            nextline = next(f).strip().split()
+        if(len(nextline) > len(header)):
+            for i in range(self.dimension):
+                header.append(f"x{i}")
         key_lookup = dict([(r.id, r.data_id) for r in self.runs])
         dt = (
             pl.scan_csv(
@@ -215,7 +216,6 @@ class Scenario:
                 dt = dt.with_columns(pl.col("raw_y").cum_min().over("run_id"))
 
             dt = dt.filter(pl.col("raw_y").diff().fill_null(1.0).abs() > 0.0)
-            
             
         dt = dt.collect()
         if x_values is not None:
@@ -325,13 +325,15 @@ class Dataset:
 
         if not os.path.isfile(coco_info_file):
             raise FileNotFoundError(f"{coco_info_file} not found")
-        with open(coco_info_file) as f:
-            data = f.read()
-            data = "\n".join([line for line in data.splitlines() if not line.startswith("%")])
-            return Dataset.from_coco_text(data, coco_info_file)
-        
-    
-
+        try:
+            with open(coco_info_file) as f:
+                data = f.read()
+                if( len(data.strip()) == 0):
+                    warnings.warn(f"{coco_info_file} is empty, cannot parse COCO text format")
+                    return None
+                return Dataset.from_coco_text(data, coco_info_file)
+        except Exception as e:
+            warnings.warn(f"Failed to parse {coco_info_file} as COCO text format: {e}")
 
     @staticmethod
     def from_coco_text(coco_text: str, filepath: str):
@@ -341,11 +343,12 @@ class Dataset:
             r"DIM\s*=\s*(?P<DIM>\d+),\s*"
             r"Precision\s*=\s*(?P<precision>[0-9.eE+-]+),\s*"
             r"algId\s*=\s*'(?P<algId>[^']+)'"
-            r"(?:,\s*coco_version\s*=\s*'(?P<coco_version>[^']+)')?"
-            r"(?:,\s*logger\s*=\s*'(?P<logger>[^']+)')?"
-            r"(?:,\s*data_format\s*=\s*'(?P<data_format>[^']+)')?"
+            r"(?:,\s*coco_version\s*=\s*'(?P<coco_version>[^']*)')?"
+            r"(?:,\s*logger\s*=\s*'(?P<logger>[^']*)')?"
+            r"(?:,\s*data_format\s*=\s*'(?P<data_format>[^']*)')?"
+            r"(?:\n%[^\n]*)?"
             r"(?:\n(?P<filename>[^\s]+),\s*(?P<runs>.+?)(?=funcId =|\Z))?",
-            re.DOTALL
+            re.DOTALL | re.MULTILINE
         )
 
         pattern_run = re.compile(r"(\d+):(\d+)\|([-+eE0-9.]+)")
@@ -357,6 +360,7 @@ class Dataset:
         for match in pattern_block.finditer(coco_text):
             metadata = match.groupdict()
             dim = int(metadata['DIM'])
+            metadata['filename'] = metadata['filename'].replace("\\", "/")
             if metadata['suite']:
                 suites.add(metadata['suite'])
             runs_data = pattern_run.findall(metadata.pop('runs'))
@@ -408,6 +412,7 @@ class Dataset:
             with open(scenarios[0].data_file) as f:
                 first_line = next(f)
             data_attributes = process_header(first_line)
+
         else:
             data_attributes = []
 

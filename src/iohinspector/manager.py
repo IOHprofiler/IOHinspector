@@ -33,12 +33,11 @@ class DataManager:
 
         json_files = glob(f"{folder_name}/**/*.json", recursive = True)
         coco_files = glob(f"{folder_name}/**/*.info", recursive = True)
-
         if not any(json_files) and not any(coco_files):
             raise FileNotFoundError(f"{folder_name} does not contain any json or coco files")
 
         datasets = [Dataset.from_json(json_file) for json_file in json_files]
-        datasets += [Dataset.from_coco_info(coco_file) for coco_file in coco_files]
+        datasets += [ds for ds in (Dataset.from_coco_info(coco_file) for coco_file in coco_files) if ds is not None]
 
         for ds in datasets:
             self.data_sets.append(ds)
@@ -55,6 +54,7 @@ class DataManager:
             )
             return
         data_set = Dataset.from_json(json_file)
+        
         self.add_data_set(data_set)
     
     def add_coco_info(self, coco_info_file: str):
@@ -64,7 +64,8 @@ class DataManager:
             raise FileNotFoundError(f"{coco_info_file} not found")
         
         data_set = Dataset.from_coco_info(coco_info_file)
-        self.add_data_set(data_set)
+        if(data_set is not None):
+            self.add_data_set(data_set)
 
     def extend_overview(self, data_set: Dataset):
         """ "Include a new data set in the manager"""
