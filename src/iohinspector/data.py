@@ -194,7 +194,7 @@ class Scenario:
                 decimal_comma=True,
                 schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
                 ignore_errors=True,
-                
+                truncate_ragged_lines=True
             )
             .with_columns(
                 pl.col("evaluations").cast(pl.UInt64),
@@ -241,10 +241,12 @@ class Dataset:
 
         if not os.path.isfile(json_file):
             raise FileNotFoundError(f"{json_file} not found")
-
-        with open(json_file) as f:
-            data = json.load(f)
-            return Dataset.from_dict(data, json_file)
+        try:
+            with open(json_file) as f:
+                data = json.load(f)
+                return Dataset.from_dict(data, json_file)
+        except Exception as e:
+            return None
 
     @property
     def overview(self) -> pl.DataFrame:

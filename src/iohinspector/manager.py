@@ -36,7 +36,7 @@ class DataManager:
         if not any(json_files) and not any(coco_files):
             raise FileNotFoundError(f"{folder_name} does not contain any json or coco files")
 
-        datasets = [Dataset.from_json(json_file) for json_file in json_files]
+        datasets = [ds for ds in (Dataset.from_json(json_file) for json_file in json_files) if ds is not None]
         datasets += [ds for ds in (Dataset.from_coco_info(coco_file) for coco_file in coco_files) if ds is not None]
 
         for ds in datasets:
@@ -224,7 +224,7 @@ class DataManager:
             return pl.DataFrame()
 
         data = []
-        for data_set in self.data_sets:
+        for data_set in self.data_sets: 
             for scen in data_set.scenarios:
                 if(data_set.source =="coco"):
                     df = scen.load_coco(monotonic, data_set.function.maximization, x_values)
