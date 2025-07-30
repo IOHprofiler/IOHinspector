@@ -375,7 +375,7 @@ class Dataset:
                     y=float(y)
                 )
                 run = Run(
-                    data_id=Run.hash(f"{metadata['filename']}_{run_id}"),
+                    data_id=Run.hash(f"{os.path.join(os.path.dirname(filepath), metadata['filename'])}_{run_id+1}"),
                     id=run_id+1,
                     instance=0,  # Instance is not provided in the COCO text format
                     evals=int(evals),
