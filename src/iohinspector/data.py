@@ -349,7 +349,7 @@ class Dataset:
             r"(?:,\s*logger\s*=\s*'(?P<logger>[^']*)')?"
             r"(?:,\s*data_format\s*=\s*'(?P<data_format>[^']*)')?"
             r"(?:\n%[^\n]*)?"
-            r"(?:\n(?P<filename>[^\s]+),\s*(?P<runs>.+?)(?=funcId =|\Z))?",
+            r"(?:\n(?P<filename>[^\s]+),\s*(?P<runs>.+?)(?=suite\s*=|funcId\s*=|\Z))?",
             re.DOTALL | re.MULTILINE
         )
 
@@ -417,7 +417,7 @@ class Dataset:
 
         else:
             data_attributes = []
-
+        
         return Dataset(
             source="coco",
             file=filepath,

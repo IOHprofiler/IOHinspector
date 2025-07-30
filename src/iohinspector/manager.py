@@ -41,7 +41,6 @@ class DataManager:
 
         for ds in datasets:
             self.data_sets.append(ds)
-
         ds_overviews = pl.concat([ds.overview for ds in datasets], how='diagonal_relaxed')
         self.overview = pl.concat([ds_overviews, self.overview], how='diagonal_relaxed')
 
