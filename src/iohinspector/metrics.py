@@ -111,7 +111,7 @@ def aggegate_convergence(
 
     if custom_op is not None:
         aggregations.append(
-            pl.col(fval_variable).apply(lambda s: custom_op(s)).alias(custom_op.__name__)
+            pl.col(fval_variable).apply(custom_op).alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
     if return_as_pandas:
@@ -380,7 +380,7 @@ def aggegate_running_time(
     if custom_op is not None:
         aggregations.append(
             pl.col(evaluation_variable)
-            .apply(lambda s: custom_op(s))
+            .apply(custom_op)
             .alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
