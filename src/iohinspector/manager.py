@@ -32,14 +32,24 @@ class DataManager:
             raise FileNotFoundError(f"{folder_name} not found")
 
         json_files = glob(f"{folder_name}/**/*.json", recursive = True)
-        if not any(json_files):
-            raise FileNotFoundError(f"{folder_name} does not contain any json files")
+        coco_files = glob(f"{folder_name}/**/*.info", recursive = True)
+        if not any(json_files) and not any(coco_files):
+            raise FileNotFoundError(f"{folder_name} does not contain any json or coco files")
 
-        datasets = [Dataset.from_json(json_file) for json_file in json_files]
+        datasets = [
+            ds
+            for ds in (Dataset.from_json(json_file) for json_file in json_files)
+            if ds is not None
+        ]
+        datasets += [
+            ds
+            for coco_file in coco_files
+            for ds in [Dataset.from_coco_info(coco_file)]
+            if ds is not None
+        ]
 
         for ds in datasets:
             self.data_sets.append(ds)
-
         ds_overviews = pl.concat([ds.overview for ds in datasets], how='diagonal_relaxed')
         self.overview = pl.concat([ds_overviews, self.overview], how='diagonal_relaxed')
 
@@ -52,7 +62,18 @@ class DataManager:
             )
             return
         data_set = Dataset.from_json(json_file)
+        
         self.add_data_set(data_set)
+    
+    def add_coco_info(self, coco_info_file: str):
+        """Add a COCO info file with ioh generated data"""
+        
+        if not os.path.isfile(coco_info_file):
+            raise FileNotFoundError(f"{coco_info_file} not found")
+        
+        data_set = Dataset.from_coco_info(coco_info_file)
+        if data_set is not None:
+            self.add_data_set(data_set)
 
     def extend_overview(self, data_set: Dataset):
         """ "Include a new data set in the manager"""
@@ -178,8 +199,8 @@ class DataManager:
         dims = []
         for data_set in self.data_sets:
             for scen in data_set.scenarios:
-                if scen.dim not in dims:
-                    dims.append(scen.dim)
+                if scen.dimension not in dims:
+                    dims.append(scen.dimension)
         return tuple(dims)
 
     @property
@@ -189,7 +210,7 @@ class DataManager:
             for scen in data_set.scenarios:
                 for run in scen.runs:
                     if run.instance not in iids:
-                        iids.append(run.instancem)
+                        iids.append(run.instance)
         return tuple(iids)
     
     @property
@@ -213,11 +234,12 @@ class DataManager:
         data = []
         for data_set in self.data_sets:
             for scen in data_set.scenarios:
-                df = scen.load(monotonic, data_set.function.maximization, x_values)
+                if data_set.source == "coco":
+                    df = scen.load_coco(monotonic, data_set.function.maximization, x_values)
+                else:
+                    df = scen.load(monotonic, data_set.function.maximization, x_values)
                 data.append(df)
-
-        data = pl.concat(data)
-
+        data = pl.concat(data, how="diagonal")
         if include_meta_data or include_columns is not None:
             if include_columns is None:
                 include_columns = self.overview.columns
