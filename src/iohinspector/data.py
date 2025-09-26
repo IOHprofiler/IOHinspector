@@ -1,4 +1,3 @@
-from email import header
 import os
 import json
 import warnings
@@ -188,8 +187,8 @@ class Scenario:
         dt = (
             pl.scan_csv(
                 self.data_file,
-                has_header = False,
-                comment_prefix = "%",
+                has_header=False,
+                comment_prefix="%",
                 separator=" ",
                 decimal_comma=True,
                 schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
@@ -245,7 +244,7 @@ class Dataset:
             with open(json_file) as f:
                 data = json.load(f)
                 return Dataset.from_dict(data, json_file)
-        except Exception as e:
+        except Exception as _:
             return None
 
     @property
@@ -328,14 +327,15 @@ class Dataset:
         if not os.path.isfile(coco_info_file):
             raise FileNotFoundError(f"{coco_info_file} not found")
         try:
-            with open(coco_info_file) as f:
+            with open(coco_info_file, "r") as f:
                 data = f.read()
-                if( len(data.strip()) == 0):
+                if len(data.strip()) == 0:
                     warnings.warn(f"{coco_info_file} is empty, cannot parse COCO text format")
                     return None
                 return Dataset.from_coco_text(data, coco_info_file)
         except Exception as e:
             warnings.warn(f"Failed to parse {coco_info_file} as COCO text format: {e}")
+            return None
 
     @staticmethod
     def from_coco_text(coco_text: str, filepath: str):
@@ -375,7 +375,9 @@ class Dataset:
                     y=float(y)
                 )
                 run = Run(
-                    data_id=Run.hash(f"{os.path.join(os.path.dirname(filepath), metadata['filename'])}_{run_id+1}"),
+                    data_id=Run.hash(
+                        f"{os.path.join(os.path.dirname(filepath), metadata['filename'])}_{run_id+1}"
+                    ),
                     id=run_id+1,
                     instance=0,  # Instance is not provided in the COCO text format
                     evals=int(evals),
@@ -392,9 +394,9 @@ class Dataset:
 
             algorithms.add(metadata['algId'])
             function_ids.add(int(metadata['funcId']))
-        if(len(algorithms) != 1):
+        if len(algorithms) != 1:
             raise ValueError("Multiple algorithms found in COCO text, expected one.")
-        if(len(function_ids) != 1):
+        if len(function_ids) != 1:
             raise ValueError("Multiple function ids found in COCO text, expected one.")
         algorithm = Algorithm(
             name=algorithms.pop(),
@@ -429,8 +431,6 @@ class Dataset:
             data_attributes=data_attributes,
             scenarios=scenarios
         )
-    
-
 
 def process_header(line:str):
 
@@ -450,7 +450,7 @@ def process_header(line:str):
         "function evaluation",
         "f evaluations"
     ]
-    for i in range(len(header)):
+    for i, _ in enumerate(header):
         if any(evaluations_header in header[i] for evaluations_header in evaluations_headers):
             header[i] = "evaluations"
             break
