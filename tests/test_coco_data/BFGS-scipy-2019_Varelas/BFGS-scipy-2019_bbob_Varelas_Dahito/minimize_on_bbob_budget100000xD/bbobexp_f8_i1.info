@@ -1,0 +1,18 @@
+suite = 'bbob', funcId = 8, DIM = 2, Precision = 1.000e-08, algId = 'BFGS-scipy-2019', coco_version = '2.3.6', logger = 'bbob', data_format = 'bbob-new2'
+% BFGS-scipy-2019: BFGS from SciPy v1.2.1 as submitted by Varelas and Dahito to BBOB-2019
+data_f8/bbobexp_f8_DIM2_i1.dat, 1:593|6.3e-12, 2:653|6.8e-11, 3:137|9.0e-12, 4:97|2.2e-11, 5:181|1.7e-11, 6:145|3.5e-11, 7:693|1.1e-11, 8:197|2.4e-11, 9:417|1.7e-11, 10:221|2.1e-11, 11:129|1.9e-11, 12:185|1.5e-11, 13:545|1.6e-11, 14:133|2.8e-11, 15:549|6.8e-12
+suite = 'bbob', funcId = 8, DIM = 3, Precision = 1.000e-08, algId = 'BFGS-scipy-2019', coco_version = '2.3.6', logger = 'bbob', data_format = 'bbob-new2'
+% BFGS-scipy-2019: BFGS from SciPy v1.2.1 as submitted by Varelas and Dahito to BBOB-2019
+data_f8/bbobexp_f8_DIM3_i1.dat, 1:898|1.6e-11, 2:206|9.1e-13, 3:171|3.9e-11, 4:261|3.7e-11, 5:958|1.5e-11, 6:713|2.0e-11, 7:266|3.4e-11, 8:291|4.0e-11, 9:723|1.6e-11, 10:336|3.9e-11, 11:236|3.7e-11, 12:693|1.8e-12, 13:216|3.3e-11, 14:693|2.5e-11, 15:251|3.1e-11
+suite = 'bbob', funcId = 8, DIM = 5, Precision = 1.000e-08, algId = 'BFGS-scipy-2019', coco_version = '2.3.6', logger = 'bbob', data_format = 'bbob-new2'
+% BFGS-scipy-2019: BFGS from SciPy v1.2.1 as submitted by Varelas and Dahito to BBOB-2019
+data_f8/bbobexp_f8_DIM5_i1.dat, 1:344|3.5e-11, 2:1083|1.7e-11, 3:365|6.7e-11, 4:846|4.9e-11, 5:603|5.2e-11, 6:1287|3.7e-11, 7:540|3.7e-11, 8:1140|4.6e-12, 9:1151|5.1e-11, 10:1059|5.4e-11, 11:771|4.8e-11, 12:1603|3.9e-11, 13:2182|4.3e-11, 14:379|4.9e-11, 15:505|5.3e-11
+suite = 'bbob', funcId = 8, DIM = 10, Precision = 1.000e-08, algId = 'BFGS-scipy-2019', coco_version = '2.3.6', logger = 'bbob', data_format = 'bbob-new2'
+% BFGS-scipy-2019: BFGS from SciPy v1.2.1 as submitted by Varelas and Dahito to BBOB-2019
+data_f8/bbobexp_f8_DIM10_i1.dat, 1:2137|6.7e-11, 2:3061|9.4e-11, 3:5642|5.2e-11, 4:1021|5.5e-11, 5:1633|6.0e-11, 6:2713|3.0e-11, 7:1681|3.5e-11, 8:1705|2.0e-11, 9:1789|6.4e-11, 10:2953|5.9e-11, 11:3193|5.7e-11, 12:3001|2.3e-11, 13:2701|6.1e-11, 14:1838|5.0e-11, 15:4202|5.1e-11
+suite = 'bbob', funcId = 8, DIM = 20, Precision = 1.000e-08, algId = 'BFGS-scipy-2019', coco_version = '2.3.6', logger = 'bbob', data_format = 'bbob-new2'
+% BFGS-scipy-2019: BFGS from SciPy v1.2.1 as submitted by Varelas and Dahito to BBOB-2019
+data_f8/bbobexp_f8_DIM20_i1.dat, 1:3587|5.5e-11, 2:8307|1.4e-11, 3:7009|6.0e-11, 4:6305|5.9e-11, 5:6569|6.0e-11, 6:7073|6.1e-11, 7:4401|5.6e-11, 8:7471|6.6e-11, 9:5117|5.6e-11, 10:5941|6.0e-11, 11:6811|5.5e-11, 12:6261|3.4e-11, 13:18419|5.3e-11, 14:14391|3.1e-11, 15:5601|6.1e-11
+suite = 'bbob', funcId = 8, DIM = 40, Precision = 1.000e-08, algId = 'BFGS-scipy-2019', coco_version = '2.3.6', logger = 'bbob', data_format = 'bbob-new2'
+% BFGS-scipy-2019: BFGS from SciPy v1.2.1 as submitted by Varelas and Dahito to BBOB-2019
+data_f8/bbobexp_f8_DIM40_i1.dat, 1:16141|2.6e-11, 2:19237|6.3e-11, 3:18439|6.0e-11, 4:35126|6.0e-11, 5:18523|6.1e-11, 6:17978|6.2e-11, 7:21601|5.5e-11, 8:22945|6.9e-11, 9:19825|6.4e-11, 10:41144|5.9e-11, 11:20929|6.5e-11, 12:16728|8.7e-12, 13:47864|5.9e-11, 14:22693|6.9e-11, 15:11761|5.1e-11

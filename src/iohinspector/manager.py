@@ -37,9 +37,8 @@ class DataManager:
             raise FileNotFoundError(f"{folder_name} does not contain any json or coco files")
 
         datasets = [
-            ds 
-            for ds in (Dataset.from_json(json_file) 
-            for json_file in json_files) 
+            ds
+            for ds in (Dataset.from_json(json_file) for json_file in json_files)
             if ds is not None
         ]
         datasets += [
@@ -73,7 +72,7 @@ class DataManager:
             raise FileNotFoundError(f"{coco_info_file} not found")
         
         data_set = Dataset.from_coco_info(coco_info_file)
-        if(data_set is not None):
+        if data_set is not None:
             self.add_data_set(data_set)
 
     def extend_overview(self, data_set: Dataset):

@@ -174,7 +174,7 @@ class Scenario:
         
         return dt
 
-    def load_coco(self, monotonic=False, maximize=True, x_values = None) -> pl.DataFrame:
+    def load_coco(self, monotonic=False, maximize=True, x_values=None) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame"""
 
         with open(self.data_file) as f:
@@ -244,7 +244,7 @@ class Dataset:
             with open(json_file) as f:
                 data = json.load(f)
                 return Dataset.from_dict(data, json_file)
-        except Exception as _:
+        except Exception:
             return None
 
     @property
@@ -371,7 +371,7 @@ class Dataset:
                 _, evals, y = run
                 solution = Solution(
                     evals=int(evals),
-                    x = np.array([None] * dim),
+                    x=np.array([None] * dim),
                     y=float(y)
                 )
                 run = Run(
@@ -413,7 +413,7 @@ class Dataset:
 
         # Read header from the first scenario's data file, if available
         if scenarios and os.path.isfile(scenarios[0].data_file):
-            with open(scenarios[0].data_file) as f:
+            with open(scenarios[0].data_file, "r") as f:
                 first_line = next(f)
             data_attributes = process_header(first_line)
 
@@ -432,7 +432,7 @@ class Dataset:
             scenarios=scenarios
         )
 
-def process_header(line:str):
+def process_header(line: str):
 
     header = line.strip().replace("%","").split("|")
     header = [re.sub(r"\s*\(.*?\)", "", h).strip() for h in header if h.strip()]
@@ -441,7 +441,7 @@ def process_header(line:str):
     raw_y_headers = [
         "best noise-free fitness"
         ]
-    for i in range(len(header)):
+    for i, _ in enumerate(header):
         if any(raw_y_header in header[i] for raw_y_header in raw_y_headers):
             header[i] = "raw_y"
             break
