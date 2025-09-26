@@ -106,16 +106,12 @@ def aggegate_convergence(
         pl.max(fval_variable).alias("max"),
         pl.median(fval_variable).alias("median"),
         pl.std(fval_variable).alias("std"),
-        pl.col(fval_variable)
-        .map_elements(lambda s: _geometric_mean(s), return_dtype=pl.Float64)
-        .alias("geometric_mean"),
+        pl.col(fval_variable).log().mean().exp().alias("geometric_mean")
     ]
 
     if custom_op is not None:
         aggregations.append(
-            pl.col(evaluation_variable)
-            .map_elements(lambda s: custom_op(s), return_dtype=pl.Float64)
-            .alias(custom_op.__name__)
+            pl.col(fval_variable).apply(custom_op).alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
     if return_as_pandas:
@@ -349,26 +345,34 @@ def aggegate_running_time(
         maximization=maximization,
     )
     if max_budget is None:
-        max_budget = data[evaluation_variable].max()
+        max_budget = data[evaluation_variable].max()+1
+
+    data_aligned = data_aligned.with_columns(
+        pl.when(pl.col(evaluation_variable) < 1)
+        .then(1)
+        .when(pl.col(evaluation_variable) > max_budget)
+        .then(max_budget)
+        .otherwise(pl.col(evaluation_variable))
+        .alias(f"{evaluation_variable}")
+    )
 
     aggregations = [
-        pl.col(evaluation_variable).replace(np.inf, max_budget).mean().alias("mean"),
+        pl.col(evaluation_variable).mean().alias("mean"),
         # pl.mean(evaluation_variable).alias("mean"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).min().alias("min"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).max().alias("max"),
+        pl.col(evaluation_variable).min().alias("min"),
+        pl.col(evaluation_variable).max().alias("max"),
         pl.col(evaluation_variable)
-        .replace(np.inf, max_budget)
         .median()
         .alias("median"),
-        pl.col(evaluation_variable).replace(np.inf, max_budget).std().alias("std"),
-        pl.col(evaluation_variable).is_finite().mean().alias("success_ratio"),
-        pl.col(evaluation_variable).is_finite().sum().alias("success_count"),
+        pl.col(evaluation_variable).std().alias("std"),
+        (pl.col(evaluation_variable) < max_budget).mean().alias("success_ratio"),
+        (pl.col(evaluation_variable) < max_budget).sum().alias("success_count"),
         (
-            pl.col(evaluation_variable).replace(np.inf, max_budget).sum()
-            / pl.col(evaluation_variable).is_finite().sum()
+            pl.col(evaluation_variable).sum()
+            / (pl.col(evaluation_variable) < max_budget).sum()
         ).alias("ERT"),
         (
-            pl.col(evaluation_variable).replace(np.inf, max_budget * 10).sum()
+            pl.col(evaluation_variable).sum() + pl.col(evaluation_variable).is_between(max_budget, np.inf).count() * max_budget * 9
             / pl.col(evaluation_variable).count()
         ).alias("PAR-10"),
     ]
@@ -376,7 +380,7 @@ def aggegate_running_time(
     if custom_op is not None:
         aggregations.append(
             pl.col(evaluation_variable)
-            .apply(lambda s: custom_op(s))
+            .apply(custom_op)
             .alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
