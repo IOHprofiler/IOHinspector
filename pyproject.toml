@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iohinspector"
-version = "0.0.3"
+version = "0.0.5"
 authors = [
   { name="Diederick Vermetten", email="d.vermetten@gmail.com" },
   { name="Jacob de Nobel", email="jacobdenobel@gmail.com" },
@@ -19,10 +19,10 @@ classifiers = [
 ]
 dependencies = [
   "matplotlib",
-  "moocore",
+  "moocore>=0.1.8",
   "numpy",
   "pandas",
-  "polars",
+  "polars>=1.33.1",
   "pyarrow", 
   "robustranking", 
   "seaborn",

@@ -7,11 +7,216 @@ import numpy as np
 import pandas as pd
 from skelo.model.elo import EloEstimator
 
-from .align import turbo_align, align_data
+from .align import align_data
 
 
 
 
+def get_sequence(
+    min: float,
+    max: float,
+    len: float,
+    scale_log: bool = False,
+    cast_to_int: bool = False,
+) -> np.ndarray:
+    """Create sequence of points, used for subselecting targets / budgets for allignment and data processing
+
+    Args:
+        min (float): Starting point of the range
+        max (float): Final point of the range
+        len (float): Number of steps
+        scale_log (bool): Whether values should be scaled logarithmically. Defaults to False
+        version (str, optional): Whether the value should be casted to integers (e.g. in case of budget) or not. Defaults to False.
+
+    Returns:
+        np.ndarray: Array of evenly spaced values
+    """
+    transform = lambda x: x
+    if scale_log:
+        assert min > 0
+        min = np.log10(min)
+        max = np.log10(max)
+        transform = lambda x: 10**x
+    values = transform(
+        np.arange(
+            min,
+            max + (max - min) / (2 * (len - 1)),
+            (max - min) / (len - 1),
+            dtype=float,
+        )
+    )
+    if cast_to_int:
+        return np.unique(np.array(values, dtype=int))
+    return np.unique(values)
+
+
+def _geometric_mean(series: pl.Series) -> float:
+    """Helper function for polars: geometric mean"""
+    return np.exp(np.log(series).mean())
+
+
+def aggegate_convergence(
+    data: pl.DataFrame,
+    evaluation_variable: str = "evaluations",
+    fval_variable: str = "raw_y",
+    free_variables: Iterable[str] = ["algorithm_name"],
+    x_min: int = None,
+    x_max: int = None,
+    custom_op: Callable[[pl.Series], float] = None,
+    maximization: bool = False,
+    return_as_pandas: bool = True,
+):
+    """Function to aggregate performance on a fixed-budget perspective
+
+    Args:
+        data (pl.DataFrame): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
+        this object determine the axes of the final performance (most data will have 'raw_y', 'evaluations' and ['algId'] as defaults)
+        evaluation_variable (str, optional): Column name for evaluation number. Defaults to "evaluations".
+        fval_variable (str, optional): Column name for function value. Defaults to "raw_y".
+        free_variables (Iterable[str], optional): Column name for free variables (variables over which performance should not be aggregated). Defaults to ["algorithm_name"].
+        x_min (int, optional): Minimum evaulation value to use. Defaults to None (minimum present in data).
+        x_max (int, optional): Maximum evaulation value to use. Defaults to None (maximum present in data).
+        custom_op (Callable[[pl.Series], float], optional): Custom aggregation method for performance values. Defaults to None.
+        maximization (bool, optional): Whether performance metric is being maximized or not. Defaults to False.
+        return_as_pandas (bool, optional): Whether the data should be returned as Pandas (True) or Polars (False) object. Defaults to True.
+
+    Returns:
+        DataFrame: Depending on 'return_as_pandas', a pandas or polars DataFrame with the aggregated performance values
+    """
+
+    # Getting alligned data (to check if e.g. limits should be args for this function)
+    if x_min is None:
+        x_min = data[evaluation_variable].min()
+    if x_max is None:
+        x_max = data[evaluation_variable].max()
+    x_values = get_sequence(x_min, x_max, 50, scale_log=True, cast_to_int=True)
+    group_variables = free_variables + [evaluation_variable]
+    data_aligned = align_data(
+        data.cast({evaluation_variable: pl.Int64}),
+        x_values,
+        group_cols=["data_id"] + free_variables,
+        x_col=evaluation_variable,
+        y_col=fval_variable,
+        maximization=maximization,
+    )
+
+    aggregations = [
+        pl.mean(fval_variable).alias("mean"),
+        pl.min(fval_variable).alias("min"),
+        pl.max(fval_variable).alias("max"),
+        pl.median(fval_variable).alias("median"),
+        pl.std(fval_variable).alias("std"),
+        pl.col(fval_variable).log().mean().exp().alias("geometric_mean")
+    ]
+
+    if custom_op is not None:
+        aggregations.append(
+            pl.col(fval_variable).apply(custom_op).alias(custom_op.__name__)
+        )
+    dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
+    if return_as_pandas:
+        return dt_plot.sort(evaluation_variable).to_pandas()
+    return dt_plot.sort(evaluation_variable)
+
+
+def transform_fval(
+    data: pl.DataFrame,
+    lb: float = 1e-8,
+    ub: float = 1e8,
+    scale_log: bool = True,
+    maximization: bool = False,
+    fval_col: str = "raw_y",
+):
+    """Helper function to transform function values (min-max normalization based on provided bounds and scaling)
+
+    Args:
+        data (pl.DataFrame): The data object to use for getting the performance.
+        lb (float, optional): Lower bound for scaling of function values. If None, it is the max value found in data. Defaults to 1e-8.
+        ub (float, optional): Upper bound for scaling of function values. If None, it is the max value found in data. Defaults to 1e8.
+        scale_log (bool, optional): Whether function values should be log-scaled before scaling. Defaults to True.
+        maximization (bool, optional): Whether function values is being maximized. Defaults to False.
+        fval_col (str, optional): Which column in data to use. Defaults to "raw_y".
+
+    Returns:
+        _type_: a copy of the original data with a new column 'eaf' with the scaled function values (which is always to be maximized)
+    """
+    if ub == None:
+        ub = data[fval_col].max()
+    if lb == None:
+        lb = data[fval_col].min()
+        if lb <= 0 and scale_log:
+            lb = 1e-8
+            warnings.warn(
+                "If using logarithmic scaling, lb should be set to prevent errors in log-calculation. Lb is being overwritten to 1e-8 to avoid this."
+            )
+    if scale_log:
+        lb = np.log10(lb)
+        ub = np.log10(ub)
+        res = data.with_columns(
+            ((pl.col(fval_col).log10() - lb) / (ub - lb)).clip(0, 1).alias("eaf")
+        )
+    else:
+        res = data.with_columns(
+            ((pl.col(fval_col) - lb) / (ub - lb)).clip(0, 1).alias("eaf")
+        )
+    if maximization:
+        return res
+    return res.with_columns((1 - pl.col("eaf")).alias("eaf"))
+
+
+def _aocc(group: pl.DataFrame, max_budget: int, fval_col: str = "eaf"):
+    group = group.cast({"evaluations": pl.Int64}).filter(
+        pl.col("evaluations") <= max_budget
+    )
+    new_row = pl.DataFrame(
+        {
+            "evaluations": [0, max_budget],
+            fval_col: [group[fval_col].min(), group[fval_col].max()],
+        }
+    )
+    group = (
+        pl.concat([group, new_row], how="diagonal")
+        .sort("evaluations")
+        .fill_null(strategy="forward")
+        .fill_null(strategy="backward")
+    )
+    return group.with_columns(
+        (
+            (
+                pl.col("evaluations").diff(n=1, null_behavior="ignore")
+                * (pl.col(fval_col).shift(1))
+            )
+            / max_budget
+        ).alias("aocc_contribution")
+    )
+
+
+def get_aocc(
+    data: pl.DataFrame,
+    max_budget: int,
+    fval_col: str = "eaf",
+    group_cols: Iterable[str] = ["function_name", "algorithm_name"],
+):
+    """Helper function for AOCC calculations
+
+    Args:
+        data (pl.DataFrame): The data object to use for getting the performance.
+        max_budget (int): Maxium value of evaluations to use
+        fval_col (str, optional): Which data column specifies the performance value. Defaults to "eaf".
+        group_cols (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["function_name", "algorithm_name"].
+
+    Returns:
+        pl.DataFrame: a polars dataframe with the area under the EAF (=area over convergence curve)
+    """
+    aocc_contribs = data.group_by(*["data_id"]).map_groups(
+        partial(_aocc, max_budget=max_budget, fval_col=fval_col)
+    )
+    aoccs = aocc_contribs.group_by(["data_id"] + group_cols).agg(
+        pl.col("aocc_contribution").sum()
+    )
+    return aoccs.group_by(group_cols).agg(
+        pl.col("aocc_contribution").mean().alias("AOCC")
+    )
 
 
 def get_tournament_ratings(
