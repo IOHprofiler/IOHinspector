@@ -82,7 +82,7 @@ def aggregate_running_time(
     if custom_op is not None:
         aggregations.append(
             pl.col(evaluation_variable)
-            .map_elements(lambda s: custom_op(s), return_dtype=pl.Float64)
+            .map_batches(lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True)
             .alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)

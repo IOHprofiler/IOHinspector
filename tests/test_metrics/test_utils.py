@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from iohinspector.data_processing.utils import get_sequence, geometric_mean
+from iohinspector.metrics.utils import get_sequence, geometric_mean
 import polars as pl
 
 class TestGetSequence(unittest.TestCase):

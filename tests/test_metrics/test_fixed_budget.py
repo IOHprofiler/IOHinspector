@@ -2,9 +2,9 @@ import unittest
 import polars as pl
 import numpy as np
 from typing import Callable
-from iohinspector.data_processing.aggregate_convergence import aggregate_convergence
+from iohinspector.metrics.fixed_budget import aggregate_convergence
 
-class TestAggregateConvergence(unittest.TestCase):
+class TestFixedBudget(unittest.TestCase):
     def setUp(self):
         # Create a simple test DataFrame
         self.df = pl.DataFrame({
@@ -29,7 +29,7 @@ class TestAggregateConvergence(unittest.TestCase):
 
     def test_custom_op(self):
         def custom_sum(s):
-            return float(s.sum())
+            return s.sum()  # Sum the Series and return as float
         result = aggregate_convergence(self.df, custom_op=custom_sum, return_as_pandas=True)
         self.assertIn("custom_sum", result.columns)
 

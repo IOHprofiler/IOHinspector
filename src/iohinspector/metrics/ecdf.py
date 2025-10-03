@@ -2,29 +2,9 @@ import polars as pl
 from typing import Iterable
 from .utils import get_sequence
 from ..align import align_data
-from .normalise_objectives import normalize_objectives
+from .normalise_objectives import transform_fval
 
-def transform_fval(
-    data: pl.DataFrame,
-    lb: float = 1e-8,
-    ub: float = 1e8,
-    scale_log: bool = True,
-    maximization: bool = False,
-    fval_col: str = "raw_y",
-):
-    """
-    Helper function to transform function values (min-max normalization based on provided bounds and scaling)
-    """
-    bounds = {fval_col: (lb, ub)}
-    res = normalize_objectives(
-        data,
-        obj_cols=[fval_col],
-        bounds=bounds,
-        log_scale=scale_log,
-        maximize=maximization,
-        prefix="eaf"
-    )
-    return res
+
 
 
 def get_data_ecdf(

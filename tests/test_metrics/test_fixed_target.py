@@ -1,9 +1,9 @@
 import unittest
 import polars as pl
 import math
-from iohinspector.data_processing.aggregate_running_time import aggregate_running_time
+from iohinspector.metrics.fixed_target import aggregate_running_time
 
-class TestAggregateRunningTime(unittest.TestCase):
+class TestFixedTarget(unittest.TestCase):
 
     def setUp(self):
         self.df = pl.DataFrame({

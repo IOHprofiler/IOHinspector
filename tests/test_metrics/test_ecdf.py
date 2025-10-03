@@ -1,7 +1,7 @@
 import unittest
 import polars as pl
 import numpy as np
-from iohinspector.data_processing.ecdf import get_data_ecdf
+from iohinspector.metrics.ecdf import get_data_ecdf
 import iohinspector
 
 class TestGetDataECDF(unittest.TestCase):

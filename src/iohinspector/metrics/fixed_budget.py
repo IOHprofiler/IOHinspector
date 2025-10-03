@@ -55,17 +55,16 @@ def aggregate_convergence(
         pl.max(fval_variable).alias("max"),
         pl.median(fval_variable).alias("median"),
         pl.std(fval_variable).alias("std"),
-        pl.col(fval_variable)
-        .map_elements(lambda s: geometric_mean(s), return_dtype=pl.Float64)
-        .alias("geometric_mean"),
+        pl.col(fval_variable).log().mean().exp().alias("geometric_mean")
     ]
 
     if custom_op is not None:
         aggregations.append(
-            pl.col(fval_variable)
-            .map_elements(lambda s: custom_op(s), return_dtype=pl.Float64)
-            .alias(custom_op.__name__)
-        )
+            pl.col(fval_variable).map_batches(
+                lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True
+            ).alias(custom_op.__name__)
+    )
+        
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
     if return_as_pandas:
         return dt_plot.sort(evaluation_variable).to_pandas()

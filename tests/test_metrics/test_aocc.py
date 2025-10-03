@@ -1,9 +1,9 @@
 import unittest
 import polars as pl
 import numpy as np
-from iohinspector.data_processing.aocc import get_aocc
+from iohinspector.metrics import get_aocc
 
-class TestGetAOCC(unittest.TestCase):
+class TestAOCC(unittest.TestCase):
     def setUp(self):
         # Simple dataset with two groups and two data_ids
         self.df = pl.DataFrame({

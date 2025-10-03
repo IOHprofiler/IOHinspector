@@ -9,14 +9,11 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
 import seaborn as sbs
 
-from .metrics import (
-    aggegate_running_time,
-    get_sequence,
-    aggegate_convergence,
+from .old_metrics import (
     get_tournament_ratings,
     get_attractor_network,
-    transform_fval,
 )
+from .metrics import aggregate_running_time, aggregate_convergence, get_sequence, transform_fval
 from .align import align_data, turbo_align
 from .indicators import add_indicator, final
 
@@ -66,7 +63,7 @@ def single_function_fixedtarget(
     Returns:
         pd.DataFrame: The final dataframe which was used to create the plot
     """
-    dt_agg = aggegate_running_time(
+    dt_agg = aggregate_running_time(
         data,
         evaluation_variable=evaluation_variable,
         fval_variable=fval_variable,
@@ -139,7 +136,7 @@ def single_function_fixedbudget(
     Returns:
         pd.DataFrame: The final dataframe which was used to create the plot
     """
-    dt_agg = aggegate_convergence(
+    dt_agg = aggregate_convergence(
         data,
         evaluation_variable=evaluation_variable,
         fval_variable=fval_variable,
