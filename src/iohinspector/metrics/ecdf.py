@@ -1,8 +1,8 @@
 import polars as pl
 from typing import Iterable
 from .utils import get_sequence
-from ..align import align_data
-from .normalise_objectives import transform_fval
+from ..align import align_data, turbo_align
+from .utils import transform_fval
 
 
 
@@ -20,6 +20,7 @@ def get_data_ecdf(
     y_min: int = None,
     y_max: int = None,
     scale_ylog: bool = True,
+    turbo: bool = False
 ):
     """Function to plot empirical cumulative distribution function (Based on EAF)
 
@@ -49,14 +50,23 @@ def get_data_ecdf(
         x_values = get_sequence(
             x_min, x_max, 50, scale_log=scale_xlog, cast_to_int=True
         )
-    data_aligned = align_data(
-        data.cast({eval_var: pl.Int64}),
-        x_values,
-        group_cols=["data_id"],
-        x_col=eval_var,
-        y_col=fval_var,
-        maximization=maximization,
-    )
+    if turbo:
+        data_aligned = turbo_align(
+            data.cast({eval_var: pl.Int64}),
+            x_values,
+            x_col=eval_var,
+            y_col=fval_var,
+            maximization=maximization,
+        )
+    else:
+        data_aligned = align_data(
+            data.cast({eval_var: pl.Int64}),
+            x_values,
+            group_cols=["data_id"],
+            x_col=eval_var,
+            y_col=fval_var,
+            maximization=maximization,
+        )
     dt_ecdf = (
         transform_fval(
             data_aligned,

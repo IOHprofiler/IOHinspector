@@ -66,5 +66,15 @@ class TestGetDataECDF(unittest.TestCase):
         algo2_eaf.sort()
         np.testing.assert_allclose(algo2_eaf, [0, 1/6, 1/3])
 
+    def test_basic_ecdf_turbo(self):
+        result = get_data_ecdf(self.df, scale_xlog=False, scale_ylog=False, turbo=True)
+        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy()   
+        algo1_eaf.sort()
+        np.testing.assert_allclose(algo1_eaf, [0.5, 0.625, 0.75, 0.875, 1])
+
+        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy()   
+        algo2_eaf.sort()
+        np.testing.assert_allclose(algo2_eaf, [0, 0.125, 0.25, 0.375, 0.5])
+
 if __name__ == "__main__":
     unittest.main()

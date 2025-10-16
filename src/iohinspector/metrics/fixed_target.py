@@ -1,6 +1,6 @@
 import polars as pl
 from typing import Iterable, Callable
-from .utils import get_sequence, geometric_mean
+from .utils import get_sequence
 from ..align import align_data
 
 def aggregate_running_time(
