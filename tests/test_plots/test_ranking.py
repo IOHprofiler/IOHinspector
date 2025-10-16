@@ -1,7 +1,6 @@
 import unittest
-from build.lib.iohinspector.plots.ranking import plot_robustrank_changes
 import polars as pl
-from iohinspector.plots import plot_robustrank_over_time,plot_tournament_ranking
+from iohinspector.plots import plot_robustrank_over_time,plot_tournament_ranking, plot_robustrank_changes
 from iohinspector.indicators import HyperVolume
 
 class TestPlotTournamentRanking(unittest.TestCase):
