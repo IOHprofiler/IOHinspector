@@ -14,7 +14,7 @@ class TestGetTrajectory(unittest.TestCase):
         })
 
     def test_basic_trajectory(self):
-        result = get_trajectory(self.data)
+        result = get_trajectory(self.data, return_as_pandas=False)
         self.assertIsInstance(result, pl.DataFrame)
         # Should have as many rows as input (since all evaluations present)
         self.assertEqual(result.shape[0], 40) # 2 algorithms * 20 evaluations
@@ -31,19 +31,19 @@ class TestGetTrajectory(unittest.TestCase):
 
     def test_traj_length(self):
         # Only first two evaluations should be present
-        result = get_trajectory(self.data, traj_length=1)
+        result = get_trajectory(self.data, traj_length=1, return_as_pandas=False)
         for algo in self.data["algorithm_name"].unique():
             evals = result.filter(pl.col("algorithm_name") == algo)["evaluations"].to_list()
             self.assertEqual(set(evals), set(range(1, 3)))
         
-        result = get_trajectory(self.data, traj_length=10)
+        result = get_trajectory(self.data, traj_length=10, return_as_pandas=False)
         for algo in self.data["algorithm_name"].unique():
             evals = result.filter(pl.col("algorithm_name") == algo)["evaluations"].to_list()
             self.assertEqual(set(evals), set(range(1, 12)))
 
     def test_min_fevals(self):
         # Start from evaluation 2
-        result = get_trajectory(self.data, min_fevals=2)
+        result = get_trajectory(self.data, min_fevals=2, return_as_pandas=False)
         for algo in self.data["algorithm_name"].unique():
             evals = result.filter(pl.col("algorithm_name") == algo)["evaluations"].to_list()
             self.assertEqual(set(evals), set(range(2, 21)))
@@ -51,12 +51,12 @@ class TestGetTrajectory(unittest.TestCase):
 
     def test_custom_free_variables(self):
         # Use only data_id as free variable
-        result = get_trajectory(self.data, free_variables=[])
+        result = get_trajectory(self.data, free_variables=[], return_as_pandas=False)
         self.assertIn("data_id", result.columns)
         self.assertIn("raw_y", result.columns)
 
     def test_maximization(self):
-        result = get_trajectory(self.data, maximization=True)
+        result = get_trajectory(self.data, maximization=True, return_as_pandas=False)
 
         for algo in self.data["algorithm_name"].unique():
             raw_y_values = result.filter(pl.col("algorithm_name") == algo).sort("evaluations")["raw_y"].to_list()

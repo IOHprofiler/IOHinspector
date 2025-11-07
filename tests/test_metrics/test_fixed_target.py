@@ -73,7 +73,7 @@ class TestFixedTarget(unittest.TestCase):
         self.assertTrue(result["raw_y"].max() <= 0.5)
 
     def test_with_different_free_variables(self):
-        result = aggregate_running_time(self.df, free_variables=["algorithm_name", "data_id"], return_as_pandas=False)
+        result = aggregate_running_time(self.df, free_vars=["algorithm_name", "data_id"], return_as_pandas=False)
         self.assertIn("algorithm_name", result.columns)
         self.assertIn("data_id", result.columns)
 

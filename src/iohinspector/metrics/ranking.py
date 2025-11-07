@@ -1,3 +1,4 @@
+from iohinspector.indicators import add_indicator
 from skelo.model.elo import EloEstimator
 import numpy as np
 import pandas as pd
@@ -11,31 +12,30 @@ def get_tournament_ratings(
     data: pl.DataFrame,
     alg_vars: Iterable[str] = ["algorithm_name"],
     fid_vars: Iterable[str] = ["function_name"],
-    perf_var: str = "raw_y",
+    fval_var: str = "raw_y",
     nrounds: int = 25,
     maximization: bool = False,
-):
-    """Method to calculate ratings of a set of algorithm on a set of problems.
-    Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
-    For each round, a sampled performance value is taken from the data and used to determine the winner.
-    This function uses the ELO rating scheme, as opposed to the Glicko2 scheme used in the IOHanalyzer. Deviations are estimated based on the last 5% of rounds.
+    return_as_pandas: bool = True,
+) -> pl.DataFrame | pd.DataFrame:
+    """Calculate ELO tournament ratings for algorithms competing on multiple problems.
 
     Args:
-        data (pl.DataFrame): The data object to use for getting the performance.
-        alg_vars (Iterable[str], optional): Which variables specific the algortihms which will compete. Defaults to ["algorithm_name"].
-        fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
-        perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
-        nrounds (int, optional): How many round should be played. Defaults to 25.
+        data (pl.DataFrame): The data object containing algorithm performance data.
+        alg_vars (Iterable[str], optional): Which columns specify the algorithms that will compete. Defaults to ["algorithm_name"].
+        fid_vars (Iterable[str], optional): Which columns denote the problems on which competition occurs. Defaults to ["function_name"].
+        fval_var (str, optional): Which column contains the performance values. Defaults to "raw_y".
+        nrounds (int, optional): Number of tournament rounds to play. Defaults to 25.
         maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
+        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame: Pandas dataframe with rating, deviation and volatility for each 'alg_vars' combination
+        pd.DataFrame or pl.DataFrame: A DataFrame with ELO ratings, deviations, and algorithm identifiers.
     """
     fids = data[fid_vars].unique()
     aligned_comps = data.pivot(
         index=alg_vars,
         columns=fid_vars,
-        values=perf_var,
+        values=fval_var,
         aggregate_function=pl.element(),
     )
     players = aligned_comps[alg_vars]
@@ -81,4 +81,98 @@ def get_tournament_ratings(
         ]
     ).transpose()
     rating_dt_elo.columns = ["Rating", "Deviation", *players.columns]
-    return rating_dt_elo
+    if return_as_pandas:
+        return rating_dt_elo
+    else:
+        rating_dt_elo_pl = pl.from_pandas(rating_dt_elo)
+        return rating_dt_elo_pl
+
+
+def get_robustrank_over_time(
+        data: pl.DataFrame,
+        obj_vars: Iterable[str],
+        evals: Iterable[int],
+        indicator: object,
+    
+):
+    """Calculate robust ranking data over multiple time points for multi-objective optimization.
+
+    Args:
+        data (pl.DataFrame): The data object containing multi-objective optimization trajectory data.
+        obj_vars (Iterable[str]): Which columns correspond to the objective values.
+        evals (Iterable[int]): Evaluation time points at which to calculate rankings.
+        indicator (object): Indicator object from iohinspector.indicators for performance measurement.
+
+    Returns:
+        tuple: A tuple containing (comparison, benchmark) objects for robust ranking analysis.
+    """
+    from robustranking import Benchmark
+    from robustranking.comparison import MOBootstrapComparison
+
+    df = add_indicator(
+        data, indicator, obj_vars=obj_vars, evals=evals
+    ).to_pandas()
+    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
+    dt_pivoted = pd.pivot(
+        df_part,
+        index=["algorithm_name", "run_id"],
+        columns=["evaluations"],
+        values=[indicator.var_name],
+    ).reset_index()
+    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+    benchmark = Benchmark()
+    benchmark.from_pandas(dt_pivoted, "algorithm_name", "run_id", evals)
+    comparison = MOBootstrapComparison(
+        benchmark,
+        alpha=0.05,
+        minimise=indicator.minimize,
+        bootstrap_runs=1000,
+        aggregation_method=np.mean,
+    )
+    
+    return comparison,  benchmark
+
+
+def get_robustrank_changes(  
+    data: pl.DataFrame,
+    obj_vars: Iterable[str],
+    evals: Iterable[int],
+    indicator: object,
+    ):
+    """Calculate robust ranking changes across multiple evaluation time points.
+
+    Args:
+        data (pl.DataFrame): The data object containing multi-objective optimization trajectory data.
+        obj_vars (Iterable[str]): Which columns correspond to the objective values.
+        evals (Iterable[int]): Evaluation time points at which to calculate ranking changes.
+        indicator (object): Indicator object from iohinspector.indicators for performance measurement.
+
+    Returns:
+        dict: A dictionary of comparison objects for each evaluation time point showing ranking changes.
+    """
+    from robustranking import Benchmark
+    from robustranking.comparison import BootstrapComparison
+
+    df = add_indicator(
+        data, indicator, obj_vars=obj_vars, evals=evals
+    ).to_pandas()
+    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
+    dt_pivoted = pd.pivot(
+        df_part,
+        index=["algorithm_name", "run_id"],
+        columns=["evaluations"],
+        values=[indicator.var_name],
+    ).reset_index()
+    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+
+    comparisons = {
+        f"{eval}": BootstrapComparison(
+            Benchmark().from_pandas(dt_pivoted, "algorithm_name", "run_id", eval),
+            alpha=0.05,
+            minimise=indicator.minimize,
+            bootstrap_runs=1000,
+        )
+        for eval in evals
+    }
+
+    return comparisons

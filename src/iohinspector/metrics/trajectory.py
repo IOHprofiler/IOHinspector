@@ -1,5 +1,6 @@
 import numpy as np
 import polars as pl
+import pandas as pd
 from typing import Iterable
 from iohinspector.align import align_data
 
@@ -12,22 +13,23 @@ def get_trajectory(data: pl.DataFrame,
                    evaluation_variable: str = "evaluations",
                    fval_variable: str = "raw_y",
                    free_variables: Iterable[str] = ["algorithm_name"],
-                    maximization: bool = False
-) -> pl.DataFrame:
-    """get the trajectory of the performance of the algorithms in the data
-    This function aligns the data to a fixed number of evaluations and returns the performance trajectory.
+                   maximization: bool = False,
+                   return_as_pandas: bool = True,
+) -> pl.DataFrame | pd.DataFrame:
+    """Generate aligned performance trajectories for algorithm comparison over fixed evaluation sequences.
 
     Args:
-        data (pl.DataFrame): The DataFrame resulting from loading the data from a DataManager.
-        traj_length (int, optional): Length of the trajecotry. Defaults to None.
-        min_fevals (int, optional): Evaluation number from which to start the trajectory. Defaults to 1.
-        evaluation_variable (str, optional): Variable corresponding to evaluation count in `data`. Defaults to "evaluations".
-        fval_variable (str, optional): Variable corresponding to function value in `data`. Defaults to "raw_y".
-        free_variables (Iterable[str], optional): Free variables in `data`. Defaults to ["algorithm_name"].
-        maximization (bool, optional): Whether the data is maximizing or not. Defaults to False.
+        data (pl.DataFrame): The data object containing algorithm performance trajectory data.
+        traj_length (int, optional): Length of the trajectory to generate. If None, uses maximum evaluations from data. Defaults to None.
+        min_fevals (int, optional): Starting evaluation number for the trajectory. Defaults to 1.
+        evaluation_variable (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
+        fval_variable (str, optional): Which column contains the function values. Defaults to "raw_y".
+        free_variables (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["algorithm_name"].
+        maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
+        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame: DataFrame: A polars DataFrame with the aligned data, where each row corresponds to a specific evaluation count and the performance value.
+        pl.DataFrame or pd.DataFrame: A DataFrame with aligned trajectory data where each row corresponds to a specific evaluation and performance value.
     """
     if traj_length is None:
         max_fevals = data[evaluation_variable].max()
@@ -42,4 +44,6 @@ def get_trajectory(data: pl.DataFrame,
         y_col=fval_variable,
         maximization=maximization,
     )
+    if return_as_pandas:
+        data_aligned = data_aligned.to_pandas()
     return data_aligned

@@ -4,7 +4,23 @@ import polars as pl
 from typing import Iterable, Tuple
 
 
-def _get_nodeidx(xloc, yval, nodes, epsilon):
+def _get_nodeidx(
+    xloc: np.ndarray,
+    yval: float,
+    nodes: pd.DataFrame,
+    epsilon: float
+):
+    """Internal helper function to find existing node index based on position and function value.
+
+    Args:
+        xloc (array-like): Position coordinates to search for in the network.
+        yval (float): Function value to match with existing nodes.
+        nodes (pd.DataFrame): DataFrame containing existing network nodes.
+        epsilon (float): Tolerance threshold for considering positions as identical.
+
+    Returns:
+        int: Index of matching node if found, -1 otherwise.
+    """
     if len(nodes) == 0:
         return -1
     candidates = nodes[np.isclose(nodes["y"], yval, atol=epsilon)]
@@ -19,28 +35,29 @@ def _get_nodeidx(xloc, yval, nodes, epsilon):
 
 
 def get_attractor_network(
-    data,
-    coord_vars=["x1", "x2"],
+    data: pl.DataFrame,
+    coord_vars: Iterable[str] = ["x1", "x2"],
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
     maximization: bool = False,
-    beta=40,
-    epsilon=0.0001,
+    beta: int = 40,
+    epsilon: float = 0.0001,
     eval_max=None,
-):
-    """Create an attractor network from the provided data
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Create an attractor network from optimization trajectory data.
 
     Args:
-        data (pl.DataFrame): The original dataframe, should contain the performance and position information
-        coord_vars (Iterable[str], optional): Which columns correspond to position information. Defaults to ['x1', 'x2'].
-        fval_var (str, optional): Which column corresponds to performance. Defaults to 'raw_y'.
-        eval_var (str, optional): Which column corresponds to evaluations. Defaults to 'evaluations'.
+        data (pl.DataFrame): The original dataframe containing performance and position information.
+        coord_vars (Iterable[str], optional): Which columns correspond to position information. Defaults to ["x1", "x2"].
+        fval_var (str, optional): Which column corresponds to performance values. Defaults to "raw_y".
+        eval_var (str, optional): Which column corresponds to evaluation numbers. Defaults to "evaluations".
         maximization (bool, optional): Whether fval_var is to be maximized. Defaults to False.
-        beta (int, optional): Minimum stagnation lenght. Defaults to 40.
+        beta (int, optional): Minimum stagnation length threshold. Defaults to 40.
         epsilon (float, optional): Radius below which positions should be considered identical in the network. Defaults to 0.0001.
-        eval_max (int, optional): Maximum evaluation number. Defaults to the maximum of eval_var if None.
+        eval_max (int, optional): Maximum evaluation number to consider. Defaults to the maximum of eval_var if None.
+
     Returns:
-        pd.DataFrame, pd.DataFrame: two dataframes containing the nodes and edges of the network respectively.
+        tuple[pd.DataFrame, pd.DataFrame]: Two DataFrames containing the nodes and edges of the network respectively.
     """
 
     running_idx = 0

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iohinspector"
-version = "0.0.6"
+version = "0.1.0"
 authors = [
   { name="Diederick Vermetten", email="d.vermetten@gmail.com" },
   { name="Jacob de Nobel", email="jacobdenobel@gmail.com" },

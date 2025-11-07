@@ -1,4 +1,6 @@
 from typing import Iterable, Optional
+from iohinspector.metrics.ranking import get_robustrank_changes, get_robustrank_over_time
+from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
 import polars as pl
 import numpy as np
 import pandas as pd
@@ -13,35 +15,62 @@ def plot_tournament_ranking(
     data,
     alg_vars: Iterable[str] = ["algorithm_name"],
     fid_vars: Iterable[str] = ["function_name"],
-    perf_var: str = "raw_y",
+    fval_var: str = "raw_y",
     nrounds: int = 25,
     maximization: bool = False,
+    *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: str = None,
+    plot_args: dict | BasePlotArgs = None,
 ):
-    """Method to plot ELO ratings of a set of algorithm on a set of problems.
-    Calculated based on nrounds of competition, where in each round all algorithms face all others (pairwise) on every function.
-    For each round, a sampled performance value is taken from the data and used to determine the winner.
+    """Plot ELO ratings from tournament-style algorithm competition across multiple problems.
+
+    Creates a point plot with error bars showing ELO ratings calculated from pairwise algorithm 
+    competitions. In each round, all algorithms compete against each other on every function,
+    with performance samples determining winners and ELO rating updates.
 
     Args:
-        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        alg_vars (Iterable[str], optional): Which variables specific the algortihms which will compete. Defaults to ["algorithm_name"].
-        fid_vars (Iterable[str], optional): Which variables denote the problems on which will be competed. Defaults to ["function_name"].
-        perf_var (str, optional): Which variable corresponds to the performance. Defaults to "raw_y".
-        nrounds (int, optional): How many round should be played. Defaults to 25.
+        data (pl.DataFrame): Input dataframe containing algorithm performance trajectory data.
+        alg_vars (Iterable[str], optional): Which columns contain the algorithm identifiers that will compete. 
+            Defaults to ["algorithm_name"].
+        fid_vars (Iterable[str], optional): Which columns contain the problem/function identifiers for competition. 
+            Defaults to ["function_name"].
+        fval_var (str, optional): Which column contains the performance values. Defaults to "raw_y".
+        nrounds (int, optional): Number of tournament rounds to simulate. Defaults to 25.
         maximization (bool, optional): Whether the performance should be maximized. Defaults to False.
-        ax (matplotlib.axes._axes.Axes, optional): Existing matplotlib axis object to draw the plot on.
-        file_name (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+        ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
+        file_name (str, optional): Path to save the plot. If None, plot is not saved. Defaults to None.
+        plot_args (dict | BasePlotArgs, optional): Plot styling arguments. Can include:
+            - title (str): Plot title. Defaults to "Tournament Ranking".
+            - xlabel (str): X-axis label. Defaults to "Algorithms".
+            - ylabel (str): Y-axis label. Defaults to "ELO Rating".
+            - figsize (Tuple[float, float]): Figure size. Defaults to (16, 9).
+            - All other BasePlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, fontsize, etc.).
 
     Returns:
-        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the ELO ratings 
+            dataframe used to create the plot.
     """
     # candlestick plot based on average and volatility
     dt_elo = get_tournament_ratings(
-        data, alg_vars, fid_vars, perf_var, nrounds, maximization
+        data, alg_vars, fid_vars, fval_var, nrounds, maximization
     )
+
+    plot_args = _create_plot_args(
+        BasePlotArgs(
+            title= "Tournament Ranking",
+            xlabel="Algorithms",
+            ylabel="ELO Rating",
+            grid= True
+        ),
+        plot_args
+    )
+
+
     if ax is None:
-        _, ax = plt.subplots(1, 1, figsize=(10, 5))
+        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
+    else:
+        fig = None
 
     sbs.pointplot(data=dt_elo, x=alg_vars[0], y="Rating", linestyle="none", ax=ax)
 
@@ -55,12 +84,13 @@ def plot_tournament_ranking(
         capsize=5,
         elinewidth=1.5,
     )
-    ax.grid()
+    
+    plot_args.apply(ax)
+    
+    _save_fig(fig, file_name, plot_args)
 
-    if file_name:
-        plt.tight_layout()
-        plt.savefig(file_name)
-    return dt_elo
+
+    return ax, dt_elo
 
 
 def robustranking():
@@ -82,45 +112,52 @@ def winnning_fraction_heatmap():
 
 def plot_robustrank_over_time(
     data: pl.DataFrame,
-    obj_columns: Iterable[str],
+    obj_vars: Iterable[str],
     evals: Iterable[int],
     indicator: object,
-    filename_fig: Optional[str] = None,
+    *,
+    file_name: Optional[str] = None,
 ):
-    """Plot robust ranking at distinct timesteps
+    """Plot robust ranking confidence intervals at distinct evaluation timesteps.
+
+    Creates multiple subplots showing robust ranking analysis with confidence intervals 
+    for algorithm performance at different evaluation budgets, using statistical comparison
+    methods to handle uncertainty in performance measurements.
 
     Args:
-        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives.
-        evals (Iterable[int]): Timesteps at which to get the rankings
-        indicator (object): Indicator object from iohinspector.indicators
-        filename_fig (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
-    """
-    from robustranking import Benchmark
-    from robustranking.comparison import MOBootstrapComparison, BootstrapComparison
-    from robustranking.utils.plots import plot_ci_list, plot_line_ranks
+        data (pl.DataFrame): Input dataframe containing algorithm performance trajectory data. 
+            Must contain data for a single function only.
+        obj_vars (Iterable[str]): Which columns contain the objective values for ranking calculation.
+        evals (Iterable[int]): Evaluation timesteps at which to compute and plot rankings.
+        indicator (object): Quality indicator object from iohinspector.indicators module.
+        file_name (Optional[str], optional): Path to save the plot. If None, plot is not saved. Defaults to None.
 
-    df = add_indicator(
-        data, indicator, objective_columns=obj_columns, evals=evals
-    ).to_pandas()
-    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
-    dt_pivoted = pd.pivot(
-        df_part,
-        index=["algorithm_name", "run_id"],
-        columns=["evaluations"],
-        values=[indicator.var_name],
-    ).reset_index()
-    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
-    benchmark = Benchmark()
-    benchmark.from_pandas(dt_pivoted, "algorithm_name", "run_id", evals)
-    comparison = MOBootstrapComparison(
-        benchmark,
-        alpha=0.05,
-        minimise=indicator.minimize,
-        bootstrap_runs=1000,
-        aggregation_method=np.mean,
+    Returns:
+        tuple[np.ndarray, tuple]: Array of matplotlib axes objects and a tuple containing 
+            (comparison, benchmark) data used for the robust ranking analysis.
+
+    Raises:
+        ValueError: If data contains multiple functions (function_id has more than one unique value).
+    """
+    from robustranking.utils.plots import plot_ci_list
+
+    if(data["function_id"].n_unique() > 1):
+        raise ValueError("Robust ranking over time plot can only be generated for a single function at a time.")
+    
+    comparison, benchmark = get_robustrank_over_time(
+        data=data,
+        obj_vars=obj_vars,
+        evals=evals,
+        indicator=indicator,
     )
-    fig, axs = plt.subplots(1, 4, figsize=(16, 9), sharey=True)
+
+    plot_args =BasePlotArgs(
+        figsize=(5*len(evals), 5),
+    )
+        
+    
+    fig, axs = plt.subplots(1, len(evals), figsize=plot_args.figsize, sharey=True)
+
     for ax, runtime in zip(axs.ravel(), benchmark.objectives):
         plot_ci_list(comparison, objective=runtime, ax=ax)
         if runtime != evals[0]:
@@ -129,58 +166,59 @@ def plot_robustrank_over_time(
             ax.get_legend().remove()
         ax.set_title(runtime)
 
-    plt.tight_layout()
-    if filename_fig:
-        plt.savefig(filename_fig)
-        plt.close()
+    _save_fig(fig, file_name, plot_args)
 
+    return axs, comparison, benchmark
 
 def plot_robustrank_changes(
     data: pl.DataFrame,
-    obj_columns: Iterable[str],
+    obj_vars: Iterable[str],
     evals: Iterable[int],
     indicator: object,
-    filename_fig: Optional[str] = None,
+    *,
+    ax: matplotlib.axes._axes.Axes = None,
+    file_name: Optional[str] = None,
 ):
-    """Plot robust ranking changes at distinct timesteps
+    """Plot robust ranking changes over evaluation timesteps as connected line plots.
+
+    Creates a line plot showing how algorithm rankings evolve over time, with lines 
+    connecting ranking positions across different evaluation budgets to visualize
+    ranking stability and performance trajectory changes.
 
     Args:
-        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        obj_columns (Iterable[str], optional): Which columns in 'data' correspond to the objectives.
-        evals (Iterable[int]): Timesteps at which to get the rankings
-        indicator (object): Indicator object from iohinspector.indicators
-        filename_fig (str, optional): Where should the resulting plot be stored. Defaults to None. If existing axis is provided, this functionality is disabled.
+        data (pl.DataFrame): Input dataframe containing algorithm performance trajectory data.
+        obj_vars (Iterable[str]): Which columns contain the objective values for ranking calculation.
+        evals (Iterable[int]): Evaluation timesteps at which to compute rankings and plot changes.
+        indicator (object): Quality indicator object from iohinspector.indicators module.
+        ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
+        file_name (Optional[str], optional): Path to save the plot. If None, plot is not saved. Defaults to None.
+
+    Returns:
+        tuple[matplotlib.axes.Axes, object]: The matplotlib axes object and the ranking 
+            comparisons data used to create the plot.
     """
-    from robustranking import Benchmark
-    from robustranking.comparison import MOBootstrapComparison, BootstrapComparison
-    from robustranking.utils.plots import plot_ci_list, plot_line_ranks
+    from robustranking.utils.plots import plot_line_ranks
 
-    df = add_indicator(
-        data, indicator, objective_columns=obj_columns, evals=evals
-    ).to_pandas()
-    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
-    dt_pivoted = pd.pivot(
-        df_part,
-        index=["algorithm_name", "run_id"],
-        columns=["evaluations"],
-        values=[indicator.var_name],
-    ).reset_index()
-    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+    comparisons = get_robustrank_changes(
+        data=data,
+        obj_vars=obj_vars,
+        evals=evals,
+        indicator=indicator,
+    )
 
-    comparisons = {
-        f"{eval}": BootstrapComparison(
-            Benchmark().from_pandas(dt_pivoted, "algorithm_name", "run_id", eval),
-            alpha=0.05,
-            minimise=indicator.minimize,
-            bootstrap_runs=1000,
-        )
-        for eval in evals
-    }
+    plot_args = BasePlotArgs(
+        figsize=(max(5 * len(evals), 16), 5),
+    )
+    
 
-    fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
+    else:
+        fig = None
+
     plot_line_ranks(comparisons, ax=ax)
 
-    plt.tight_layout()
-    if filename_fig:
-        plt.savefig(filename_fig)
-        plt.close()
+    plot_args.apply(ax)
+    _save_fig(fig, file_name, plot_args)
+
+    return ax, comparisons

@@ -14,3 +14,4 @@ from .multi_objective import plot_paretofronts_2d, plot_indicator_over_time
 from .ranking import plot_tournament_ranking, plot_robustrank_over_time, plot_robustrank_changes
 from .attractor_network import plot_attractor_network
 from .single_run import plot_heatmap_single_run
+from .utils import BasePlotArgs, LinePlotArgs

@@ -4,47 +4,79 @@ import seaborn as sbs
 import polars as pl
 from typing import Iterable, Optional
 import numpy as np
-
+from iohinspector.plots.utils import HeatmapPlotArgs, _create_plot_args, _save_fig
+from iohinspector.metrics.single_run import get_heatmap_single_run_data
 
 def plot_heatmap_single_run(
     data: pl.DataFrame,
-    var_cols: Iterable[str],
-    eval_col: str = "evaluations",
-    scale_xlog: bool = True,
-    x_mins: Iterable[float] = [-5],
-    x_maxs: Iterable[float] = [5],
+    vars: Iterable[str],
+    eval_var: str = "evaluations",
+    var_mins: Iterable[float] = [-5],
+    var_maxs: Iterable[float] = [5],
+    *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
+    plot_args: dict | HeatmapPlotArgs = None
 ):
-    """Create a heatmap showing the search space points evaluated in a single run
+    """Create a heatmap visualization showing search space exploration patterns in a single algorithm run.
+
+    Visualizes how an optimization algorithm explores the search space over time by showing 
+    the density of evaluations across different variable dimensions and evaluation budgets,
+    revealing search patterns and exploration behavior.
 
     Args:
-        data (pl.DataFrame): The DataFrame which contains the full performance trajectory. Should be generated from a DataManager.
-        var_cols (Iterable[str]): The variables which correspond to the searchspace variable columns
-        eval_col (str): The variable corresponding to evaluations. Defaults to 'evaluations'
-        scale_xlog (bool, optional): Whether the evaluations should be log-scaled. Defaults to True.
-        x_mins (Iterable[float], optional): Minimum bound for the variables. Should be of the same length as 'var_cols'. Defaults to [-5].
-        x_maxs (Iterable[float], optional): Maximum bound for the variables. Should be of the same length as 'var_cols'.. Defaults to [5].
-        ax (matplotlib.axes._axes.Axes, optional): Axis on which to create the plot. Defaults to None.
-        file_name (Optional[str], optional): If ax is not given, filename to save the plot. Defaults to None.
+        data (pl.DataFrame): Input dataframe containing trajectory data from a single algorithm run.
+            Must contain data for exactly one run (unique data_id).
+        vars (Iterable[str]): Which columns contain the decision/search space variables to visualize.
+        eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
+        var_mins (Iterable[float], optional): Minimum bounds for the search space variables. 
+            Should be same length as vars. Defaults to [-5].
+        var_maxs (Iterable[float], optional): Maximum bounds for the search space variables. 
+            Should be same length as vars. Defaults to [5].
+        ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
+        file_name (Optional[str], optional): Path to save the plot. If None, plot is not saved. Defaults to None.
+        plot_args (dict | HeatmapPlotArgs, optional): Plot styling arguments. Can include:
+            - title (str): Plot title. No default title set.
+            - xlabel (str): X-axis label. Defaults to eval_var value.
+            - ylabel (str): Y-axis label. Defaults to "Variables".
+            - figsize (Tuple[float, float]): Figure size. Defaults to (32, 9).
+            - heatmap_palette (str): Colormap for the heatmap. Defaults to "viridis".
+            - All other HeatmapPlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, fontsize, etc.).
 
     Returns:
-        pd.DataFrame: pandas dataframe of the exact data used to create the plot
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the processed 
+            heatmap dataframe used to create the plot.
+
+    Raises:
+        AssertionError: If data contains multiple runs (data_id has more than one unique value).
     """
     assert data["data_id"].n_unique() == 1
-    dt_plot = data[var_cols].transpose().to_pandas()
-    dt_plot.columns = list(data[eval_col])
-    x_mins_arr = np.array(x_mins)
-    x_maxs_arr = np.array(x_maxs)
-    dt_plot = (dt_plot.subtract(x_mins_arr, axis=0)).divide(x_maxs_arr - x_mins_arr, axis=0)
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(32, 9))
-    sbs.heatmap(dt_plot, cmap="viridis", vmin=0, vmax=1, ax=ax)
-    if scale_xlog:
-        ax.set_xscale("log")
-        ax.set_xlim(1, len(data))
 
-    if file_name:
-        fig.tight_layout()
-        fig.savefig(file_name)
-    return dt_plot
+    dt_plot = get_heatmap_single_run_data(
+        data = data,
+        vars = vars,
+        eval_var=eval_var,
+        var_mins=var_mins,
+        var_maxs=var_maxs,
+    )
+    
+    plot_args = _create_plot_args(
+        HeatmapPlotArgs(
+            figsize= (32, 9),
+            xlabel= eval_var,
+            ylabel= "Variables",
+        ),
+        plot_args
+    )
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=plot_args.figsize)
+    else:
+        fig = None
+        
+    sbs.heatmap(dt_plot, cmap=plot_args.heatmap_palette, vmin=0, vmax=1, ax=ax)
+
+    plot_args.apply(ax)
+
+    _save_fig(fig, file_name, plot_args=plot_args)
+    return ax, dt_plot

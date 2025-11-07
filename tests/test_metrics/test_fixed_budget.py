@@ -44,9 +44,9 @@ class TestFixedBudget(unittest.TestCase):
         result = aggregate_convergence(self.df, maximization=True, return_as_pandas=True)
         self.assertIn("mean", result.columns)
 
-    def test_x_min_x_max(self):
+    def test_eval_min_eval_max(self):
         # Limit to a subset of evaluations
-        result = aggregate_convergence(self.df, x_min=2, x_max=3, return_as_pandas=True)
+        result = aggregate_convergence(self.df, eval_min=2, eval_max=3, return_as_pandas=True)
         self.assertTrue((result["evaluations"] >= 2).all())
         self.assertTrue((result["evaluations"] <= 3).all())
 
@@ -57,7 +57,7 @@ class TestFixedBudget(unittest.TestCase):
     def test_free_variables(self):
         # Use a different free variable
         df = self.df.with_columns(pl.lit("foo").alias("other_var"))
-        result = aggregate_convergence(df, free_variables=["other_var"], return_as_pandas=True)
+        result = aggregate_convergence(df, free_vars=["other_var"], return_as_pandas=True)
         self.assertIn("other_var", result.columns)
 
     def test_empty_data(self):

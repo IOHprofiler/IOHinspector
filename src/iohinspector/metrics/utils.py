@@ -10,17 +10,17 @@ def get_sequence(
     scale_log: bool = False,
     cast_to_int: bool = False,
 ) -> np.ndarray:
-    """Create sequence of points, used for subselecting targets / budgets for allignment and data processing
+    """Create sequence of points, used for subselecting targets / budgets for alignment and data processing.
 
     Args:
-        min (float): Starting point of the range
-        max (float): Final point of the range
-        len (float): Number of steps
-        scale_log (bool): Whether values should be scaled logarithmically. Defaults to False
-        version (str, optional): Whether the value should be casted to integers (e.g. in case of budget) or not. Defaults to False.
+        min (float): Starting point of the range.
+        max (float): Final point of the range.
+        len (float): Number of steps in the sequence.
+        scale_log (bool, optional): Whether values should be scaled logarithmically. Defaults to False.
+        cast_to_int (bool, optional): Whether the values should be casted to integers (e.g. in case of budget) or not. Defaults to False.
 
     Returns:
-        np.ndarray: Array of evenly spaced values
+        np.ndarray: Array of evenly spaced values between min and max.
     """
     transform = lambda x: x
     if scale_log:
@@ -51,30 +51,30 @@ def get_sequence(
 
 def normalize_objectives(
     data: pl.DataFrame,
-    obj_cols: Iterable[str] = ["raw_y"],
+    obj_vars: Iterable[str] = ["raw_y"],
     bounds: Optional[Dict[str, tuple[Optional[float], Optional[float]]]] = None,
     log_scale: Union[bool, Dict[str, bool]] = False,
     maximize: Union[bool, Dict[str, bool]] = False,
     prefix: str = "ert",
     keep_original: bool = True
 ) -> pl.DataFrame:
-    """
-    Normalize multiple objective columns in a dataframe.
+    """Normalize multiple objective columns in a dataframe using min-max normalization.
 
     Args:
-        data (pl.DataFrame): Input dataframe.
-        obj_cols (Iterable[str]): Columns to normalize.
-        bounds (Optional[Dict[str, tuple(lb, ub)]]): Optional manual bounds per column.
-        log_scale (Union[bool, Dict[str, bool]]): Whether to apply log10 scaling. Can be a single bool or a dict per column.
-        maximize (Union[bool, Dict[str, bool]]): Whether to treat objective as maximization. Can be a single bool or dict.
-        prefix (str): Prefix for normalized column names.
-        keep_original (bool): Whether to keep original objective columns names.
+        data (pl.DataFrame): Input dataframe containing the objective columns.
+        obj_vars (Iterable[str], optional): Which columns contain the objective values to normalize. Defaults to ["raw_y"].
+        bounds (Optional[Dict[str, tuple[Optional[float], Optional[float]]]], optional): Optional manual bounds per column as (lower_bound, upper_bound). Defaults to None.
+        log_scale (Union[bool, Dict[str, bool]], optional): Whether to apply log10 scaling. Can be a single bool or a dict per column. Defaults to False.
+        maximize (Union[bool, Dict[str, bool]], optional): Whether to treat objective as maximization. Can be a single bool or dict per column. Defaults to False.
+        prefix (str, optional): Prefix for normalized column names. Defaults to "ert".
+        keep_original (bool, optional): Whether to keep original objective column names. Defaults to True.
+
     Returns:
         pl.DataFrame: The original dataframe with new normalized objective columns added.
     """
     result = data.clone()
-    n_objectives = len(obj_cols)
-    for col in obj_cols:
+    n_objectives = len(obj_vars)
+    for col in obj_vars:
         # Determine log scaling
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
         is_max = maximize[col] if isinstance(maximize, dict) else maximize
@@ -107,7 +107,7 @@ def normalize_objectives(
             if keep_original:
                 norm_expr = norm_expr.alias(f"{prefix}_{col}")
             else:
-                idx = list(obj_cols).index(col) + 1
+                idx = list(obj_vars).index(col) + 1
                 norm_expr = norm_expr.alias(f"{prefix}{idx}")
         else:
             # If only one objective, use the prefix directly
@@ -119,29 +119,29 @@ def normalize_objectives(
 
 def add_normalized_objectives(
     data: pl.DataFrame, 
-    obj_cols: Iterable[str], 
-    max_vals: Optional[pl.DataFrame] = None, 
-    min_vals: Optional[pl.DataFrame] = None
-):
-    """Add new normalized columns to provided dataframe based on the provided objective columns
+    obj_vars: Iterable[str], 
+    max_obj: Optional[pl.DataFrame] = None, 
+    min_obj: Optional[pl.DataFrame] = None
+) -> pl.DataFrame:
+    """Add new normalized columns to provided dataframe based on the provided objective columns.
 
     Args:
-        data (pl.DataFrame): The original dataframe
-        obj_cols (Iterable[str]): The names of each objective column
-        max_vals (Optional[pl.DataFrame]): If provided, these values will be used as the maxima instead of the values found in `data`
-        min_vals (Optional[pl.DataFrame]): If provided, these values will be used as the minima instead of the values found in `data`
+        data (pl.DataFrame): The original dataframe containing objective columns.
+        obj_vars (Iterable[str]): Which columns contain the objective values to normalize.
+        max_obj (Optional[pl.DataFrame], optional): If provided, these values will be used as the maxima instead of the values found in `data`. Defaults to None.
+        min_obj (Optional[pl.DataFrame], optional): If provided, these values will be used as the minima instead of the values found in `data`. Defaults to None.
 
     Returns:
-        _type_: The original `data` DataFrame with a new column 'objI' added for each objective, for I=1...len(obj_cols)
+        pl.DataFrame: The original `data` DataFrame with a new column 'objI' added for each objective, for I=1...len(obj_vars).
     """
 
     return normalize_objectives(
         data,
-        obj_cols=obj_cols,
+        obj_vars=obj_vars,
         bounds={
-            col: (min_vals[col][0] if min_vals is not None else None,
-                  max_vals[col][0] if max_vals is not None else None)
-            for col in obj_cols
+            col: (min_obj[col][0] if min_obj is not None else None,
+                  max_obj[col][0] if max_obj is not None else None)
+            for col in obj_vars
         },
         maximize=True, 
         prefix="obj",
@@ -155,15 +155,25 @@ def transform_fval(
     ub: float = 1e8,
     scale_log: bool = True,
     maximization: bool = False,
-    fval_col: str = "raw_y",
-):
+    fval_var: str = "raw_y",
+) -> pl.DataFrame:
+    """Helper function to transform function values using min-max normalization based on provided bounds and scaling.
+
+    Args:
+        data (pl.DataFrame): Input dataframe containing function values.
+        lb (float, optional): Lower bound for normalization. Defaults to 1e-8.
+        ub (float, optional): Upper bound for normalization. Defaults to 1e8.
+        scale_log (bool, optional): Whether to apply logarithmic scaling. Defaults to True.
+        maximization (bool, optional): Whether the problem is a maximization problem. Defaults to False.
+        fval_var (str, optional): Which column contains the function values to transform. Defaults to "raw_y".
+
+    Returns:
+        pl.DataFrame: The original dataframe with normalized function values in a new 'eaf' column.
     """
-    Helper function to transform function values (min-max normalization based on provided bounds and scaling)
-    """
-    bounds = {fval_col: (lb, ub)}
+    bounds = {fval_var: (lb, ub)}
     res = normalize_objectives(
         data,
-        obj_cols=[fval_col],
+        obj_vars=[fval_var],
         bounds=bounds,
         log_scale=scale_log,
         maximize=maximization,

@@ -51,8 +51,8 @@ def _r2(weight_vec_set, ideal_point, point_set):
 
 
 class NonDominated:
-    def __call__(self, group: pl.DataFrame, objective_columns: Iterable):
-        objectives = np.array(group[objective_columns])
+    def __call__(self, group: pl.DataFrame, obj_vars: Iterable):
+        objectives = np.array(group[obj_vars])
         is_efficient = np.ones(objectives.shape[0], dtype=bool)
         for i, c in enumerate(objectives[1:]):
             if is_efficient[i + 1]:
@@ -82,12 +82,12 @@ class HyperVolume:
         return False
 
     def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+        self, group: pl.DataFrame, obj_vars: Iterable, evals: Iterable[int]
     ) -> pl.DataFrame:
         """
         Args:
             group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
-            objective_columns (Iterable): Which columns are the objectives
+            obj_vars (Iterable): Which columns are the objectives
             evals (Iterable[int]): At which evaluations the operation should be performed.
             Note that using more evaluations will make the code slower.
 
@@ -95,7 +95,7 @@ class HyperVolume:
             pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
         """
         obj_vals = np.clip(
-            np.array(group[objective_columns]), None, self.reference_point
+            np.array(group[obj_vars]), None, self.reference_point
         )
         evals_dt = group["evaluations"]
         hvs = [
@@ -111,7 +111,7 @@ class HyperVolume:
             )
             .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
             .fill_null(np.inf)
-            .drop(objective_columns)
+            .drop(obj_vars)
         )
 
 
@@ -140,12 +140,12 @@ class Epsilon:
         return True
 
     def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+        self, group: pl.DataFrame, obj_vars: Iterable, evals: Iterable[int]
     ) -> pl.DataFrame:
         """
         Args:
             group (pl.DataFrame): The DataFrame on which the indicator will be added (should be 1 optimization run only)
-            objective_columns (Iterable): Which columns are the objectives
+            obj_vars (Iterable): Which columns are the objectives
             evals (Iterable[int]): At which evaluations the operation should be performed.
             Note that using more evaluations will make the code slower.
 
@@ -153,7 +153,7 @@ class Epsilon:
             pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
         """
         obj_vals = np.clip(
-            np.array(group[objective_columns]), None, self.reference_point
+            np.array(group[obj_vars]), None, self.reference_point
         )
         evals_dt = group["evaluations"]
         hvs = [
@@ -172,7 +172,7 @@ class Epsilon:
             )
             .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
             .fill_null(np.inf)
-            .drop(objective_columns)
+            .drop(obj_vars)
         )
 
 
@@ -195,7 +195,7 @@ class IGDPlus:
         return "IGD+"
 
     def __call__(
-        self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+        self, group: pl.DataFrame, obj_vars: Iterable, evals: Iterable[int]
     ) -> pl.DataFrame:
         """
 
@@ -208,7 +208,7 @@ class IGDPlus:
         Returns:
             pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
         """
-        obj_vals = np.array(group[objective_columns])
+        obj_vals = np.array(group[obj_vars])
         evals_dt = group["evaluations"]
         igds = [
             igd_plus(
@@ -226,7 +226,7 @@ class IGDPlus:
             )
             .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
             .fill_null(np.inf)
-            .drop(objective_columns)
+            .drop(obj_vars)
         )
 
 try:
@@ -251,7 +251,7 @@ try:
             return True
 
         def __call__(
-            self, group: pl.DataFrame, objective_columns: Iterable, evals: Iterable[int]
+            self, group: pl.DataFrame, obj_vars: Iterable, evals: Iterable[int]
         ) -> pl.DataFrame:
             """
 
@@ -264,7 +264,7 @@ try:
             Returns:
                 pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
             """
-            obj_vals = np.array(group[objective_columns])
+            obj_vals = np.array(group[obj_vars])
             evals_dt = group["evaluations"]
             igds = [
                 _r2(
@@ -283,7 +283,7 @@ try:
                 )
                 .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
                 .fill_null(np.inf)
-                .drop(objective_columns)
+                .drop(obj_vars)
             )
 
 except ImportError:

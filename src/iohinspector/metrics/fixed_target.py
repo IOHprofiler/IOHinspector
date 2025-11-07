@@ -1,91 +1,91 @@
 import polars as pl
+import pandas as pd
 from typing import Iterable, Callable
 from .utils import get_sequence
 from ..align import align_data
 
 def aggregate_running_time(
     data: pl.DataFrame,
-    evaluation_variable: str = "evaluations",
-    fval_variable: str = "raw_y",
-    free_variables: Iterable[str] = ["algorithm_name"],
+    eval_var: str = "evaluations",
+    fval_var: str = "raw_y",
+    free_vars: Iterable[str] = ["algorithm_name"],
     f_min: float = None,
     f_max: float = None,
-    scale_flog: bool = True,
-    max_budget: int = None,
+    scale_f_log: bool = True,
+    eval_max: int = None,
     maximization: bool = False,
     custom_op: Callable[[pl.Series], float] = None,
     return_as_pandas: bool = True,
-):
-    """Function to aggregate performance on a fixed-target perspective
+) -> pl.DataFrame | pd.DataFrame:
+    """Aggregate performance data from a fixed-target perspective with running time statistics.
 
     Args:
-        data (pl.DataFrame): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
-        this object determine the axes of the final performance (most data will have 'raw_y', 'evaluations' and ['algId'] as defaults)
-        evaluation_variable (str, optional): Column name for evaluation number. Defaults to "evaluations".
-        fval_variable (str, optional): Column name for function value. Defaults to "raw_y".
-        free_variables (Iterable[str], optional): Column name for free variables (variables over which performance should not be aggregated). Defaults to ["algorithm_name"].
-        f_min (float, optional): Minimum function value to use. Defaults to None (minimum present in data).
-        f_max (float, optional): Maximum function value to use. Defaults to None (maximum present in data).
-        scale_flog (bool): Whether or not function values should be scaled logarithmically for the x-axis. Defaults to True.
-        max_budget: If present, what budget value should be the maximum considered. Defaults to None.
-        custom_op (Callable[[pl.Series], float], optional): Custom aggregation method for performance values. Defaults to None.
-        maximization (bool, optional): Whether performance metric is being maximized or not. Defaults to False.
-        return_as_pandas (bool, optional): Whether the data should be returned as Pandas (True) or Polars (False) object. Defaults to True.
+        data (pl.DataFrame): The data object containing performance and evaluation data.
+        eval_var (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
+        fval_var (str, optional): Which column contains the function values. Defaults to "raw_y".
+        free_vars (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["algorithm_name"].
+        f_min (float, optional): Minimum function value to use. If None, uses minimum from data. Defaults to None.
+        f_max (float, optional): Maximum function value to use. If None, uses maximum from data. Defaults to None.
+        scale_f_log (bool, optional): Whether to use logarithmic scaling for function values. Defaults to True.
+        eval_max (int, optional): Maximum evaluation value to consider. If None, uses maximum from data. Defaults to None.
+        maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
+        custom_op (Callable[[pl.Series], float], optional): Custom aggregation function to apply per group. Defaults to None.
+        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        DataFrame: Depending on 'return_as_pandas', a pandas or polars DataFrame with the aggregated performance values
+        pl.DataFrame or pd.DataFrame: A DataFrame with aggregated running time statistics (mean, min, max, median, std, success_ratio, ERT, PAR-10).
     """
 
     # Getting alligned data (to check if e.g. limits should be args for this function)
     if f_min is None:
-        f_min = data[fval_variable].min()
+        f_min = data[fval_var].min()
     if f_max is None:
-        f_max = data[fval_variable].max()
-    f_values = get_sequence(f_min, f_max, 50, scale_log=scale_flog)
-    group_variables = free_variables + [fval_variable]
+        f_max = data[fval_var].max()
+    f_values = get_sequence(f_min, f_max, 50, scale_log=scale_f_log)
+    group_variables = free_vars + [fval_var]
     data_aligned = align_data(
         data,
         f_values,
-        group_cols=["data_id"] + free_variables,
-        x_col=fval_variable,
-        y_col=evaluation_variable,
+        group_cols=["data_id"] + free_vars,
+        x_col=fval_var,
+        y_col=eval_var,
         maximization=maximization,
     )
 
-    if max_budget is None:
-        max_budget = data[evaluation_variable].max()
+    if eval_max is None:
+        eval_max = data[eval_var].max()
 
     aggregations = [
-        pl.col(evaluation_variable).mean().alias("mean"),
-        pl.col(evaluation_variable).min().alias("min"),
-        pl.col(evaluation_variable).max().alias("max"),
-        pl.col(evaluation_variable).median().alias("median"),
-        pl.col(evaluation_variable).std().alias("std"),
-        pl.col(evaluation_variable).is_finite().mean().alias("success_ratio"),
-        pl.col(evaluation_variable).is_finite().sum().alias("success_count"),
+        pl.col(eval_var).mean().alias("mean"),
+        pl.col(eval_var).min().alias("min"),
+        pl.col(eval_var).max().alias("max"),
+        pl.col(eval_var).median().alias("median"),
+        pl.col(eval_var).std().alias("std"),
+        pl.col(eval_var).is_finite().mean().alias("success_ratio"),
+        pl.col(eval_var).is_finite().sum().alias("success_count"),
         (
-            pl.when(pl.col(evaluation_variable).is_finite())
-            .then(pl.col(evaluation_variable))
-            .otherwise(max_budget)
+            pl.when(pl.col(eval_var).is_finite())
+            .then(pl.col(eval_var))
+            .otherwise(eval_max)
             .sum()
-            /pl.col(evaluation_variable).is_finite().sum()
+            /pl.col(eval_var).is_finite().sum()
         ).alias("ERT"),
         (
-            pl.when(pl.col(evaluation_variable).is_finite())
-            .then(pl.col(evaluation_variable))
-            .otherwise(10 * max_budget)
+            pl.when(pl.col(eval_var).is_finite())
+            .then(pl.col(eval_var))
+            .otherwise(10 * eval_max)
             .sum()
-            / pl.col(evaluation_variable).count()
+            / pl.col(eval_var).count()
         ).alias("PAR-10"),
     ]
 
     if custom_op is not None:
         aggregations.append(
-            pl.col(evaluation_variable)
+            pl.col(eval_var)
             .map_batches(lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True)
             .alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
     if return_as_pandas:
-        return dt_plot.sort(fval_variable).to_pandas()
-    return dt_plot.sort(fval_variable)
+        return dt_plot.sort(fval_var).to_pandas()
+    return dt_plot.sort(fval_var)

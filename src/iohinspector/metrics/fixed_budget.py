@@ -1,71 +1,71 @@
 import polars as pl
+import pandas as pd
 from typing import Iterable, Callable
 from .utils import get_sequence
 from ..align import align_data
 
 def aggregate_convergence(
     data: pl.DataFrame,
-    evaluation_variable: str = "evaluations",
-    fval_variable: str = "raw_y",
-    free_variables: Iterable[str] = ["algorithm_name"],
-    x_min: int = None,
-    x_max: int = None,
+    eval_var: str = "evaluations",
+    fval_var: str = "raw_y",
+    free_vars: Iterable[str] = ["algorithm_name"],
+    eval_min: int = None,
+    eval_max: int = None,
     custom_op: Callable[[pl.Series], float] = None,
     maximization: bool = False,
     return_as_pandas: bool = True,
-):
-    """Function to aggregate performance on a fixed-budget perspective
+) -> pl.DataFrame | pd.DataFrame:
+    """Aggregate performance data from a fixed-budget perspective with multiple statistics.
 
     Args:
-        data (pl.DataFrame): The data object to use for getting the performance. Note that the fval, evaluation and free variables as defined in
-        this object determine the axes of the final performance (most data will have 'raw_y', 'evaluations' and ['algId'] as defaults)
-        evaluation_variable (str, optional): Column name for evaluation number. Defaults to "evaluations".
-        fval_variable (str, optional): Column name for function value. Defaults to "raw_y".
-        free_variables (Iterable[str], optional): Column name for free variables (variables over which performance should not be aggregated). Defaults to ["algorithm_name"].
-        x_min (int, optional): Minimum evaulation value to use. Defaults to None (minimum present in data).
-        x_max (int, optional): Maximum evaulation value to use. Defaults to None (maximum present in data).
-        custom_op (Callable[[pl.Series], float], optional): Custom aggregation method for performance values. Defaults to None.
-        maximization (bool, optional): Whether performance metric is being maximized or not. Defaults to False.
-        return_as_pandas (bool, optional): Whether the data should be returned as Pandas (True) or Polars (False) object. Defaults to True.
+        data (pl.DataFrame): The data object containing evaluation and performance data.
+        eval_var (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
+        fval_var (str, optional): Which column contains the function values. Defaults to "raw_y".
+        free_vars (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["algorithm_name"].
+        eval_min (int, optional): Minimum evaluation value to include. If None, uses minimum from data. Defaults to None.
+        eval_max (int, optional): Maximum evaluation value to include. If None, uses maximum from data. Defaults to None.
+        custom_op (Callable[[pl.Series], float], optional): Custom aggregation function to apply per group. Defaults to None.
+        maximization (bool, optional): Whether the objective is being maximized. Defaults to False.
+        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        DataFrame: Depending on 'return_as_pandas', a pandas or polars DataFrame with the aggregated performance values
+        pl.DataFrame or pd.DataFrame: A DataFrame with aggregated performance statistics (mean, min, max, median, std, geometric_mean).
     """
     if(data.is_empty()):
         raise ValueError("Data is empty, cannot aggregate convergence.")
 
     # Getting alligned data (to check if e.g. limits should be args for this function)
-    if x_min is None:
-        x_min = data[evaluation_variable].min()
-    if x_max is None:
-        x_max = data[evaluation_variable].max()
-    x_values = get_sequence(x_min, x_max, 50, scale_log=True, cast_to_int=True)
-    group_variables = free_variables + [evaluation_variable]
+    if eval_min is None:
+        eval_min = data[eval_var].min()
+    if eval_max is None:
+        eval_max = data[eval_var].max()
+    x_values = get_sequence(eval_min, eval_max, 50, scale_log=True, cast_to_int=True)
+    group_variables = free_vars + [eval_var]
     data_aligned = align_data(
-        data.cast({evaluation_variable: pl.Int64}),
+        data.cast({eval_var: pl.Int64}),
         x_values,
-        group_cols=["data_id"] + free_variables,
-        x_col=evaluation_variable,
-        y_col=fval_variable,
+        group_cols=["data_id"] + free_vars,
+        x_col=eval_var,
+        y_col=fval_var,
         maximization=maximization,
     )
     aggregations = [
-        pl.mean(fval_variable).alias("mean"),
-        pl.min(fval_variable).alias("min"),
-        pl.max(fval_variable).alias("max"),
-        pl.median(fval_variable).alias("median"),
-        pl.std(fval_variable).alias("std"),
-        pl.col(fval_variable).log().mean().exp().alias("geometric_mean")
+        pl.mean(fval_var).alias("mean"),
+        pl.min(fval_var).alias("min"),
+        pl.max(fval_var).alias("max"),
+        pl.median(fval_var).alias("median"),
+        pl.std(fval_var).alias("std"),
+        pl.col(fval_var).log().mean().exp().alias("geometric_mean")
     ]
 
     if custom_op is not None:
         aggregations.append(
-            pl.col(fval_variable).map_batches(
+            pl.col(fval_var).map_batches(
                 lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True
             ).alias(custom_op.__name__)
     )
         
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
     if return_as_pandas:
-        return dt_plot.sort(evaluation_variable).to_pandas()
-    return dt_plot.sort(evaluation_variable)
+        return dt_plot.sort(eval_var).to_pandas()
+    return dt_plot.sort(eval_var)

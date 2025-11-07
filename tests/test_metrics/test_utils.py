@@ -86,25 +86,25 @@ class TestNormalizeObjectives(unittest.TestCase):
         })
 
     def test_basic_normalization(self):
-        normed = normalize_objectives(self.df, obj_cols=["raw_y"])
+        normed = normalize_objectives(self.df, obj_vars=["raw_y"])
         self.assertIn("ert", normed.columns)
         arr = normed["ert"].to_numpy()
         np.testing.assert_allclose(arr, [1, 0.75, 0.5, 0.25, 0])
 
     def test_maximization(self):
-        normed = normalize_objectives(self.df, obj_cols=["raw_y"], maximize=True)
+        normed = normalize_objectives(self.df, obj_vars=["raw_y"], maximize=True)
         arr = normed["ert"].to_numpy()
         np.testing.assert_allclose(arr, [0, 0.25, 0.5, 0.75, 1])
 
     def test_bounds(self):
         bounds = {"raw_y": (0, 10)}
-        normed = normalize_objectives(self.df, obj_cols=["raw_y"], bounds=bounds)
+        normed = normalize_objectives(self.df, obj_vars=["raw_y"], bounds=bounds)
         arr = normed["ert"].to_numpy()
         np.testing.assert_allclose(arr, [0.9, 0.8, 0.7, 0.6, 0.5])
 
     def test_log_scale(self):
         df = pl.DataFrame({"raw_y": [1, 10, 100, 1000, 10000]})
-        normed = normalize_objectives(df, obj_cols=["raw_y"], log_scale=True)
+        normed = normalize_objectives(df, obj_vars=["raw_y"], log_scale=True)
         arr = normed["ert"].to_numpy()
         np.testing.assert_allclose(arr, [1, 0.75, 0.5, 0.25, 0])
 
@@ -112,7 +112,7 @@ class TestNormalizeObjectives(unittest.TestCase):
         df = pl.DataFrame({"raw_y": [0, 1, 10]})
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            normed = normalize_objectives(df, obj_cols=["raw_y"], log_scale=True)
+            normed = normalize_objectives(df, obj_vars=["raw_y"], log_scale=True)
             self.assertTrue(any("Lower bound" in str(warn.message) for warn in w))
         arr = normed["ert"].to_numpy()
         self.assertTrue(np.all((arr >= 0) & (arr <= 1)))
@@ -122,7 +122,7 @@ class TestNormalizeObjectives(unittest.TestCase):
             "raw_y": [1, 2, 3],
             "other": [10, 20, 30]
         })
-        normed = normalize_objectives(df, obj_cols=["raw_y", "other"])
+        normed = normalize_objectives(df, obj_vars=["raw_y", "other"])
         arr_raw_y = normed["ert_raw_y"].to_numpy()
         np.testing.assert_allclose(arr_raw_y, [1.0, 0.5, 0.0])
         arr_other = normed["ert_other"].to_numpy()
@@ -130,14 +130,14 @@ class TestNormalizeObjectives(unittest.TestCase):
 
 
     def test_column_prefix(self):
-        normed = normalize_objectives(self.df, obj_cols=["raw_y"], prefix="normed")
+        normed = normalize_objectives(self.df, obj_vars=["raw_y"], prefix="normed")
         self.assertIn("normed", normed.columns)
 
     def test_dict_log_and_maximize(self):
         df = pl.DataFrame({"a": [1, 10, 100], "b": [3, 2, 1]})
         normed = normalize_objectives(
             df,
-            obj_cols=["a", "b"],
+            obj_vars=["a", "b"],
             log_scale={"a": True, "b": False},
             maximize={"a": True, "b": False}
         )
@@ -152,7 +152,7 @@ class TestNormalizeObjectives(unittest.TestCase):
             "raw_y": [1.0, 2.0, 3.0, 4.0, 5.0],
             "other": [10, 20, 30, 40, 50]
         })
-        normed = add_normalized_objectives(df, obj_cols=["raw_y", "other"])
+        normed = add_normalized_objectives(df, obj_vars=["raw_y", "other"])
         self.assertIn("obj1", normed.columns)
         self.assertIn("obj2", normed.columns)
         arr_obj1 = normed["obj1"].to_numpy()
@@ -165,9 +165,9 @@ class TestNormalizeObjectives(unittest.TestCase):
             "raw_y": [1.0, 2.0, 3.0],
             "other": [10, 20, 30]
         })
-        min_vals = pl.DataFrame({"raw_y": [0.0], "other": [0]})
-        max_vals = pl.DataFrame({"raw_y": [10.0], "other": [40]})
-        normed = add_normalized_objectives(df, obj_cols=["raw_y", "other"], min_vals=min_vals, max_vals=max_vals)
+        min_obj = pl.DataFrame({"raw_y": [0.0], "other": [0]})
+        max_obj = pl.DataFrame({"raw_y": [10.0], "other": [40]})
+        normed = add_normalized_objectives(df, obj_vars=["raw_y", "other"], min_obj=min_obj, max_obj=max_obj)
         arr_obj1 = normed["obj1"].to_numpy()
         arr_obj2 = normed["obj2"].to_numpy()
         np.testing.assert_allclose(arr_obj1, [0.1, 0.2, 0.3])
@@ -175,14 +175,14 @@ class TestNormalizeObjectives(unittest.TestCase):
 
     def test_add_normalized_objectives_single_objective(self):
         df = pl.DataFrame({"raw_y": [1, 2, 3]})
-        normed = add_normalized_objectives(df, obj_cols=["raw_y"])
+        normed = add_normalized_objectives(df, obj_vars=["raw_y"])
         self.assertIn("obj", normed.columns)
         arr = normed["obj"].to_numpy()
         np.testing.assert_allclose(arr, [0, 0.5, 1])
 
     def test_add_normalized_objectives_no_min_max(self):
         df = pl.DataFrame({"raw_y": [5, 10, 15]})
-        normed = add_normalized_objectives(df, obj_cols=["raw_y"])
+        normed = add_normalized_objectives(df, obj_vars=["raw_y"])
         arr = normed["obj"].to_numpy()
         np.testing.assert_allclose(arr, [0, 0.5, 1])
 
@@ -225,9 +225,9 @@ class TestNormalizeObjectives(unittest.TestCase):
         expected = [1 - (x / 10) for x in [0, 5, 10]]
         np.testing.assert_allclose(arr, expected)
 
-    def test_transform_fval_column_name(self):
+    def test_transform_fval_varumn_name(self):
         df = pl.DataFrame({"score": [1, 10, 100]})
-        res = transform_fval(df, lb=1, ub=100, scale_log=True, fval_col="score")
+        res = transform_fval(df, lb=1, ub=100, scale_log=True, fval_var="score")
         arr = res["eaf"].to_numpy()
         expected = [1- (np.log10(x) - np.log10(1)) / (np.log10(100) - np.log10(1)) for x in [1, 10, 100]]
         np.testing.assert_allclose(arr, expected)
