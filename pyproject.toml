@@ -26,7 +26,8 @@ dependencies = [
   "pyarrow", 
   "robustranking", 
   "seaborn",
-  "skelo"
+  "skelo",
+  "networkx"
 ]
 
 [project.optional-dependencies]
