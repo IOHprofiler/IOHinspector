@@ -3,6 +3,10 @@ import polars as pl
 import warnings
 from typing import Iterable, Optional, Union, Dict
 
+from moocore import (
+    filter_dominated,
+)
+
 def get_sequence(
     min: float,
     max: float,
@@ -55,6 +59,7 @@ def normalize_objectives(
     bounds: Optional[Dict[str, tuple[Optional[float], Optional[float]]]] = None,
     log_scale: Union[bool, Dict[str, bool]] = False,
     maximize: Union[bool, Dict[str, bool]] = False,
+    only_nondominated: bool = False,
     prefix: str = "ert",
     keep_original: bool = True
 ) -> pl.DataFrame:
@@ -66,6 +71,7 @@ def normalize_objectives(
         bounds (Optional[Dict[str, tuple[Optional[float], Optional[float]]]], optional): Optional manual bounds per column as (lower_bound, upper_bound). Defaults to None.
         log_scale (Union[bool, Dict[str, bool]], optional): Whether to apply log10 scaling. Can be a single bool or a dict per column. Defaults to False.
         maximize (Union[bool, Dict[str, bool]], optional): Whether to treat objective as maximization. Can be a single bool or dict per column. Defaults to False.
+        only_nondominated (bool, optional): Whether to only consider non-dominated objectives in computing bounds. Defaults to False.
         prefix (str, optional): Prefix for normalized column names. Defaults to "ert".
         keep_original (bool, optional): Whether to keep original objective column names. Defaults to True.
 
@@ -74,7 +80,14 @@ def normalize_objectives(
     """
     result = data.clone()
     n_objectives = len(obj_vars)
-    for col in obj_vars:
+
+    ndpoints = None
+    if only_nondominated and len(obj_vars) > 1:
+        obj_vals = np.array(result[obj_vars])
+        ndpoints = filter_dominated(obj_vals)
+
+
+    for i, col in enumerate(obj_vars):
         # Determine log scaling
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
         is_max = maximize[col] if isinstance(maximize, dict) else maximize
@@ -84,9 +97,9 @@ def normalize_objectives(
         if bounds and col in bounds:
             lb, ub = bounds[col]
         if lb is None:
-            lb = result[col].min()
+            lb = result[col].min() if ndpoints is None else ndpoints[i].min()
         if ub is None:
-            ub = result[col].max()
+            ub = result[col].max() if ndpoints is None else ndpoints[i].max()
         # Log scale if needed
         if use_log:
             if lb <= 0:
@@ -121,7 +134,8 @@ def add_normalized_objectives(
     data: pl.DataFrame, 
     obj_vars: Iterable[str], 
     max_obj: Optional[pl.DataFrame] = None, 
-    min_obj: Optional[pl.DataFrame] = None
+    min_obj: Optional[pl.DataFrame] = None,
+    only_nondominated: bool = False,
 ) -> pl.DataFrame:
     """Add new normalized columns to provided dataframe based on the provided objective columns.
 
@@ -130,7 +144,7 @@ def add_normalized_objectives(
         obj_vars (Iterable[str]): Which columns contain the objective values to normalize.
         max_obj (Optional[pl.DataFrame], optional): If provided, these values will be used as the maxima instead of the values found in `data`. Defaults to None.
         min_obj (Optional[pl.DataFrame], optional): If provided, these values will be used as the minima instead of the values found in `data`. Defaults to None.
-
+        only_nondominated (bool, optional): Whether to only consider non-dominated points for the normalization bounds. Defaults to False.)
     Returns:
         pl.DataFrame: The original `data` DataFrame with a new column 'objI' added for each objective, for I=1...len(obj_vars).
     """
@@ -143,7 +157,8 @@ def add_normalized_objectives(
                   max_obj[col][0] if max_obj is not None else None)
             for col in obj_vars
         },
-        maximize=True, 
+        maximize=True,
+        only_nondominated=only_nondominated,
         prefix="obj",
         keep_original=False
     )
