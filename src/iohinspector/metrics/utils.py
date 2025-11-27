@@ -97,9 +97,9 @@ def normalize_objectives(
         if bounds and col in bounds:
             lb, ub = bounds[col]
         if lb is None:
-            lb = result[col].min() if ndpoints is None else ndpoints[i].min()
+            lb = result[col].min() if ndpoints is None else ndpoints[:,i].min()
         if ub is None:
-            ub = result[col].max() if ndpoints is None else ndpoints[i].max()
+            ub = result[col].max() if ndpoints is None else ndpoints[:,i].max()
         # Log scale if needed
         if use_log:
             if lb <= 0:
