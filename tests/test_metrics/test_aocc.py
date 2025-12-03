@@ -79,5 +79,21 @@ class TestAOCC(unittest.TestCase):
         aocc_val = result["AOCC"][0]
         self.assertTrue(np.isnan(aocc_val) or aocc_val == 0)
 
+
+    def test_aocc_log(self):
+        self.df = pl.DataFrame({
+            "data_id": [1, 1, 1, 2, 2, 2],
+            "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
+            "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
+            "evaluations": [1, 10, 100, 1, 10, 100],
+            "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
+        })
+        result = get_aocc(self.df, eval_max=100, scale_eval_log=True)
+        aocc_val = result["AOCC"][0]
+        self.assertTrue(aocc_val == 6.5)
+
+     
+
+
 if __name__ == "__main__":
     unittest.main()
