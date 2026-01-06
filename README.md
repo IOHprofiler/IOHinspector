@@ -1,4 +1,7 @@
-# IOHinspector
+<p align="center">
+  <img src="iohinspector_banner.png" alt="IOHinspector banner" />
+</p>
+<hr>
 
 [![Tests](https://github.com/IOHprofiler/IOHinspector/actions/workflows/test.yml/badge.svg)](https://github.com/IOHprofiler/IOHinspector/actions/workflows/test.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/10ed9f762ecb450ab2c4e407dcb59caf)](https://app.codacy.com/gh/IOHprofiler/IOHinspector/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
