@@ -105,7 +105,7 @@ class TestManager(unittest.TestCase):
         selection = manager.select(function_ids=[1], algorithms = ['algorithm_A', 'algorithm_B'])
         df = selection.load(monotonic=True, include_meta_data=True)
         
-        dt = plot_ecdf(df)
+        ax, dt = plot_ecdf(df)
         self.assertEqual(dt.shape, (66, 14))
         
 

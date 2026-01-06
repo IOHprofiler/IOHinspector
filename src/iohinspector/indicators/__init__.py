@@ -8,7 +8,7 @@ from .anytime import *
 from .final import *
 
 def add_indicator(
-    df: pl.DataFrame, indicator: Callable, objective_columns: Iterable, **kwargs
+    df: pl.DataFrame, indicator: Callable, obj_vars: Iterable, **kwargs
 ) -> pl.DataFrame:
     """Adds an indicator to a Polars DataFrame.
 
@@ -39,6 +39,6 @@ def add_indicator(
             group of data.
     """
     indicator_callable = partial(
-        indicator, objective_columns=objective_columns, **kwargs
+        indicator, obj_vars=obj_vars, **kwargs
     )
     return df.group_by("data_id").map_groups(indicator_callable)
