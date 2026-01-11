@@ -13,6 +13,7 @@ def align_data(
     y_col: str = "raw_y",
     output: str = "long",
     maximization: bool = False,
+    silence_warning: bool = False
 ) -> pl.DataFrame:
     """Align data based on function evaluation counts
 
@@ -24,12 +25,14 @@ def align_data(
         y_col (str, optional): function value column. Defaults to 'raw_y'.
         output (str, optional): whether to return a long or wide dataframe as output. Defaults to 'long'.
         maximization (bool, optional): whether the data comes from maximization or minimization. Defaults to False (minimization).
+        silence_warning (bool, optional): whether to silence the deprication warning
 
     Returns:
         pl.DataFrame: Alligned DataFrame
     """
+    if not silence_warning:
+        warnings.warn( "turbo_align is favoured over this function", DeprecationWarning)
 
-    warnings.warn( "Turbo align is favoured over this function", DeprecationWarning)
     evals_df = pl.DataFrame({x_col: evals})
 
     def merge_asof_group(group):
@@ -60,7 +63,7 @@ def align_data(
     if output == "long":
         return result_df
 
-    pivot_df = result_df.pivot(index=x_col, columns=group_cols, values=y_col)
+    pivot_df = result_df.pivot(index=x_col, on=group_cols, values=y_col)
     return pivot_df
 
 
@@ -103,16 +106,16 @@ def turbo_align(
     
     if x_col != "evaluations" and maximization:
         result_df = x_vals.join_asof(
-            df, by="data_id", on=x_col, strategy="forward"
+            df, by="data_id", on=x_col, strategy="forward", check_sortedness=False,
         )
     else:
         result_df = x_vals.join_asof(
-            df, by="data_id", on=x_col, strategy="backward"
+            df, by="data_id", on=x_col, strategy="backward", check_sortedness=False,
         )
         
               
     if output == "long":
         return result_df
 
-    pivot_df = result_df.pivot(index=x_col, columns=("data_id",), values=y_col)
+    pivot_df = result_df.pivot(index=x_col, on=("data_id",), values=y_col)
     return pivot_df

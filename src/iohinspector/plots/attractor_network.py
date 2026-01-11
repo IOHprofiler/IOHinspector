@@ -1,10 +1,13 @@
+import warnings
 from dataclasses import dataclass
+from typing import Iterable
+
 import numpy as np
 import pandas as pd
 import polars as pl
-from typing import Iterable, Tuple
 import matplotlib
 import matplotlib.pyplot as plt
+
 from iohinspector.metrics import get_attractor_network
 from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
 
@@ -134,11 +137,16 @@ def plot_attractor_network(
         )
     network.remove_edges_from(nx.selfloop_edges(network))
 
-    decision_matrix = [network.nodes[node]["decision"] for node in network.nodes()]
-    mds = MDS(n_components=1, random_state=0)
-    x_positions = mds.fit_transform(
-        decision_matrix
-    ).flatten()  # Flatten to get 1D array for x-axis
+    D = [network.nodes[node]["decision"] for node in network.nodes()]
+    mds = MDS(n_components=1, random_state=0, n_init=4)
+    if len(D[0]) == len(D):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            x_positions = mds.fit_transform(D)
+    else:
+        x_positions = mds.fit_transform(D)
+    
+    x_positions = x_positions.flatten()  # Flatten to get 1D array for x-axis
     y_positions = [network.nodes[node]["fitness"] for node in network.nodes()]
     pos = {
         node: (x, y) for node, x, y in zip(network.nodes(), x_positions, y_positions)
@@ -200,5 +208,4 @@ def plot_attractor_network(
     plot_args.apply(ax)
 
     _save_fig(fig, file_name, plot_args)
-
     return ax, nodes, edges

@@ -1,14 +1,13 @@
 from typing import Iterable, Optional
-from iohinspector.metrics.ranking import get_robustrank_changes, get_robustrank_over_time
-from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
+
 import polars as pl
-import numpy as np
-import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sbs
+
+from iohinspector.metrics.ranking import get_robustrank_changes, get_robustrank_over_time
+from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
 from iohinspector.metrics import get_tournament_ratings
-from iohinspector.indicators import add_indicator
 
 
 def plot_tournament_ranking(
@@ -215,7 +214,6 @@ def plot_robustrank_changes(
         fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
     else:
         fig = None
-
     plot_line_ranks(comparisons, ax=ax)
 
     plot_args.apply(ax)

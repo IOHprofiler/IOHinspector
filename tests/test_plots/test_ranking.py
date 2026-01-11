@@ -1,12 +1,13 @@
 import unittest
+import warnings
+
 import polars as pl
 import matplotlib
-from iohinspector.plots import plot_robustrank_over_time,plot_tournament_ranking, plot_robustrank_changes
-from iohinspector.indicators import HyperVolume
 
 matplotlib.use("Agg")  # Use non-interactive backend for tests
-import matplotlib.pyplot as plt
 
+from iohinspector.plots import plot_robustrank_over_time,plot_tournament_ranking, plot_robustrank_changes
+from iohinspector.indicators import HyperVolume
 
 class TestPlotTournamentRanking(unittest.TestCase):
     def setUp(self):
@@ -72,12 +73,14 @@ class TestPlotRobustRankOverTime(unittest.TestCase):
 
     def test_basic_call_returns_axes_and_data(self):
         evals = [1, 10, 100]
-        axs, comparison, benchmark = plot_robustrank_over_time(
-            self.data,
-            obj_vars=["f1", "f2", "f3"],
-            evals=evals,
-            indicator=HyperVolume(reference_point=[5.0, 5.0, 5.0]),
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            axs, comparison, benchmark = plot_robustrank_over_time(
+                self.data,
+                obj_vars=["f1", "f2", "f3"],
+                evals=evals,
+                indicator=HyperVolume(reference_point=[5.0, 5.0, 5.0]),
+            )
         self.assertIsNotNone(axs)
         self.assertIsNotNone(comparison)
         self.assertIsNotNone(benchmark)
@@ -135,12 +138,14 @@ class TestPlotRobustRankChanges(unittest.TestCase):
 
     def test_basic_call_returns_axes_and_data(self):
         evals = [1, 10, 100]
-        ax, dt = plot_robustrank_changes(
-            self.data, 
-            obj_vars=["f1","f2", "f3"], 
-            evals=evals, 
-            indicator=HyperVolume(reference_point=[5.0, 5.0, 5.0]),
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            ax, dt = plot_robustrank_changes(
+                self.data, 
+                obj_vars=["f1","f2", "f3"], 
+                evals=evals, 
+                indicator=HyperVolume(reference_point=[5.0, 5.0, 5.0]),
+            )
         self.assertIsNotNone(ax)
         self.assertIsNotNone(dt)
 

@@ -1,8 +1,6 @@
 import unittest
-import numpy as np
 import polars as pl
-from iohinspector.align import align_data
-from iohinspector.align import turbo_align
+from iohinspector.align import align_data, turbo_align
 
 
 class TestAlignData(unittest.TestCase):
@@ -15,7 +13,7 @@ class TestAlignData(unittest.TestCase):
         })
 
         evals = [1, 2, 3, 4, 5]
-        result = align_data(df, evals, group_cols=("data_id",), x_col="evaluations", y_col="raw_y", output="long", maximization=False)
+        result = align_data(df, evals, group_cols=("data_id",), x_col="evaluations", y_col="raw_y", output="long", maximization=False, silence_warning=True)
         expected = pl.DataFrame({
             "evaluations": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
             "raw_y": [10, 8, 8, 8, 6, 20, 20, 20, 18, 16],
@@ -32,7 +30,7 @@ class TestAlignData(unittest.TestCase):
             "raw_y": [5, 7, 6]
         })
         evals = [1, 2, 3]
-        result = align_data(df, evals, group_cols=("data_id",), x_col="evaluations", y_col="raw_y", output="long", maximization=True)
+        result = align_data(df, evals, group_cols=("data_id",), x_col="evaluations", y_col="raw_y", output="long", maximization=True, silence_warning=True)
         expected = pl.DataFrame({
             "evaluations": [1, 2, 3],
             "raw_y": [5, 7, 7],
@@ -50,7 +48,7 @@ class TestAlignData(unittest.TestCase):
         })
         evals = [1, 2, 3, 4, 5]
        
-        result = align_data(df, evals, group_cols=("data_id",), x_col="evaluations", y_col="raw_y", output="wide", maximization=False)
+        result = align_data(df, evals, group_cols=("data_id",), x_col="evaluations", y_col="raw_y", output="wide", maximization=False, silence_warning=True)
         # Should pivot to wide format
         self.assertIn("1", result.columns)
         self.assertIn("2", result.columns)
@@ -65,7 +63,7 @@ class TestAlignData(unittest.TestCase):
             "raw_y": [5, 3, 7, 6]
         })
         evals = [1, 2]
-        result = align_data(df, evals, group_cols=("exp_id",), x_col="evaluations", y_col="raw_y", output="long", maximization=False)
+        result = align_data(df, evals, group_cols=("exp_id",), x_col="evaluations", y_col="raw_y", output="long", maximization=False, silence_warning=True)
         self.assertTrue(set(result["exp_id"].to_list()) == {1, 2})
 
     def test_align_data_non_default_x_col(self):
@@ -75,7 +73,7 @@ class TestAlignData(unittest.TestCase):
             "score": [100, 90, 80]
         })
         evals = [10, 20, 30]
-        result = align_data(df, evals, group_cols=("data_id",), x_col="steps", y_col="score", output="long", maximization=False)
+        result = align_data(df, evals, group_cols=("data_id",), x_col="steps", y_col="score", output="long", maximization=False, silence_warning=True)
         self.assertTrue(result["steps"].to_list() == [10, 20, 30])
         
 class TestTurboAlignData(unittest.TestCase):  
@@ -134,7 +132,7 @@ class TestTurboAlignData(unittest.TestCase):
             "score": [100, 90, 80]
         })
         evals = [10, 20, 30]
-        result = align_data(df, evals, group_cols=("data_id",), x_col="steps", y_col="score", output="long", maximization=False)
+        result = turbo_align(df, evals, x_col="steps", y_col="score", output="long", maximization=False)
         self.assertTrue(result["steps"].to_list() == [10, 20, 30])
 
 if __name__ == "__main__":

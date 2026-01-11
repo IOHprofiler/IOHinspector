@@ -34,7 +34,7 @@ def get_tournament_ratings(
     fids = data[fid_vars].unique()
     aligned_comps = data.pivot(
         index=alg_vars,
-        columns=fid_vars,
+        on=fid_vars,
         values=fval_var,
         aggregate_function=pl.element(),
     )
