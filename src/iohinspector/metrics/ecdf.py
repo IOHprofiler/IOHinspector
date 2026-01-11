@@ -69,6 +69,7 @@ def get_data_ecdf(
             x_col=eval_var,
             y_col=fval_var,
             maximization=maximization,
+            silence_warning=True
         )
     dt_ecdf = (
         transform_fval(

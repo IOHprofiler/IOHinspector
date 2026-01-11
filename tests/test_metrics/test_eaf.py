@@ -33,7 +33,7 @@ class TestGetDiscritizedEAF(unittest.TestCase):
         self.assertTrue(len(result.columns) == 10) # default x_targets
         self.assertEqual(result.shape[0], 101)  # default y_targets
         # Assert all values are 1 or 0
-        self.assertTrue(result[self.data["evaluations"].to_list()].applymap(lambda x: x in [1, 0]).all().all())
+        self.assertTrue(result[self.data["evaluations"].to_list()].map(lambda x: x in [1, 0]).all().all())
         self.assertEqual(result[1].tolist()[-1], 0)
         self.assertEqual(result[1000].tolist()[0], 1)
 
@@ -46,7 +46,7 @@ class TestGetDiscritizedEAF(unittest.TestCase):
         self.assertTrue(len(result.columns) == 10) # default x_targets
         self.assertEqual(result.shape[0], 101)  # default y_targets
         # Assert all values are 1, 0.5 or 0
-        self.assertTrue(result[self.multi_data["evaluations"].to_list()].applymap(lambda x: x in [1, 0.5, 0]).all().all())
+        self.assertTrue(result[self.multi_data["evaluations"].to_list()].map(lambda x: x in [1, 0.5, 0]).all().all())
         self.assertEqual(result[1].tolist()[-1], 0)
         self.assertEqual(result[1000].tolist()[0], 1)
 
@@ -60,7 +60,7 @@ class TestGetDiscritizedEAF(unittest.TestCase):
         self.assertTrue(all(x in result.columns for x in [2, 4]))
 
     def test_custom_f_min_max_targets(self):
-        result = get_discritized_eaf_single_objective(self.data, f_min=0.0, f_max=1.0, f_targets=5)
+        result = get_discritized_eaf_single_objective(self.data, f_min=1e-12, f_max=1.0, f_targets=5)
         self.assertEqual(result.shape[0], 5)
         self.assertAlmostEqual(result.index.min(), 0.0)
         self.assertAlmostEqual(result.index.max(), 1.0)

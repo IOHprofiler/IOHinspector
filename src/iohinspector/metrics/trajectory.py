@@ -36,6 +36,7 @@ def get_trajectory(data: pl.DataFrame,
     else:
         max_fevals = traj_length + min_fevals
     x_values = np.arange(min_fevals, max_fevals + 1) 
+    
     data_aligned = align_data(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
@@ -43,6 +44,7 @@ def get_trajectory(data: pl.DataFrame,
         x_col=evaluation_variable,
         y_col=fval_variable,
         maximization=maximization,
+        silence_warning=True
     )
     if return_as_pandas:
         data_aligned = data_aligned.to_pandas()

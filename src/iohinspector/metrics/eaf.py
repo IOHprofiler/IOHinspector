@@ -1,5 +1,5 @@
 
-from iohinspector.align import align_data
+from iohinspector.align import align_data, turbo_align
 from iohinspector.metrics import transform_fval, get_sequence
 import numpy as np
 import pandas as pd
@@ -52,13 +52,13 @@ def get_discritized_eaf_single_objective(
             eval_min, eval_max, eval_targets, scale_log=scale_eval_log, cast_to_int=True
         )
     
-    dt_aligned = align_data(
+    dt_aligned = turbo_align(
        data,
        eval_values,
        x_col=eval_var,
        y_col=fval_var,
        output="long"
-       ) 
+    ) 
     dt_aligned = transform_fval(
         dt_aligned,
         lb=f_min,
@@ -105,8 +105,8 @@ def get_eaf_data(
     if eval_max is None:
         eval_max = data[eval_var].max()
 
-    evals = get_sequence(eval_min, eval_max, 50, scale_eval_log, True)
-    long = align_data(data, np.array(evals, "uint64"), ["data_id"], output="long")
+    evals = get_sequence(eval_min, eval_max, 50, scale_eval_log, True).astype("uint64")
+    long = turbo_align(data, evals, output='long')
 
     if return_as_pandas:
         return long.to_pandas()
