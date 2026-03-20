@@ -1,11 +1,3 @@
-import matplotlib
-import matplotlib.pyplot as plt
-matplotlib.rcParams["pdf.fonttype"] = 42
-matplotlib.rcParams["ps.fonttype"] = 42
-font = {"size": 24}
-plt.rc("font", **font)
-
-
 from .fixed_target import plot_single_function_fixed_target
 from .fixed_budget import plot_single_function_fixed_budget
 from .ecdf import plot_ecdf
