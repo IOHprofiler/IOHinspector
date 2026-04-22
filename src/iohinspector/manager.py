@@ -245,6 +245,24 @@ class DataManager:
                     x_values,
                     is_coco=data_set.source == "coco",
                 )
+                if data_set.source == "coco":
+                    if os.path.isfile(scen.data_file.replace(".dat", ".tdat")):
+                        scen.data_file = scen.data_file.replace(".dat", ".tdat")
+                        df_tdat = scen.load(
+                            monotonic,
+                            data_set.function.maximization,
+                            x_values,
+                            is_coco=data_set.source == "coco",
+                        )
+                        scen.data_file = scen.data_file.replace(".tdat", ".dat")
+                        df = (
+                            pl.concat([df, df_tdat])
+                            .unique(
+                                subset=["data_id", "run_id", "evaluations"],
+                                keep="first",  # or "last" or custom logic
+                            )
+                            .sort(["data_id", "run_id", "evaluations"])
+                        )
                 data.append(df)
         data = pl.concat(data, how="diagonal")
         if include_meta_data or include_columns is not None:
