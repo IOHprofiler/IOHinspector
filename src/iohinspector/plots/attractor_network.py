@@ -137,7 +137,7 @@ def plot_attractor_network(
     network.remove_edges_from(nx.selfloop_edges(network))
 
     D = [network.nodes[node]["decision"] for node in network.nodes()]
-    mds = MDS(n_components=1, random_state=0, n_init=4)
+    mds = MDS(n_components=1, random_state=0, n_init=4, init="random")
     if len(D[0]) == len(D):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=UserWarning)

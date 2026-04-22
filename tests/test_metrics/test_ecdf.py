@@ -19,11 +19,11 @@ class TestGetDataECDF(unittest.TestCase):
 
     def test_basic_ecdf(self):
         result = get_data_ecdf(self.df, scale_eval_log=False, scale_f_log=False)
-        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy()
+        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy().copy()
         algo1_eaf.sort()
         np.testing.assert_allclose(algo1_eaf, [0.5, 0.625, 0.75, 0.875, 1])
 
-        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy()
+        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy().copy()
         algo2_eaf.sort()
         np.testing.assert_allclose(algo2_eaf, [0, 0.125, 0.25, 0.375, 0.5])
 
@@ -32,11 +32,11 @@ class TestGetDataECDF(unittest.TestCase):
         result = get_data_ecdf(
             self.df, eval_values=eval_values, scale_eval_log=False, scale_f_log=False
         )
-        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy()
+        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy().copy()
         algo1_eaf.sort()
         np.testing.assert_allclose(algo1_eaf, [2 / 3, 1])
 
-        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy()
+        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy().copy()
         algo2_eaf.sort()
         np.testing.assert_allclose(algo2_eaf, [0, 1 / 3])
 
@@ -54,13 +54,13 @@ class TestGetDataECDF(unittest.TestCase):
         result = get_data_ecdf(
             self.df, f_min=0, f_max=100, scale_eval_log=False, scale_f_log=False
         )
-        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy()
+        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy().copy()
         algo1_eaf.sort()
         np.testing.assert_allclose(
             algo1_eaf, [90 / 100, 92 / 100, 94 / 100, 96 / 100, 98 / 100]
         )
 
-        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy()
+        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy().copy()
         algo2_eaf.sort()
         np.testing.assert_allclose(
             algo2_eaf, [82 / 100, 84 / 100, 86 / 100, 88 / 100, 90 / 100]
@@ -70,11 +70,11 @@ class TestGetDataECDF(unittest.TestCase):
         result = get_data_ecdf(
             self.df, eval_min=2, eval_max=4, scale_eval_log=False, scale_f_log=False
         )
-        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy()
+        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy().copy()
         algo1_eaf.sort()
         np.testing.assert_allclose(algo1_eaf, [2 / 3, 5 / 6, 1])
 
-        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy()
+        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy().copy()
         algo2_eaf.sort()
         np.testing.assert_allclose(algo2_eaf, [0, 1 / 6, 1 / 3])
 
@@ -82,11 +82,11 @@ class TestGetDataECDF(unittest.TestCase):
         result = get_data_ecdf(
             self.df, scale_eval_log=False, scale_f_log=False, turbo=True
         )
-        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy()
+        algo1_eaf = result[result["algorithm_name"] == "algo1"]["eaf"].to_numpy().copy()
         algo1_eaf.sort()
         np.testing.assert_allclose(algo1_eaf, [0.5, 0.625, 0.75, 0.875, 1])
 
-        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy()
+        algo2_eaf = result[result["algorithm_name"] == "algo2"]["eaf"].to_numpy().copy()
         algo2_eaf.sort()
         np.testing.assert_allclose(algo2_eaf, [0, 0.125, 0.25, 0.375, 0.5])
 

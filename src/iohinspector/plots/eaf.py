@@ -280,10 +280,19 @@ def plot_eaf_diffs(
         obj1_var,
         obj2_var,
     )
-    x_min = eaf_diff_rect_data["x_min"].replace([np.inf, -np.inf], np.nan).min()
-    x_max = eaf_diff_rect_data["x_max"].replace([np.inf, -np.inf], np.nan).max()
-    y_min = eaf_diff_rect_data["y_min"].replace([np.inf, -np.inf], np.nan).min()
-    y_max = eaf_diff_rect_data["y_max"].replace([np.inf, -np.inf], np.nan).max()
+
+    cols = ["x_min", "x_max", "y_min", "y_max"]
+
+    eaf_diff_rect_data[cols] = (
+        eaf_diff_rect_data[cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+    )
+
+    x_min = eaf_diff_rect_data["x_min"].min()
+    x_max = eaf_diff_rect_data["x_max"].max()
+    y_min = eaf_diff_rect_data["y_min"].min()
+    y_max = eaf_diff_rect_data["y_max"].max()
 
     plot_args = _create_plot_args(
         HeatmapPlotArgs(
@@ -323,6 +332,7 @@ def plot_eaf_diffs(
                 facecolor=color_dict[rect.eaf_diff],
             )
         )
+
     sm = plt.cm.ScalarMappable(
         cmap=plot_args.heatmap_palette,
         norm=plt.Normalize(vmin=eaf_min_diff, vmax=eaf_max_diff),
