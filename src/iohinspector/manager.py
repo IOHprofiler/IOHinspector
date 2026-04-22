@@ -239,12 +239,12 @@ class DataManager:
         data = []
         for data_set in self.data_sets:
             for scen in data_set.scenarios:
-                if data_set.source == "coco":
-                    df = scen.load_coco(
-                        monotonic, data_set.function.maximization, x_values
-                    )
-                else:
-                    df = scen.load(monotonic, data_set.function.maximization, x_values)
+                df = scen.load(
+                    monotonic,
+                    data_set.function.maximization,
+                    x_values,
+                    is_coco=data_set.source == "coco",
+                )
                 data.append(df)
         data = pl.concat(data, how="diagonal")
         if include_meta_data or include_columns is not None:
