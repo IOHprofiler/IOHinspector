@@ -11,10 +11,11 @@ import matplotlib.pyplot as plt
 from iohinspector.metrics import get_attractor_network
 from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
 
+
 @dataclass
 class AttractorNetworkPlotArgs(BasePlotArgs):
     color_map: str = "viridis"
-    
+
     def as_dict(self):
         """Convert the attractor network plot arguments to a dictionary representation.
 
@@ -57,7 +58,6 @@ def plot_attractor_network(
     ax: matplotlib.axes.Axes = None,
     file_name: str = None,
     plot_args: dict | AttractorNetworkPlotArgs = None,
-    
 ):
     """Plot an attractor network visualization from optimization algorithm data.
 
@@ -67,15 +67,15 @@ def plot_attractor_network(
 
     Args:
         data (pl.DataFrame): Input dataframe containing optimization algorithm trajectory data.
-        coord_vars (Iterable[str], optional): Which columns contain the decision variable coordinates. 
+        coord_vars (Iterable[str], optional): Which columns contain the decision variable coordinates.
             Defaults to ["x0", "x1"].
         fval_var (str, optional): Which column contains the fitness/objective values. Defaults to "raw_y".
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
         beta (int, optional): Minimum stagnation length for attractor detection. Defaults to 40.
-        epsilon (float, optional): Distance threshold below which positions are considered identical. 
+        epsilon (float, optional): Distance threshold below which positions are considered identical.
             Defaults to 0.0001.
-        ax (matplotlib.axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. 
+        ax (matplotlib.axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure.
             Defaults to None.
         file_name (str, optional): Path to save the plot. If None, plot is not saved. Defaults to None.
         plot_args (dict | AttractorNetworkPlotArgs, optional): Plot styling arguments. Can include:
@@ -87,7 +87,7 @@ def plot_attractor_network(
             - All other BasePlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame, pd.DataFrame]: The matplotlib axes object 
+        tuple[matplotlib.axes.Axes, pd.DataFrame, pd.DataFrame]: The matplotlib axes object
             and two dataframes with the nodes and edges of the attractor network.
     """
     try:
@@ -98,13 +98,13 @@ def plot_attractor_network(
     from sklearn.manifold import MDS
 
     nodes, edges = get_attractor_network(
-        data = data,
-        coord_vars = coord_vars,
-        fval_var = fval_var,
-        eval_var= eval_var,
-        maximization = maximization,
-        beta = beta,
-        epsilon = epsilon
+        data=data,
+        coord_vars=coord_vars,
+        fval_var=fval_var,
+        eval_var=eval_var,
+        maximization=maximization,
+        beta=beta,
+        epsilon=epsilon,
     )
 
     plot_args = _create_plot_args(
@@ -112,11 +112,10 @@ def plot_attractor_network(
             title="Attractor Network",
             xlabel="MDS-reduced decision vector",
             ylabel="fitness",
-            color_map="viridis"
+            color_map="viridis",
         ),
-        plot_args
+        plot_args,
     )
-
 
     network = nx.DiGraph()
     for idx, row in nodes.iterrows():
@@ -138,14 +137,15 @@ def plot_attractor_network(
     network.remove_edges_from(nx.selfloop_edges(network))
 
     D = [network.nodes[node]["decision"] for node in network.nodes()]
-    mds = MDS(n_components=1, random_state=0, n_init=4)
-    if len(D[0]) == len(D):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UserWarning)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        mds = MDS(n_components=1, random_state=0, n_init=4)
+        if len(D[0]) == len(D):
             x_positions = mds.fit_transform(D)
-    else:
-        x_positions = mds.fit_transform(D)
-    
+        else:
+            x_positions = mds.fit_transform(D)
+
     x_positions = x_positions.flatten()  # Flatten to get 1D array for x-axis
     y_positions = [network.nodes[node]["fitness"] for node in network.nodes()]
     pos = {
@@ -156,7 +156,7 @@ def plot_attractor_network(
     if len(hitcounts) > 1:
         min_hitcount = min(hitcounts)
         max_hitcount = max(hitcounts)
-   
+
     if len(hitcounts) > 1 and np.std(hitcounts) > 0:
         node_sizes = [
             100
@@ -170,8 +170,8 @@ def plot_attractor_network(
     else:
         node_sizes = [500] * len(hitcounts)
     fitness_values = y_positions  # Reuse y_positions as they represent 'fitness'
-    
-    if(plot_args.yscale == "log"):
+
+    if plot_args.yscale == "log":
         norm = matplotlib.colors.LogNorm(min(fitness_values), max(fitness_values))
     else:
         norm = plt.Normalize(min(fitness_values), max(fitness_values))
@@ -185,7 +185,7 @@ def plot_attractor_network(
         fig, ax = plt.subplots(figsize=plot_args.figsize)
     else:
         fig = None
-        
+
     nx.draw(
         network,
         pos=pos,

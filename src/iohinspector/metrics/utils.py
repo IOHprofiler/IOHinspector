@@ -7,6 +7,7 @@ from moocore import (
     filter_dominated,
 )
 
+
 def get_sequence(
     min: float,
     max: float,
@@ -33,9 +34,9 @@ def get_sequence(
         max = np.log10(max)
         transform = lambda x: 10**x
     if len == 1:
-        values =np.array([min])
+        values = np.array([min])
     else:
-        if(max == min):
+        if max == min:
             values = np.ones(len) * min
         else:
             values = np.arange(
@@ -44,13 +45,11 @@ def get_sequence(
                 (max - min) / (len - 1),
                 dtype=float,
             )
-            
+
     values = transform(values)
     if cast_to_int:
         return np.unique(np.array(values, dtype=int))
     return np.unique(values)
-
-
 
 
 def normalize_objectives(
@@ -61,7 +60,7 @@ def normalize_objectives(
     maximize: Union[bool, Dict[str, bool]] = False,
     only_nondominated: bool = False,
     prefix: str = "ert",
-    keep_original: bool = True
+    keep_original: bool = True,
 ) -> pl.DataFrame:
     """Normalize multiple objective columns in a dataframe using min-max normalization.
 
@@ -86,7 +85,6 @@ def normalize_objectives(
         obj_vals = np.array(result[obj_vars])
         ndpoints = filter_dominated(obj_vals)
 
-
     for i, col in enumerate(obj_vars):
         # Determine log scaling
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
@@ -97,9 +95,9 @@ def normalize_objectives(
         if bounds and col in bounds:
             lb, ub = bounds[col]
         if lb is None:
-            lb = result[col].min() if ndpoints is None else ndpoints[:,i].min()
+            lb = result[col].min() if ndpoints is None else ndpoints[:, i].min()
         if ub is None:
-            ub = result[col].max() if ndpoints is None else ndpoints[:,i].max()
+            ub = result[col].max() if ndpoints is None else ndpoints[:, i].max()
         # Log scale if needed
         if use_log:
             if lb <= 0:
@@ -131,9 +129,9 @@ def normalize_objectives(
 
 
 def add_normalized_objectives(
-    data: pl.DataFrame, 
-    obj_vars: Iterable[str], 
-    max_obj: Optional[pl.DataFrame] = None, 
+    data: pl.DataFrame,
+    obj_vars: Iterable[str],
+    max_obj: Optional[pl.DataFrame] = None,
     min_obj: Optional[pl.DataFrame] = None,
     only_nondominated: bool = False,
 ) -> pl.DataFrame:
@@ -153,14 +151,16 @@ def add_normalized_objectives(
         data,
         obj_vars=obj_vars,
         bounds={
-            col: (min_obj[col][0] if min_obj is not None else None,
-                  max_obj[col][0] if max_obj is not None else None)
+            col: (
+                min_obj[col][0] if min_obj is not None else None,
+                max_obj[col][0] if max_obj is not None else None,
+            )
             for col in obj_vars
         },
         maximize=True,
         only_nondominated=only_nondominated,
         prefix="obj",
-        keep_original=False
+        keep_original=False,
     )
 
 
@@ -192,6 +192,6 @@ def transform_fval(
         bounds=bounds,
         log_scale=scale_log,
         maximize=maximization,
-        prefix="eaf"
+        prefix="eaf",
     )
     return res

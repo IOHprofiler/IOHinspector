@@ -3,11 +3,9 @@ import pandas as pd
 from typing import Iterable, Callable
 from functools import partial
 import numpy as np
-def _aocc(
-    group: pl.DataFrame, 
-    eval_max: int, 
-    fval_var: str = "eaf"
-) -> pl.DataFrame:
+
+
+def _aocc(group: pl.DataFrame, eval_max: int, fval_var: str = "eaf") -> pl.DataFrame:
     """Internal helper function to calculate AOCC contribution for a single data group.
 
     Args:
@@ -18,9 +16,7 @@ def _aocc(
     Returns:
         pl.DataFrame: DataFrame with added 'aocc_contribution' column containing normalized area contributions.
     """
-    group = group.filter(
-        pl.col("evaluations") <= eval_max
-    )
+    group = group.filter(pl.col("evaluations") <= eval_max)
     # Ensure consistent types for the new_row DataFrame
     new_row = pl.DataFrame(
         {
@@ -34,7 +30,7 @@ def _aocc(
         .fill_null(strategy="forward")
         .fill_null(strategy="backward")
     )
-    
+
     return group.with_columns(
         (
             (
@@ -43,8 +39,7 @@ def _aocc(
             )
             / eval_max
         ).alias("aocc_contribution")
-    ) 
-    
+    )
 
 
 def get_aocc(
@@ -69,14 +64,10 @@ def get_aocc(
         pl.DataFrame or pd.DataFrame: A dataframe with the area under the EAF (=area over convergence curve).
     """
     # Ensure consistent data types for evaluations
-    data = data.with_columns(
-        pl.col("evaluations").cast(pl.Float64)
-    )
+    data = data.with_columns(pl.col("evaluations").cast(pl.Float64))
 
     if scale_eval_log:
-        data = data.with_columns(
-            pl.col("evaluations").log10().alias("evaluations")
-        )
+        data = data.with_columns(pl.col("evaluations").log10().alias("evaluations"))
         eval_max = np.log10(eval_max)
     # Group by without strict=False (invalid argument for polars)
     aocc_contribs = data.group_by(*["data_id"]).map_groups(

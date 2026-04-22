@@ -94,9 +94,7 @@ class HyperVolume:
         Returns:
             pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
         """
-        obj_vals = np.clip(
-            np.array(group[obj_vars]), None, self.reference_point
-        )
+        obj_vals = np.clip(np.array(group[obj_vars]), None, self.reference_point)
         evals_dt = group["evaluations"]
         hvs = [
             hypervolume(obj_vals[: (evals_dt <= eval).sum()], ref=self.reference_point)
@@ -152,9 +150,7 @@ class Epsilon:
         Returns:
             pl.DataFrame: a new DataFrame with columns of 'evals' and corresponding IGD+
         """
-        obj_vals = np.clip(
-            np.array(group[obj_vars]), None, self.reference_point
-        )
+        obj_vals = np.clip(np.array(group[obj_vars]), None, self.reference_point)
         evals_dt = group["evaluations"]
         hvs = [
             self.indicator(
@@ -229,8 +225,10 @@ class IGDPlus:
             .drop(obj_vars)
         )
 
+
 try:
     from pymoo.util.ref_dirs import get_reference_directions
+
     class R2:
         def __init__(self, n_ref_dirs: int, ideal_point: np.ndarray):
             """Function to calculate the R2 indicator over time. Used as an input to the 'add_indicator' function.
@@ -239,7 +237,9 @@ try:
                 n_ref_dirs (int): How many reference directions to use. Reference directions are generated based on pymoo's 'energy' method.
                 ideal_point (np.ndarray): The ideal point for the R2 calculations
             """
-            self.ref_dirs = get_reference_directions("energy", len(ideal_point), n_ref_dirs)
+            self.ref_dirs = get_reference_directions(
+                "energy", len(ideal_point), n_ref_dirs
+            )
             self.ideal_point = ideal_point
 
         @property
@@ -281,13 +281,17 @@ try:
                         pl.Series(name=self.var_name, values=igds),
                     ]
                 )
-                .join_asof(group.sort("evaluations"), on="evaluations", strategy="backward")
+                .join_asof(
+                    group.sort("evaluations"), on="evaluations", strategy="backward"
+                )
                 .fill_null(np.inf)
                 .drop(obj_vars)
             )
 
 except ImportError:
+
     class R2:
         def __init__(self, *args, **kwargs):
             import warnings
+
             warnings.warn("R2 indicator is N/A without pymoo installed")

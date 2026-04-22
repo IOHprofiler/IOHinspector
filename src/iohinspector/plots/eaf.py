@@ -1,5 +1,3 @@
-
-
 import numpy as np
 import polars as pl
 import pandas as pd
@@ -12,6 +10,7 @@ from iohinspector.metrics import get_eaf_data, get_eaf_pareto_data, get_eaf_diff
 from iohinspector.plots.utils import HeatmapPlotArgs, _create_plot_args, _save_fig
 from moocore import eaf, eafdiff
 
+
 def plot_eaf_single_objective(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
@@ -23,7 +22,7 @@ def plot_eaf_single_objective(
     *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
-    plot_args: dict | HeatmapPlotArgs = None
+    plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) for single-objective optimization against budget.
 
@@ -53,7 +52,7 @@ def plot_eaf_single_objective(
             - All other HeatmapPlotArgs parameters.
 
     Returns:
-        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed 
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed
             dataframe used to create the plot.
     """
     df = get_eaf_data(
@@ -63,26 +62,25 @@ def plot_eaf_single_objective(
         eval_max=eval_max,
         scale_eval_log=scale_eval_log,
         return_as_pandas=False,
-    )  
-    eval_min = df[eval_var].min() 
+    )
+    eval_min = df[eval_var].min()
     eval_max = df[eval_var].max()
 
     plot_args = _create_plot_args(
         HeatmapPlotArgs(
-            xlabel= eval_var,
-            ylabel= fval_var,
-            title= "EAF",
-            xscale= "log" if scale_eval_log else "linear",
-            yscale= "log",
-            xlim= (eval_min, eval_max),
-            ylim= (10**-8,10**2),
-            heatmap_palette= "viridis_r",
+            xlabel=eval_var,
+            ylabel=fval_var,
+            title="EAF",
+            xscale="log" if scale_eval_log else "linear",
+            yscale="log",
+            xlim=(eval_min, eval_max),
+            ylim=(10**-8, 10**2),
+            heatmap_palette="viridis_r",
         ),
-        plot_args
+        plot_args,
     )
     f_min, f_max = plot_args.ylim
-    
-    
+
     if ax is None:
         fig, ax = plt.subplots(figsize=plot_args.figsize)
     else:
@@ -90,32 +88,25 @@ def plot_eaf_single_objective(
 
     quantiles = np.arange(0, 1 + 1 / ((n_quantiles - 1) * 2), 1 / (n_quantiles - 1))
     cmap = plt.get_cmap(plot_args.heatmap_palette)
-    norm = plt.Normalize(
-        vmin=0,
-        vmax=1
-        )
+    norm = plt.Normalize(vmin=0, vmax=1)
     colors = [cmap(norm(quant)) for quant in quantiles]
-    if(not plot_args.use_background_color):
+    if not plot_args.use_background_color:
         ax.add_patch(
-            Rectangle( 
+            Rectangle(
                 (eval_min, f_min),
                 eval_max - eval_min,
                 f_max - f_min,
                 facecolor=cmap(norm(0)),
                 zorder=0,
-                )
-        )   
-    
-    for quant, color in zip(quantiles,colors):
+            )
+        )
+
+    for quant, color in zip(quantiles, colors):
         poly = np.array(
             df.group_by(eval_var).quantile(quant).sort(eval_var)[eval_var, fval_var]
         )
-        poly = np.append(
-            poly, np.array([[max(poly[:, 0]), f_max]]), axis=0
-        )
-        poly = np.append(
-            poly, np.array([[min(poly[:, 0]), f_max]]), axis=0
-        )
+        poly = np.append(poly, np.array([[max(poly[:, 0]), f_max]]), axis=0)
+        poly = np.append(poly, np.array([[min(poly[:, 0]), f_max]]), axis=0)
         poly2 = np.repeat(poly, 2, axis=0)
         poly2[2::2, 1] = poly[:, 1][:-1]
         ax.add_patch(Polygon(poly2, facecolor=color))
@@ -138,7 +129,7 @@ def plot_eaf_pareto(
     *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
-    plot_args: dict | HeatmapPlotArgs = None
+    plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) for multi-objective optimization with two objectives.
 
@@ -164,29 +155,29 @@ def plot_eaf_pareto(
             - All other HeatmapPlotArgs parameters.
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the EAF 
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the EAF
             dataframe used to create the plot.
     """
 
     eaf_data_df = get_eaf_pareto_data(data, obj1_var, obj2_var)
-    
+
     x_max = eaf_data_df[obj1_var].max()
     x_min = eaf_data_df[obj1_var].min()
     y_max = eaf_data_df[obj2_var].max()
     y_min = eaf_data_df[obj2_var].min()
-    
+
     min_eaf = eaf_data_df["eaf"].min()
 
     plot_args = _create_plot_args(
         HeatmapPlotArgs(
-            xlabel= obj1_var,
-            ylabel= obj2_var,
-            title= "Pareto EAF",
-            xlim= (x_min, x_max),
-            ylim= (y_min, y_max),
-            heatmap_palette= "viridis_r",
+            xlabel=obj1_var,
+            ylabel=obj2_var,
+            title="Pareto EAF",
+            xlim=(x_min, x_max),
+            ylim=(y_min, y_max),
+            heatmap_palette="viridis_r",
         ),
-        plot_args
+        plot_args,
     )
 
     x_min, x_max = plot_args.xlim
@@ -198,22 +189,24 @@ def plot_eaf_pareto(
         fig = None
 
     eaf_data_df = eaf_data_df.sort_values(obj1_var)
-    
+
     cmap = plt.get_cmap(plot_args.heatmap_palette)
     norm = plt.Normalize(
-        vmin=(min_eaf if plot_args.use_background_color else 0),
-        vmax=1
-        )
+        vmin=(min_eaf if plot_args.use_background_color else 0), vmax=1
+    )
     _unique_eafs = eaf_data_df["eaf"].unique()
-    colors = [cmap(norm(v)) for v in _unique_eafs]  
-
+    colors = [cmap(norm(v)) for v in _unique_eafs]
 
     ax.add_patch(
         Rectangle(
             (x_min, y_min),
             x_max - x_min,
             y_max - y_min,
-            facecolor= (plot_args.background_color if plot_args.use_background_color else cmap(norm(0))),
+            facecolor=(
+                plot_args.background_color
+                if plot_args.use_background_color
+                else cmap(norm(0))
+            ),
             zorder=0,
         )
     )
@@ -230,13 +223,14 @@ def plot_eaf_pareto(
     sm.set_array([])
     plt.colorbar(sm, ax=ax)
     # set a background rectangle behind the EAF polygons
-    
+
     ax.set_facecolor("white")
     ax = plot_args.apply(ax)
 
     _save_fig(fig, file_name, plot_args)
 
     return ax, eaf_data_df
+
 
 def plot_eaf_diffs(
     data1: pl.DataFrame,
@@ -246,7 +240,7 @@ def plot_eaf_diffs(
     *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
-    plot_args: dict | HeatmapPlotArgs = None
+    plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) differences between two algorithms.
 
@@ -272,11 +266,11 @@ def plot_eaf_diffs(
             - All other HeatmapPlotArgs parameters.
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the EAF 
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the EAF
             differences dataframe used to create the plot.
 
     Note:
-        The plot shows regions where data1 performs better (positive differences) and regions 
+        The plot shows regions where data1 performs better (positive differences) and regions
         where data2 performs better (negative differences) in different colors.
     """
     # TODO: add an approximation version to speed up plotting
@@ -286,29 +280,41 @@ def plot_eaf_diffs(
         obj1_var,
         obj2_var,
     )
-    x_min = eaf_diff_rect_data["x_min"].replace([np.inf, -np.inf], np.nan).min()
-    x_max = eaf_diff_rect_data["x_max"].replace([np.inf, -np.inf], np.nan).max()
-    y_min = eaf_diff_rect_data["y_min"].replace([np.inf, -np.inf], np.nan).min()
-    y_max = eaf_diff_rect_data["y_max"].replace([np.inf, -np.inf], np.nan).max()
+
+    cols = ["x_min", "x_max", "y_min", "y_max"]
+
+    eaf_diff_rect_data[cols] = (
+        eaf_diff_rect_data[cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+    )
+
+    x_min = eaf_diff_rect_data["x_min"].min()
+    x_max = eaf_diff_rect_data["x_max"].max()
+    y_min = eaf_diff_rect_data["y_min"].min()
+    y_max = eaf_diff_rect_data["y_max"].max()
 
     plot_args = _create_plot_args(
         HeatmapPlotArgs(
-            xlabel= obj1_var,
-            ylabel= obj2_var,
-            title= "EAF Differences",
-            xlim= (x_min, x_max),
-            ylim= (y_min, y_max),
+            xlabel=obj1_var,
+            ylabel=obj2_var,
+            title="EAF Differences",
+            xlim=(x_min, x_max),
+            ylim=(y_min, y_max),
         ),
-        plot_args
+        plot_args,
     )
     eaf_min_diff = eaf_diff_rect_data["eaf_diff"].min()
     eaf_max_diff = eaf_diff_rect_data["eaf_diff"].max()
-    
+
     color_dict = {
         k: v
         for k, v in zip(
             np.unique(eaf_diff_rect_data["eaf_diff"]),
-            sbs.color_palette(plot_args.heatmap_palette, n_colors=len(np.unique(eaf_diff_rect_data["eaf_diff"]))),
+            sbs.color_palette(
+                plot_args.heatmap_palette,
+                n_colors=len(np.unique(eaf_diff_rect_data["eaf_diff"])),
+            ),
         )
     }
 
@@ -326,12 +332,15 @@ def plot_eaf_diffs(
                 facecolor=color_dict[rect.eaf_diff],
             )
         )
-    sm = plt.cm.ScalarMappable(cmap=plot_args.heatmap_palette, norm=plt.Normalize(vmin=eaf_min_diff, vmax=eaf_max_diff))
+
+    sm = plt.cm.ScalarMappable(
+        cmap=plot_args.heatmap_palette,
+        norm=plt.Normalize(vmin=eaf_min_diff, vmax=eaf_max_diff),
+    )
     sm.set_array([])
     plt.colorbar(sm, ax=ax)
     ax = plot_args.apply(ax)
 
     _save_fig(fig, file_name, plot_args)
-
 
     return ax, eaf_diff_rect_data

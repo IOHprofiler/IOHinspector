@@ -6,8 +6,6 @@ from ..align import align_data, turbo_align
 from .utils import transform_fval
 
 
-
-
 def get_data_ecdf(
     data: pl.DataFrame,
     fval_var: str = "raw_y",
@@ -69,7 +67,7 @@ def get_data_ecdf(
             x_col=eval_var,
             y_col=fval_var,
             maximization=maximization,
-            silence_warning=True
+            silence_warning=True,
         )
     dt_ecdf = (
         transform_fval(

@@ -7,6 +7,7 @@ import numpy as np
 from .anytime import *
 from .final import *
 
+
 def add_indicator(
     df: pl.DataFrame, indicator: Callable, obj_vars: Iterable, **kwargs
 ) -> pl.DataFrame:
@@ -38,7 +39,5 @@ def add_indicator(
             A new Polars DataFrame with the computed indicator applied to each
             group of data.
     """
-    indicator_callable = partial(
-        indicator, obj_vars=obj_vars, **kwargs
-    )
+    indicator_callable = partial(indicator, obj_vars=obj_vars, **kwargs)
     return df.group_by("data_id").map_groups(indicator_callable)

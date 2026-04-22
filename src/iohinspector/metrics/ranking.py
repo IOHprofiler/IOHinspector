@@ -6,8 +6,6 @@ import polars as pl
 from typing import Iterable
 
 
-
-
 def get_tournament_ratings(
     data: pl.DataFrame,
     alg_vars: Iterable[str] = ["algorithm_name"],
@@ -89,11 +87,10 @@ def get_tournament_ratings(
 
 
 def get_robustrank_over_time(
-        data: pl.DataFrame,
-        obj_vars: Iterable[str],
-        evals: Iterable[int],
-        indicator: object,
-    
+    data: pl.DataFrame,
+    obj_vars: Iterable[str],
+    evals: Iterable[int],
+    indicator: object,
 ):
     """Calculate robust ranking data over multiple time points for multi-objective optimization.
 
@@ -109,9 +106,7 @@ def get_robustrank_over_time(
     from robustranking import Benchmark
     from robustranking.comparison import MOBootstrapComparison
 
-    df = add_indicator(
-        data, indicator, obj_vars=obj_vars, evals=evals
-    ).to_pandas()
+    df = add_indicator(data, indicator, obj_vars=obj_vars, evals=evals).to_pandas()
     df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
     dt_pivoted = pd.pivot(
         df_part,
@@ -129,16 +124,16 @@ def get_robustrank_over_time(
         bootstrap_runs=1000,
         aggregation_method=np.mean,
     )
-    
-    return comparison,  benchmark
+
+    return comparison, benchmark
 
 
-def get_robustrank_changes(  
+def get_robustrank_changes(
     data: pl.DataFrame,
     obj_vars: Iterable[str],
     evals: Iterable[int],
     indicator: object,
-    ):
+):
     """Calculate robust ranking changes across multiple evaluation time points.
 
     Args:
@@ -153,9 +148,7 @@ def get_robustrank_changes(
     from robustranking import Benchmark
     from robustranking.comparison import BootstrapComparison
 
-    df = add_indicator(
-        data, indicator, obj_vars=obj_vars, evals=evals
-    ).to_pandas()
+    df = add_indicator(data, indicator, obj_vars=obj_vars, evals=evals).to_pandas()
     df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
     dt_pivoted = pd.pivot(
         df_part,

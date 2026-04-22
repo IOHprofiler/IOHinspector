@@ -4,6 +4,7 @@ from typing import Iterable, Callable
 from .utils import get_sequence
 from ..align import align_data
 
+
 def aggregate_convergence(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
@@ -31,7 +32,7 @@ def aggregate_convergence(
     Returns:
         pl.DataFrame or pd.DataFrame: A DataFrame with aggregated performance statistics (mean, min, max, median, std, geometric_mean).
     """
-    if(data.is_empty()):
+    if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
 
     # Getting alligned data (to check if e.g. limits should be args for this function)
@@ -48,7 +49,7 @@ def aggregate_convergence(
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
-        silence_warning=True
+        silence_warning=True,
     )
     aggregations = [
         pl.mean(fval_var).alias("mean"),
@@ -56,16 +57,18 @@ def aggregate_convergence(
         pl.max(fval_var).alias("max"),
         pl.median(fval_var).alias("median"),
         pl.std(fval_var).alias("std"),
-        pl.col(fval_var).log().mean().exp().alias("geometric_mean")
+        pl.col(fval_var).log().mean().exp().alias("geometric_mean"),
     ]
 
     if custom_op is not None:
         aggregations.append(
-            pl.col(fval_var).map_batches(
+            pl.col(fval_var)
+            .map_batches(
                 lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True
-            ).alias(custom_op.__name__)
-    )
-        
+            )
+            .alias(custom_op.__name__)
+        )
+
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
     if return_as_pandas:
         return dt_plot.sort(eval_var).to_pandas()

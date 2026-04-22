@@ -26,5 +26,6 @@ class TestPlotSingleFunctionFixedTarget(unittest.TestCase):
         self.assertIsNotNone(ax)
         self.assertIsNotNone(data)
 
+
 if __name__ == "__main__":
-    unittest.main() 
+    unittest.main()

@@ -57,7 +57,6 @@ class MetaTest(type):
 
 
 class TestExamples(unittest.TestCase, metaclass=MetaTest):
-
     """Examples test"""
 
     @unittest.skipUnless(sys.version_info.minor >= 7, "python version > 3.7")
@@ -83,6 +82,7 @@ class TestExamples(unittest.TestCase, metaclass=MetaTest):
             raise
         finally:
             pass
+
 
 if __name__ == "__main__":
     unittest.main()

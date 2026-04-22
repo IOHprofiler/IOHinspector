@@ -7,6 +7,7 @@ from iohinspector.metrics.fixed_budget import aggregate_convergence
 from iohinspector.plots.utils import LinePlotArgs, _save_fig, _create_plot_args
 import matplotlib
 
+
 def plot_single_function_fixed_budget(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
@@ -23,20 +24,20 @@ def plot_single_function_fixed_budget(
 ):
     """Create a fixed-budget convergence plot showing algorithm performance over evaluation budgets.
 
-    Visualizes how different algorithms converge by plotting aggregate performance measures 
-    (geometric mean, median, etc.) against evaluation budgets, allowing direct comparison 
+    Visualizes how different algorithms converge by plotting aggregate performance measures
+    (geometric mean, median, etc.) against evaluation budgets, allowing direct comparison
     of convergence behavior across algorithms.
 
     Args:
         data (pl.DataFrame): Input dataframe containing optimization algorithm trajectory data.
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
         fval_var (str, optional): Which column contains the function/objective values. Defaults to "raw_y".
-        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing 
+        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing
             between different lines in the plot. Defaults to ["algorithm_name"].
         eval_min (float, optional): Minimum evaluation bound for the plot. If None, uses data minimum. Defaults to None.
         eval_max (float, optional): Maximum evaluation bound for the plot. If None, uses data maximum. Defaults to None.
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
-        measures (Iterable[str], optional): Aggregate measures to plot. Valid options are "geometric_mean", 
+        measures (Iterable[str], optional): Aggregate measures to plot. Valid options are "geometric_mean",
             "mean", "median", "min", "max". Defaults to ["geometric_mean"].
         ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
         file_name (str, optional): Path to save the plot. If None, plot is not saved. Defaults to None.
@@ -51,7 +52,7 @@ def plot_single_function_fixed_budget(
             - All other LinePlotArgs parameters (xlim, ylim, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed 
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed
             (melted/filtered) dataframe used to create the plot.
     """
     dt_agg = aggregate_convergence(
@@ -74,13 +75,13 @@ def plot_single_function_fixed_budget(
             xscale="log",
             yscale="log",
         ),
-        plot_args
+        plot_args,
     )
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
     else:
         fig = None
-        
+
     sbs.lineplot(
         dt_plot,
         x=eval_var,
@@ -91,13 +92,11 @@ def plot_single_function_fixed_budget(
         ax=ax,
     )
 
-
     ax = plot_args.apply(ax=ax)
 
     _save_fig(fig, file_name, plot_args=plot_args)
-    
-    return ax, dt_plot
 
+    return ax, dt_plot
 
 
 def plot_multi_function_fixed_budget():

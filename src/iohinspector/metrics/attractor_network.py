@@ -4,12 +4,7 @@ import polars as pl
 from typing import Iterable, Tuple
 
 
-def _get_nodeidx(
-    xloc: np.ndarray,
-    yval: float,
-    nodes: pd.DataFrame,
-    epsilon: float
-):
+def _get_nodeidx(xloc: np.ndarray, yval: float, nodes: pd.DataFrame, epsilon: float):
     """Internal helper function to find existing node index based on position and function value.
 
     Args:
@@ -84,7 +79,7 @@ def get_attractor_network(
         edge_lengths = stagnation_lengths[stagnation_lengths > beta]
         real_idxs = [stopping_points[i] for i in np.where(stagnation_lengths > beta)[0]]
         if not real_idxs:
-            continue 
+            continue
 
         xloc = xs[real_idxs[0]]
         yval = ys[real_idxs[0]]

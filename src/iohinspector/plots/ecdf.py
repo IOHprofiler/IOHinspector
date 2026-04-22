@@ -6,6 +6,7 @@ from typing import Iterable, Optional
 from iohinspector.metrics import get_data_ecdf
 from iohinspector.plots.utils import LinePlotArgs, _create_plot_args, _save_fig
 
+
 def plot_ecdf(
     data: pl.DataFrame,
     fval_var: str = "raw_y",
@@ -33,13 +34,13 @@ def plot_ecdf(
         data (pl.DataFrame): Input dataframe containing optimization algorithm trajectory data.
         fval_var (str, optional): Which column contains the function/performance values. Defaults to "raw_y".
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
-        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing 
+        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing
             between different lines in the plot. Defaults to ["algorithm_name"].
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
         f_min (int, optional): Minimum function value bound. If None, uses data minimum. Defaults to None.
         f_max (int, optional): Maximum function value bound. If None, uses data maximum. Defaults to None.
         scale_f_log (bool, optional): Whether function values should be log-scaled before normalization. Defaults to True.
-        eval_values (Iterable[int], optional): Specific evaluation points to plot. If None, uses eval_min/eval_max 
+        eval_values (Iterable[int], optional): Specific evaluation points to plot. If None, uses eval_min/eval_max
             with scale_eval_log to sample points. Defaults to None.
         eval_min (int, optional): Minimum evaluation bound. If None, uses data minimum. Defaults to None.
         eval_max (int, optional): Maximum evaluation bound. If None, uses data maximum. Defaults to None.
@@ -57,10 +58,9 @@ def plot_ecdf(
             - All other LinePlotArgs parameters (xlim, ylim, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the processed 
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the processed
             dataframe used to create the plot.
     """
-    
 
     dt_plot = get_data_ecdf(
         data,
@@ -75,20 +75,19 @@ def plot_ecdf(
         eval_max=eval_max,
         eval_min=eval_min,
         scale_eval_log=scale_eval_log,
-        turbo=True
+        turbo=True,
     )
 
     plot_args = _create_plot_args(
         LinePlotArgs(
-            xlabel= eval_var,
-            ylabel= "eaf",
-            title= "ECDF",
-            xscale= "log" if scale_eval_log else "linear",
-            yscale= "log" if scale_f_log else "linear",
+            xlabel=eval_var,
+            ylabel="eaf",
+            title="ECDF",
+            xscale="log" if scale_eval_log else "linear",
+            yscale="log" if scale_f_log else "linear",
         ),
-        plot_args
+        plot_args,
     )
-
 
     dt_plot.sort_values(free_vars)
     if ax is None:
@@ -101,10 +100,9 @@ def plot_ecdf(
         style_arg = free_vars[0]
         hue_arg = dt_plot[free_vars[1:]].apply(tuple, axis=1)
 
-    
     sbs.lineplot(
         dt_plot,
-        x= eval_var,
+        x=eval_var,
         y="eaf",
         style=style_arg,
         hue=hue_arg,

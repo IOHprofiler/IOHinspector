@@ -10,12 +10,14 @@ import matplotlib.pyplot as plt
 
 class TestPlotHeatmapSingleRun(unittest.TestCase):
     def setUp(self):
-        self.data = pl.DataFrame({
-            "data_id": [1]*5,
-            "evaluations": [1,2,3,4,5],
-            "x1": np.linspace(-5, 5, 5),
-            "x2": np.linspace(-5, 5, 5)[::-1],
-        })
+        self.data = pl.DataFrame(
+            {
+                "data_id": [1] * 5,
+                "evaluations": [1, 2, 3, 4, 5],
+                "x1": np.linspace(-5, 5, 5),
+                "x2": np.linspace(-5, 5, 5)[::-1],
+            }
+        )
         self.vars = ["x1", "x2"]
         self.var_mins = np.array([-5, -5])
         self.var_maxs = np.array([5, 5])
