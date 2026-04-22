@@ -1,11 +1,20 @@
 from typing import Iterable, Optional, cast
-from iohinspector.metrics.multi_objective import get_pareto_front_2d, get_indicator_over_time_data
+from iohinspector.metrics.multi_objective import (
+    get_pareto_front_2d,
+    get_indicator_over_time_data,
+)
 import numpy as np
 import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sbs
-from iohinspector.plots.utils import ScatterPlotArgs, LinePlotArgs, _save_fig, _create_plot_args
+from iohinspector.plots.utils import (
+    ScatterPlotArgs,
+    LinePlotArgs,
+    _save_fig,
+    _create_plot_args,
+)
+
 
 def plot_paretofronts_2d(
     data: pl.DataFrame,
@@ -15,19 +24,19 @@ def plot_paretofronts_2d(
     *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: str = None,
-    plot_args: dict | ScatterPlotArgs = None
+    plot_args: dict | ScatterPlotArgs = None,
 ):
     """Visualize 2D Pareto fronts for multi-objective optimization algorithms.
 
-    Creates a scatter plot showing the non-dominated solutions (Pareto fronts) achieved by 
-    different algorithms in a two-objective space, allowing visual comparison of algorithm 
+    Creates a scatter plot showing the non-dominated solutions (Pareto fronts) achieved by
+    different algorithms in a two-objective space, allowing visual comparison of algorithm
     performance and trade-off quality.
 
     Args:
         data (pl.DataFrame): Input dataframe containing multi-objective optimization trajectory data.
         obj1_var (str, optional): Which column contains the first objective values. Defaults to "raw_y".
         obj2_var (str, optional): Which column contains the second objective values. Defaults to "F2".
-        free_var (str, optional): Which column contains the grouping variable for distinguishing 
+        free_var (str, optional): Which column contains the grouping variable for distinguishing
             between different algorithms/categories. Defaults to "algorithm_name".
         ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
         file_name (str, optional): Path to save the plot. If None, plot is not saved. Defaults to None.
@@ -40,48 +49,41 @@ def plot_paretofronts_2d(
             - All other ScatterPlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the Pareto front 
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the Pareto front
             dataframe used to create the plot.
     """
-    df = get_pareto_front_2d(
-        data, obj1_var=obj1_var, obj2_var=obj2_var
-    )
+    df = get_pareto_front_2d(data, obj1_var=obj1_var, obj2_var=obj2_var)
 
     plot_args = _create_plot_args(
         ScatterPlotArgs(
-            xlabel= obj1_var,
-            ylabel= obj2_var,
-            title= "Pareto Fronts",
+            xlabel=obj1_var,
+            ylabel=obj2_var,
+            title="Pareto Fronts",
         ),
-        plot_args
+        plot_args,
     )
 
     df.sort_values(free_var)
-   
+
     if ax is None:
         fig, ax = plt.subplots(figsize=plot_args.figsize)
     else:
         fig = None
-        
+
     sbs.scatterplot(
-        df,
-        x=obj1_var,
-        y=obj2_var,
-        hue=free_var,
-        palette= plot_args.point_colors,
-        ax=ax
-        )
-    
+        df, x=obj1_var, y=obj2_var, hue=free_var, palette=plot_args.point_colors, ax=ax
+    )
+
     plot_args.apply(ax)
 
     _save_fig(fig, file_name, plot_args=plot_args)
 
-    return ax,df
+    return ax, df
 
 
 def plot_indicator_over_time(
     data: pl.DataFrame,
-    obj_vars: Iterable[str] =  ["raw_y", "F2"],
+    obj_vars: Iterable[str] = ["raw_y", "F2"],
     indicator: object = None,
     free_var: str = "algorithm_name",
     eval_min: int = 1,
@@ -91,20 +93,20 @@ def plot_indicator_over_time(
     *,
     ax: matplotlib.axes._axes.Axes = None,
     file_name: Optional[str] = None,
-    plot_args: dict | LinePlotArgs = None
+    plot_args: dict | LinePlotArgs = None,
 ):
     """Plot the anytime performance of multi-objective quality indicators over evaluation budgets.
 
-    Creates line plots showing how quality indicators (like hypervolume, IGD, etc.) evolve 
-    over the course of algorithm runs, enabling comparison of convergence behavior and 
+    Creates line plots showing how quality indicators (like hypervolume, IGD, etc.) evolve
+    over the course of algorithm runs, enabling comparison of convergence behavior and
     solution quality improvement across different algorithms.
 
     Args:
         data (pl.DataFrame): Input dataframe containing multi-objective optimization trajectory data.
-        obj_vars (Iterable[str], optional): Which columns contain the objective values for indicator calculation. 
+        obj_vars (Iterable[str], optional): Which columns contain the objective values for indicator calculation.
             Defaults to ["raw_y", "F2"].
         indicator (object, optional): Quality indicator object from iohinspector.indicators module. Defaults to None.
-        free_var (str, optional): Which column contains the grouping variable for distinguishing 
+        free_var (str, optional): Which column contains the grouping variable for distinguishing
             between different algorithms. Defaults to "algorithm_name".
         eval_min (int, optional): Minimum evaluation bound for the time axis. Defaults to 1.
         eval_max (int, optional): Maximum evaluation bound for the time axis. Defaults to 50_000.
@@ -122,7 +124,7 @@ def plot_indicator_over_time(
             - All other LinePlotArgs parameters (xlim, ylim, yscale, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the indicator 
+        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the indicator
             performance dataframe used to create the plot.
     """
     df = get_indicator_over_time_data(
@@ -137,14 +139,14 @@ def plot_indicator_over_time(
 
     plot_args = _create_plot_args(
         LinePlotArgs(
-            xlabel= "evaluations",
-            ylabel= indicator.var_name,
-            title= f"Anytime Performance: {indicator.var_name}",
-            xscale= "log" if scale_eval_log else "linear",
+            xlabel="evaluations",
+            ylabel=indicator.var_name,
+            title=f"Anytime Performance: {indicator.var_name}",
+            xscale="log" if scale_eval_log else "linear",
         ),
-        plot_args
+        plot_args,
     )
-        
+
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
     else:
@@ -157,7 +159,7 @@ def plot_indicator_over_time(
         palette=sbs.color_palette(n_colors=len(np.unique(data[free_var]))),
         ax=ax,
     )
-   
+
     plot_args.apply(ax)
 
     _save_fig(fig, file_name, plot_args=plot_args)

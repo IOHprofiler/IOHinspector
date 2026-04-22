@@ -130,7 +130,7 @@ class Scenario:
             ],
         )
 
-    def load(self, monotonic=False, maximize=True, x_values = None) -> pl.DataFrame:
+    def load(self, monotonic=False, maximize=True, x_values=None) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame"""
 
         with open(self.data_file) as f:
@@ -143,7 +143,6 @@ class Scenario:
                 decimal_comma=True,
                 schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
                 ignore_errors=True,
-                
             )
             .with_columns(
                 pl.col("evaluations").cast(pl.UInt64),
@@ -165,13 +164,12 @@ class Scenario:
                 dt = dt.with_columns(pl.col("raw_y").cum_min().over("run_id"))
 
             dt = dt.filter(pl.col("raw_y").diff().fill_null(1.0).abs() > 0.0)
-            
-            
+
         dt = dt.collect()
-        
+
         if x_values is not None:
-            dt = turbo_align(dt, x_values)                        
-        
+            dt = turbo_align(dt, x_values)
+
         return dt
 
     def load_coco(self, monotonic=False, maximize=True, x_values=None) -> pl.DataFrame:
@@ -180,7 +178,7 @@ class Scenario:
         with open(self.data_file) as f:
             header = process_header(next(f))
             nextline = next(f).strip().split()
-        if(len(nextline) > len(header)):
+        if len(nextline) > len(header):
             for i in range(self.dimension):
                 header.append(f"x{i}")
         key_lookup = dict([(r.id, r.data_id) for r in self.runs])
@@ -193,7 +191,7 @@ class Scenario:
                 decimal_comma=True,
                 schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
                 ignore_errors=True,
-                truncate_ragged_lines=True
+                truncate_ragged_lines=True,
             )
             .with_columns(
                 pl.col("evaluations").cast(pl.UInt64),
@@ -215,12 +213,13 @@ class Scenario:
                 dt = dt.with_columns(pl.col("raw_y").cum_min().over("run_id"))
 
             dt = dt.filter(pl.col("raw_y").diff().fill_null(1.0).abs() > 0.0)
-            
+
         dt = dt.collect()
         if x_values is not None:
-            dt = turbo_align(dt, x_values)                        
-        
+            dt = turbo_align(dt, x_values)
+
         return dt
+
 
 @dataclass
 class Dataset:
@@ -276,7 +275,9 @@ class Dataset:
                     + [scen.dimension, run.instance, run.id, run.evals, run.best.y]
                     + exattr_values
                 )
-        return pl.DataFrame(records, schema=METADATA_SCHEMA + exattr_schema, orient="row") 
+        return pl.DataFrame(
+            records, schema=METADATA_SCHEMA + exattr_schema, orient="row"
+        )
 
     @staticmethod
     def from_dict(data: dict, filepath: str):
@@ -298,7 +299,9 @@ class Dataset:
         check_keys(data, required_keys)
 
         if "experiment_attributes" in data:
-            experiment_attributes = [tuple(x.items())[0] for x in data["experiment_attributes"]]
+            experiment_attributes = [
+                tuple(x.items())[0] for x in data["experiment_attributes"]
+            ]
         else:
             experiment_attributes = None
 
@@ -330,7 +333,9 @@ class Dataset:
             with open(coco_info_file, "r") as f:
                 data = f.read()
                 if len(data.strip()) == 0:
-                    warnings.warn(f"{coco_info_file} is empty, cannot parse COCO text format")
+                    warnings.warn(
+                        f"{coco_info_file} is empty, cannot parse COCO text format"
+                    )
                     return None
                 return Dataset.from_coco_text(data, coco_info_file)
         except Exception as e:
@@ -350,62 +355,60 @@ class Dataset:
             r"(?:,\s*data_format\s*=\s*'(?P<data_format>[^']*)')?"
             r"(?:\n%[^\n]*)?"
             r"(?:\n(?P<filename>[^\s]+),\s*(?P<runs>.+?)(?=suite\s*=|funcId\s*=|\Z))?",
-            re.DOTALL | re.MULTILINE
+            re.DOTALL | re.MULTILINE,
         )
 
         pattern_run = re.compile(r"(\d+):(\d+)\|([-+eE0-9.]+)")
-        
+
         scenarios = []
         algorithms = set()
         function_ids = set()
         suites = set()
         for match in pattern_block.finditer(coco_text):
             metadata = match.groupdict()
-            dim = int(metadata['DIM'])
-            metadata['filename'] = metadata['filename'].replace("\\", "/")
-            if metadata['suite']:
-                suites.add(metadata['suite'])
-            runs_data = pattern_run.findall(metadata.pop('runs'))
+            dim = int(metadata["DIM"])
+            metadata["filename"] = metadata["filename"].replace("\\", "/")
+            if metadata["suite"]:
+                suites.add(metadata["suite"])
+            runs_data = pattern_run.findall(metadata.pop("runs"))
             runs = []
             for run_id, run in enumerate(runs_data):
                 _, evals, y = run
                 solution = Solution(
-                    evals=int(evals),
-                    x=np.array([None] * dim),
-                    y=float(y)
+                    evals=int(evals), x=np.array([None] * dim), y=float(y)
                 )
                 run = Run(
                     data_id=Run.hash(
                         f"{os.path.join(os.path.dirname(filepath), metadata['filename'])}_{run_id+1}"
                     ),
-                    id=run_id+1,
+                    id=run_id + 1,
                     instance=0,  # Instance is not provided in the COCO text format
                     evals=int(evals),
-                    best=solution
+                    best=solution,
                 )
                 runs.append(run)
 
             scenario = Scenario(
-                dimension=int(metadata['DIM']),
-                data_file=os.path.join(os.path.dirname(filepath), metadata['filename']),
-                runs=runs
+                dimension=int(metadata["DIM"]),
+                data_file=os.path.join(os.path.dirname(filepath), metadata["filename"]),
+                runs=runs,
             )
             scenarios.append(scenario)
 
-            algorithms.add(metadata['algId'])
-            function_ids.add(int(metadata['funcId']))
+            algorithms.add(metadata["algId"])
+            function_ids.add(int(metadata["funcId"]))
         if len(algorithms) != 1:
             raise ValueError("Multiple algorithms found in COCO text, expected one.")
         if len(function_ids) != 1:
             raise ValueError("Multiple function ids found in COCO text, expected one.")
         algorithm = Algorithm(
             name=algorithms.pop(),
-            info="algorithm_info"  # Assuming no additional info in COCO text
+            info="algorithm_info",  # Assuming no additional info in COCO text
         )
         function = Function(
             id=function_ids.pop(),
             name=None,
-            maximization=False  # Assuming minimization, adjust as needed
+            maximization=False,  # Assuming minimization, adjust as needed
         )
 
         # Assuming no experiment attributes and data attributes in COCO text
@@ -419,7 +422,7 @@ class Dataset:
 
         else:
             data_attributes = []
-        
+
         return Dataset(
             source="coco",
             file=filepath,
@@ -429,31 +432,29 @@ class Dataset:
             algorithm=algorithm,
             experiment_attributes=experiment_attributes,
             data_attributes=data_attributes,
-            scenarios=scenarios
+            scenarios=scenarios,
         )
+
 
 def process_header(line: str):
 
-    header = line.strip().replace("%","").split("|")
+    header = line.strip().replace("%", "").split("|")
     header = [re.sub(r"\s*\(.*?\)", "", h).strip() for h in header if h.strip()]
     header = [h for h in header if not h.startswith("x")]
-    
-    raw_y_headers = [
-        "best noise-free fitness"
-        ]
+
+    raw_y_headers = ["best noise-free fitness"]
     for i, _ in enumerate(header):
         if any(raw_y_header in header[i] for raw_y_header in raw_y_headers):
             header[i] = "raw_y"
             break
 
-    evaluations_headers = [
-        "function evaluation",
-        "f evaluations"
-    ]
+    evaluations_headers = ["function evaluation", "f evaluations"]
     for i, _ in enumerate(header):
-        if any(evaluations_header in header[i] for evaluations_header in evaluations_headers):
+        if any(
+            evaluations_header in header[i]
+            for evaluations_header in evaluations_headers
+        ):
             header[i] = "evaluations"
             break
-    
-    return header
 
+    return header

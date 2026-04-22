@@ -5,16 +5,15 @@ from typing import Iterable
 from iohinspector.align import align_data
 
 
-
-
-def get_trajectory(data: pl.DataFrame, 
-                   traj_length: int = None,
-                   min_fevals: int = 1,
-                   evaluation_variable: str = "evaluations",
-                   fval_variable: str = "raw_y",
-                   free_variables: Iterable[str] = ["algorithm_name"],
-                   maximization: bool = False,
-                   return_as_pandas: bool = True,
+def get_trajectory(
+    data: pl.DataFrame,
+    traj_length: int = None,
+    min_fevals: int = 1,
+    evaluation_variable: str = "evaluations",
+    fval_variable: str = "raw_y",
+    free_variables: Iterable[str] = ["algorithm_name"],
+    maximization: bool = False,
+    return_as_pandas: bool = True,
 ) -> pl.DataFrame | pd.DataFrame:
     """Generate aligned performance trajectories for algorithm comparison over fixed evaluation sequences.
 
@@ -35,8 +34,8 @@ def get_trajectory(data: pl.DataFrame,
         max_fevals = data[evaluation_variable].max()
     else:
         max_fevals = traj_length + min_fevals
-    x_values = np.arange(min_fevals, max_fevals + 1) 
-    
+    x_values = np.arange(min_fevals, max_fevals + 1)
+
     data_aligned = align_data(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
@@ -44,7 +43,7 @@ def get_trajectory(data: pl.DataFrame,
         x_col=evaluation_variable,
         y_col=fval_variable,
         maximization=maximization,
-        silence_warning=True
+        silence_warning=True,
     )
     if return_as_pandas:
         data_aligned = data_aligned.to_pandas()

@@ -10,9 +10,12 @@ BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_data"))
 COCO_DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_coco_data"))
 
+
 class TestDataManager(unittest.TestCase):
     def setUp(self):
-        self.data_folders = [os.path.join(DATA_DIR, x) for x in sorted(os.listdir(DATA_DIR))]
+        self.data_folders = [
+            os.path.join(DATA_DIR, x) for x in sorted(os.listdir(DATA_DIR))
+        ]
         self.data_dir = self.data_folders[0]
         self.json_files = sorted(
             [
@@ -55,13 +58,15 @@ class TestDataManager(unittest.TestCase):
         self.assertEqual(len(manager.data_sets), 1)
 
     def test_add_coco_info(self):
-        coco_file = os.path.join(COCO_DATA_DIR, "BFGS-scipy-2019_Varelas/BFGS-scipy-2019_bbob_Varelas_Dahito/minimize_on_bbob_budget100000xD/bbobexp_f1_i1.info")
+        coco_file = os.path.join(
+            COCO_DATA_DIR,
+            "BFGS-scipy-2019_Varelas/BFGS-scipy-2019_bbob_Varelas_Dahito/minimize_on_bbob_budget100000xD/bbobexp_f1_i1.info",
+        )
         manager = DataManager()
         manager.add_coco_info(coco_file)
         self.assertEqual(len(manager.functions), 1)
         self.assertEqual(len(manager.algorithms), 1)
         self.assertEqual(len(manager.data_sets), 1)
-    
 
     def test_add_coco_info_file_not_found(self):
         m = DataManager()
@@ -95,7 +100,6 @@ class TestDataManager(unittest.TestCase):
         selected = m.select(data_attributes=["evaluations", "raw_y"])
         self.assertEqual(len(selected.data_sets), 1)
 
-   
     def test_select_by_dimensions(self):
         m = DataManager()
         m.add_folder(self.data_dir)
@@ -113,7 +117,9 @@ class TestDataManager(unittest.TestCase):
         m.add_folder(self.data_dir)
         selected = m.select_indexes([0])
         self.assertEqual(len(selected.data_sets), 1)
-        self.assertEqual(selected.data_sets[0].file.split("/")[-1], "IOHprofiler_f1_Sphere.json")
+        self.assertEqual(
+            selected.data_sets[0].file.split("/")[-1], "IOHprofiler_f1_Sphere.json"
+        )
 
     def test_load(self):
         m = DataManager()
@@ -133,6 +139,7 @@ class TestDataManager(unittest.TestCase):
         m = DataManager()
         df = m.load()
         self.assertEqual(len(df), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

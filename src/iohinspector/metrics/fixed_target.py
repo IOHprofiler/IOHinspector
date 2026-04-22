@@ -4,6 +4,7 @@ from typing import Iterable, Callable
 from .utils import get_sequence
 from ..align import align_data
 
+
 def aggregate_running_time(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
@@ -50,7 +51,7 @@ def aggregate_running_time(
         x_col=fval_var,
         y_col=eval_var,
         maximization=maximization,
-        silence_warning=True
+        silence_warning=True,
     )
 
     if eval_max is None:
@@ -69,7 +70,7 @@ def aggregate_running_time(
             .then(pl.col(eval_var))
             .otherwise(eval_max)
             .sum()
-            /pl.col(eval_var).is_finite().sum()
+            / pl.col(eval_var).is_finite().sum()
         ).alias("ERT"),
         (
             pl.when(pl.col(eval_var).is_finite())
@@ -83,7 +84,9 @@ def aggregate_running_time(
     if custom_op is not None:
         aggregations.append(
             pl.col(eval_var)
-            .map_batches(lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True)
+            .map_batches(
+                lambda s: custom_op(s), return_dtype=pl.Float64, returns_scalar=True
+            )
             .alias(custom_op.__name__)
         )
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)

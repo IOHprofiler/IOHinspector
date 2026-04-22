@@ -8,6 +8,7 @@ import polars as pl
 from .data import Dataset, Function, Algorithm, METADATA_SCHEMA
 from glob import glob
 
+
 @dataclass
 class DataManager:
     data_sets: list[Dataset] = field(default_factory=list, repr=None)
@@ -18,10 +19,10 @@ class DataManager:
     def __post_init__(self):
         for data_set in self.data_sets:
             self.extend_overview(data_set)
-            
+
     def add_folders(self, folders: list[str]):
         """Utility loop for adding multiple folders"""
-        
+
         for folder in folders:
             self.add_folder(folder)
 
@@ -31,10 +32,12 @@ class DataManager:
         if not os.path.isdir(folder_name):
             raise FileNotFoundError(f"{folder_name} not found")
 
-        json_files = glob(f"{folder_name}/**/*.json", recursive = True)
-        coco_files = glob(f"{folder_name}/**/*.info", recursive = True)
+        json_files = glob(f"{folder_name}/**/*.json", recursive=True)
+        coco_files = glob(f"{folder_name}/**/*.info", recursive=True)
         if not any(json_files) and not any(coco_files):
-            raise FileNotFoundError(f"{folder_name} does not contain any json or coco files")
+            raise FileNotFoundError(
+                f"{folder_name} does not contain any json or coco files"
+            )
 
         datasets = [
             ds
@@ -50,8 +53,10 @@ class DataManager:
 
         for ds in datasets:
             self.data_sets.append(ds)
-        ds_overviews = pl.concat([ds.overview for ds in datasets], how='diagonal_relaxed')
-        self.overview = pl.concat([ds_overviews, self.overview], how='diagonal_relaxed')
+        ds_overviews = pl.concat(
+            [ds.overview for ds in datasets], how="diagonal_relaxed"
+        )
+        self.overview = pl.concat([ds_overviews, self.overview], how="diagonal_relaxed")
 
     def add_json(self, json_file: str):
         """Add a single json file with ioh generated data"""
@@ -62,15 +67,15 @@ class DataManager:
             )
             return
         data_set = Dataset.from_json(json_file)
-        
+
         self.add_data_set(data_set)
-    
+
     def add_coco_info(self, coco_info_file: str):
         """Add a COCO info file with ioh generated data"""
-        
+
         if not os.path.isfile(coco_info_file):
             raise FileNotFoundError(f"{coco_info_file} not found")
-        
+
         data_set = Dataset.from_coco_info(coco_info_file)
         if data_set is not None:
             self.add_data_set(data_set)
@@ -212,7 +217,7 @@ class DataManager:
                     if run.instance not in iids:
                         iids.append(run.instance)
         return tuple(iids)
-    
+
     @property
     def n_runs(self):
         return len(self.overview)
@@ -226,7 +231,7 @@ class DataManager:
         monotonic: bool = True,
         include_meta_data: bool = False,
         include_columns: list[str] = None,
-        x_values: list[str] = None
+        x_values: list[str] = None,
     ) -> pl.DataFrame:
         if not self.any:
             return pl.DataFrame()
@@ -235,7 +240,9 @@ class DataManager:
         for data_set in self.data_sets:
             for scen in data_set.scenarios:
                 if data_set.source == "coco":
-                    df = scen.load_coco(monotonic, data_set.function.maximization, x_values)
+                    df = scen.load_coco(
+                        monotonic, data_set.function.maximization, x_values
+                    )
                 else:
                     df = scen.load(monotonic, data_set.function.maximization, x_values)
                 data.append(df)
@@ -244,10 +251,13 @@ class DataManager:
             if include_columns is None:
                 include_columns = self.overview.columns
 
-            for c in ("data_id", "run_id",):
+            for c in (
+                "data_id",
+                "run_id",
+            ):
                 if c not in include_columns:
                     include_columns.append(c)
-            
+
             data = self.overview.select(include_columns).join(
                 data, on=("data_id", "run_id")
             )

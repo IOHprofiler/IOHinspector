@@ -3,7 +3,8 @@ from typing import Optional, Tuple, Sequence, Union, Dict, Any
 from dataclasses import fields
 from typing import TypeVar, Generic
 
-T = TypeVar('T', bound='BasePlotArgs')
+T = TypeVar("T", bound="BasePlotArgs")
+
 
 @dataclass
 class BasePlotArgs:
@@ -17,7 +18,7 @@ class BasePlotArgs:
     xscale: str = None
     yscale: str = None
 
-    figsize: Optional[Tuple[float, float]] = (16,9)
+    figsize: Optional[Tuple[float, float]] = (16, 9)
     dpi: Optional[int] = None
 
     grid: Union[bool, str] = False
@@ -74,6 +75,7 @@ class BasePlotArgs:
             "yticks": self.yticks,
             "tight_layout": self.tight_layout,
         }
+
     def apply(self, ax):
         """Apply stored plot properties to a matplotlib Axes object.
 
@@ -89,8 +91,9 @@ class BasePlotArgs:
         try:
             import matplotlib.pyplot as plt
         except Exception as exc:
-            raise RuntimeError("matplotlib is required to apply plot properties") from exc
-
+            raise RuntimeError(
+                "matplotlib is required to apply plot properties"
+            ) from exc
 
         # Title and labels with fontsize handling
         if self.title is not None:
@@ -106,14 +109,12 @@ class BasePlotArgs:
                 ax.set_xlabel(self.xlabel, fontsize=self.fontsize)
             else:
                 ax.set_xlabel(self.xlabel)
-        
+
         if self.ylabel is not None:
             if self.fontsize is not None:
                 ax.set_ylabel(self.ylabel, fontsize=self.fontsize)
             else:
                 ax.set_ylabel(self.ylabel)
-
-        
 
         # Ticks
         if self.xticks is not None:
@@ -132,7 +133,6 @@ class BasePlotArgs:
             ax.set_xscale(self.xscale)
         if self.yscale:
             ax.set_yscale(self.yscale)
-
 
         # Grid
         if isinstance(self.grid, bool):
@@ -165,15 +165,14 @@ class BasePlotArgs:
             ax.invert_yaxis()
 
         return ax
-    
-   
+
     def override(self, other: Optional[Union["BasePlotArgs", Dict[str, Any]]]):
         """Update plot arguments in place with values from another source.
 
         Args:
-            other (Optional[Union[BasePlotArgs, Dict[str, Any]]]): Plot arguments to override current values with. 
-                Can be either a BasePlotArgs instance or a dictionary. Values from `other` override those 
-                from `self` when they are not None. Dictionary fields (legend_kwargs, tick_params) are merged 
+            other (Optional[Union[BasePlotArgs, Dict[str, Any]]]): Plot arguments to override current values with.
+                Can be either a BasePlotArgs instance or a dictionary. Values from `other` override those
+                from `self` when they are not None. Dictionary fields (legend_kwargs, tick_params) are merged
                 with `other` taking precedence for overlapping keys.
 
         Note:
@@ -189,16 +188,15 @@ class BasePlotArgs:
         for f in fields(self.__class__):
             name = f.name
             v2 = other.get(name, None) if is_dict else getattr(other, name, None)
-            
+
             if v2 is not None:
                 setattr(self, name, v2)
 
-    
 
 @dataclass
 class LinePlotArgs(BasePlotArgs):
     line_colors: Optional[Sequence[str]] = None
-    
+
     def as_dict(self):
         """Convert the line plot arguments to a dictionary representation.
 
@@ -208,7 +206,6 @@ class LinePlotArgs(BasePlotArgs):
         results = super().as_dict()
         results["line_colors"] = self.line_colors
         return results
-        
 
     def apply(self, ax):
         """Apply line plot properties to a matplotlib Axes object.
@@ -245,7 +242,6 @@ class HeatmapPlotArgs(BasePlotArgs):
         results = super().as_dict()
         results["heatmap_palette"] = self.heatmap_palette
         return results
-        
 
     def apply(self, ax):
         """Apply heatmap plot properties to a matplotlib Axes object.
@@ -270,7 +266,7 @@ class HeatmapPlotArgs(BasePlotArgs):
 @dataclass
 class ScatterPlotArgs(BasePlotArgs):
     point_colors: Optional[Sequence[str]] = None
-    
+
     def as_dict(self):
         """Convert the scatter plot arguments to a dictionary representation.
 
@@ -280,7 +276,6 @@ class ScatterPlotArgs(BasePlotArgs):
         results = super().as_dict()
         results["point_colors"] = self.point_colors
         return results
-        
 
     def apply(self, ax):
         """Apply scatter plot properties to a matplotlib Axes object.
@@ -301,7 +296,8 @@ class ScatterPlotArgs(BasePlotArgs):
         """
         return super().override(other)
 
-def _save_fig(fig = None, file_name: str=None, plot_args: BasePlotArgs=None):
+
+def _save_fig(fig=None, file_name: str = None, plot_args: BasePlotArgs = None):
     """Save a matplotlib figure to file with optional plot arguments.
 
     Args:
@@ -320,19 +316,20 @@ def _create_plot_args(
     overrides: Optional[Union[T, Dict[str, Any]]] = None,
 ) -> T:
     """Create plot properties by merging defaults with overrides, preserving the exact type of the defaults object.
-    
+
     Args:
         defaults (T): Default properties object (any BasePlotArgs subclass).
         overrides (Optional[Union[T, Dict[str, Any]]], optional): Properties to override (dict or same type as defaults). Defaults to None.
-        
+
     Returns:
         T: New properties object of the same type as defaults with overrides applied.
     """
     if overrides is None:
         return defaults
-    
+
     # Create a copy to avoid mutating the input
     import copy
+
     result = copy.deepcopy(defaults)
     result.override(overrides)
     return result

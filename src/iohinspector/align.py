@@ -13,7 +13,7 @@ def align_data(
     y_col: str = "raw_y",
     output: str = "long",
     maximization: bool = False,
-    silence_warning: bool = False
+    silence_warning: bool = False,
 ) -> pl.DataFrame:
     """Align data based on function evaluation counts
 
@@ -31,7 +31,7 @@ def align_data(
         pl.DataFrame: Alligned DataFrame
     """
     if not silence_warning:
-        warnings.warn( "turbo_align is favoured over this function", DeprecationWarning)
+        warnings.warn("turbo_align is favoured over this function", DeprecationWarning)
 
     evals_df = pl.DataFrame({x_col: evals})
 
@@ -96,24 +96,31 @@ def turbo_align(
     data_ids = df["data_id"].unique()
 
     x_vals = pl.DataFrame(
-        { 
+        {
             x_col: np.repeat(x_values, len(data_ids)),
             "data_id": np.tile(data_ids, len(x_values)),
         },
-        schema={x_col: df[x_col].dtype, "data_id": df['data_id'].dtype},
+        schema={x_col: df[x_col].dtype, "data_id": df["data_id"].dtype},
     )
-    df = df.sort([x_col, 'data_id'])
-    
+    df = df.sort([x_col, "data_id"])
+
     if x_col != "evaluations" and maximization:
         result_df = x_vals.join_asof(
-            df, by="data_id", on=x_col, strategy="forward", check_sortedness=False,
+            df,
+            by="data_id",
+            on=x_col,
+            strategy="forward",
+            check_sortedness=False,
         )
     else:
         result_df = x_vals.join_asof(
-            df, by="data_id", on=x_col, strategy="backward", check_sortedness=False,
+            df,
+            by="data_id",
+            on=x_col,
+            strategy="backward",
+            check_sortedness=False,
         )
-        
-              
+
     if output == "long":
         return result_df
 

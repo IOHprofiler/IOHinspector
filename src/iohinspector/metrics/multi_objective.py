@@ -1,4 +1,3 @@
-
 from typing import Iterable
 import polars as pl
 import pandas as pd
@@ -30,11 +29,10 @@ def get_pareto_front_2d(
     return df
 
 
-
 def get_indicator_over_time_data(
     data: pl.DataFrame,
     indicator: object = None,
-    obj_vars: Iterable[str] =  ["raw_y", "F2"],
+    obj_vars: Iterable[str] = ["raw_y", "F2"],
     eval_min: int = 1,
     eval_max: int = 50_000,
     scale_eval_log: bool = True,
@@ -57,13 +55,10 @@ def get_indicator_over_time_data(
         pl.DataFrame or pd.DataFrame: A DataFrame with indicator values calculated over the specified evaluation timeline.
     """
 
-    
     evals = get_sequence(
         eval_min, eval_max, eval_steps, cast_to_int=True, scale_log=scale_eval_log
     )
-    df = add_indicator(
-        data, indicator, obj_vars=obj_vars, evals=evals
-    )
+    df = add_indicator(data, indicator, obj_vars=obj_vars, evals=evals)
 
     if return_as_pandas:
         return df.to_pandas()

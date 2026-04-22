@@ -25,6 +25,7 @@ class TestPlotSingleFunctionFixedBudget(unittest.TestCase):
         ax, data = plot_single_function_fixed_budget(self.data)
         self.assertIsNotNone(ax)
         self.assertIsNotNone(data)
-        
+
+
 if __name__ == "__main__":
-    unittest.main() 
+    unittest.main()

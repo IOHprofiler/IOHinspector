@@ -4,16 +4,19 @@ import pandas as pd
 import numpy as np
 from iohinspector.metrics import get_aocc
 
+
 class TestAOCC(unittest.TestCase):
     def setUp(self):
         # Simple dataset with two groups and two data_ids
-        self.df = pl.DataFrame({
-            "data_id": [1, 1, 1, 2, 2, 2],
-            "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
-            "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
-            "evaluations": [0, 5, 10, 0, 5, 10],
-            "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
-        })
+        self.df = pl.DataFrame(
+            {
+                "data_id": [1, 1, 1, 2, 2, 2],
+                "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
+                "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
+                "evaluations": [0, 5, 10, 0, 5, 10],
+                "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
+            }
+        )
 
     def test_basic_aocc(self):
         # AOCC should be computed for the group
@@ -24,16 +27,15 @@ class TestAOCC(unittest.TestCase):
         aocc_val = result["AOCC"][0]
         self.assertTrue(aocc_val == 6.5)
 
-
         result = get_aocc(self.df, eval_max=10, return_as_pandas=False)
         self.assertIsInstance(result, pl.DataFrame)
 
     def test_multiple_groups(self):
         # Add a second group
-        df = self.df.with_columns([
-            pl.Series("function_name", ["f1", "f1", "f1", "f2", "f2", "f2"])
-        ])
-        
+        df = self.df.with_columns(
+            [pl.Series("function_name", ["f1", "f1", "f1", "f2", "f2", "f2"])]
+        )
+
         result = get_aocc(df, eval_max=10)
         self.assertIn("AOCC", result.columns)
         aocc_f1_val = result[result["function_name"] == "f1"]["AOCC"].iloc[0]
@@ -57,15 +59,17 @@ class TestAOCC(unittest.TestCase):
 
     def test_aocc_with_missing_evaluations(self):
         # Remove some evaluation steps to test fill_null
-        df = pl.DataFrame({
-            "data_id": [1, 1, 1, 2, 2],
-            "function_name": ["f1", "f1", "f1", "f1", "f1"],
-            "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1"],
-            "evaluations": [0, 5, 10, 0, 10],
-            "eaf": [10.0, 8.0, 4.0, 12.0, 6.0],
-        })
+        df = pl.DataFrame(
+            {
+                "data_id": [1, 1, 1, 2, 2],
+                "function_name": ["f1", "f1", "f1", "f1", "f1"],
+                "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1"],
+                "evaluations": [0, 5, 10, 0, 10],
+                "eaf": [10.0, 8.0, 4.0, 12.0, 6.0],
+            }
+        )
         result = get_aocc(df, eval_max=10)
-        
+
         self.assertIn("AOCC", result.columns)
         aocc_val = result["AOCC"][0]
         self.assertTrue(aocc_val == 6)
@@ -79,20 +83,19 @@ class TestAOCC(unittest.TestCase):
         aocc_val = result["AOCC"][0]
         self.assertTrue(np.isnan(aocc_val) or aocc_val == 0)
 
-
     def test_aocc_log(self):
-        self.df = pl.DataFrame({
-            "data_id": [1, 1, 1, 2, 2, 2],
-            "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
-            "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
-            "evaluations": [1, 10, 100, 1, 10, 100],
-            "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
-        })
+        self.df = pl.DataFrame(
+            {
+                "data_id": [1, 1, 1, 2, 2, 2],
+                "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
+                "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
+                "evaluations": [1, 10, 100, 1, 10, 100],
+                "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
+            }
+        )
         result = get_aocc(self.df, eval_max=100, scale_eval_log=True)
         aocc_val = result["AOCC"][0]
         self.assertTrue(aocc_val == 6.5)
-
-     
 
 
 if __name__ == "__main__":

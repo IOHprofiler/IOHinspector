@@ -4,7 +4,6 @@ import pandas as pd
 from typing import Iterable, Optional
 
 
-
 def get_heatmap_single_run_data(
     data: pl.DataFrame,
     vars: Iterable[str],

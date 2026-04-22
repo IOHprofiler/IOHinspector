@@ -7,12 +7,14 @@ from iohinspector.metrics.single_run import get_heatmap_single_run_data
 
 class TestPlotHeatmapSingleRun(unittest.TestCase):
     def setUp(self):
-        self.data = pl.DataFrame({
-            "data_id": [1]*5,
-            "evaluations": [1,2,3,4,5],
-            "x1": np.linspace(-5, 5, 5),
-            "x2": np.linspace(-5, 5, 5)[::-1],
-        })
+        self.data = pl.DataFrame(
+            {
+                "data_id": [1] * 5,
+                "evaluations": [1, 2, 3, 4, 5],
+                "x1": np.linspace(-5, 5, 5),
+                "x2": np.linspace(-5, 5, 5)[::-1],
+            }
+        )
         self.vars = ["x1", "x2"]
         self.var_mins = np.array([-5, -5])
         self.var_maxs = np.array([5, 5])
@@ -31,20 +33,24 @@ class TestPlotHeatmapSingleRun(unittest.TestCase):
         self.assertTrue(np.all((dt_plot.values >= 0) & (dt_plot.values <= 1)))
 
     def test_asserts_on_multiple_data_ids(self):
-        data = pl.DataFrame({
-            "data_id": [1, 2],
-            "evaluations": [1, 2],
-            "x1": [0, 1],
-        })
+        data = pl.DataFrame(
+            {
+                "data_id": [1, 2],
+                "evaluations": [1, 2],
+                "x1": [0, 1],
+            }
+        )
         with self.assertRaises(AssertionError):
             get_heatmap_single_run_data(data, ["x1"])
 
     def test_single_variable(self):
-        data = pl.DataFrame({
-            "data_id": [1]*3,
-            "evaluations": [1, 2, 3],
-            "x1": [-5, 0, 5],
-        })
+        data = pl.DataFrame(
+            {
+                "data_id": [1] * 3,
+                "evaluations": [1, 2, 3],
+                "x1": [-5, 0, 5],
+            }
+        )
         dt_plot = get_heatmap_single_run_data(
             data=data,
             vars=["x1"],
@@ -56,12 +62,14 @@ class TestPlotHeatmapSingleRun(unittest.TestCase):
         np.testing.assert_allclose(dt_plot.values, [[0, 0.5, 1]])
 
     def test_non_default_eval_col(self):
-        data = pl.DataFrame({
-            "data_id": [1]*4,
-            "evals": [1, 2, 3, 4],
-            "x1": [0, 1, 2, 3],
-            "x2": [3, 2, 1, 0],
-        })
+        data = pl.DataFrame(
+            {
+                "data_id": [1] * 4,
+                "evals": [1, 2, 3, 4],
+                "x1": [0, 1, 2, 3],
+                "x2": [3, 2, 1, 0],
+            }
+        )
         dt_plot = get_heatmap_single_run_data(
             data=data,
             vars=["x1", "x2"],
