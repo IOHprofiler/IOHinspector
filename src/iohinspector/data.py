@@ -131,6 +131,16 @@ class Scenario:
         )
 
     def scan_ioh(self, header: list[str]):
+        parquet_file = self.data_file.replace(".dat", ".parquet")
+        if os.path.isfile(parquet_file):
+            try:
+                return pl.scan_parquet(
+                    parquet_file
+                )
+            except Exception as e:
+                warnings.warn(
+                    f"Failed to read {parquet_file} as parquet file: {e}. Falling back to reading the original data file."
+                )
         return pl.scan_csv(
             self.data_file,
             separator=" ",
@@ -138,6 +148,7 @@ class Scenario:
             schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
             ignore_errors=True,
         )
+
 
     def scan_coco(self, header: list[str]):
         return pl.scan_csv(
@@ -282,6 +293,13 @@ class Dataset:
             experiment_attributes = [
                 tuple(x.items())[0] for x in data["experiment_attributes"]
             ]
+            metadata_col_names = {col_name for col_name, _ in METADATA_SCHEMA}
+            for i, (name, value) in enumerate(experiment_attributes):
+                if name in metadata_col_names:
+                    warnings.warn(
+                        f"Experiment attribute '{name}' is already present in the metadata schema. It will be renamed to avoid conflicts."
+                    )
+                    experiment_attributes[i] = (f"{name}_exp_attr", value)
         else:
             experiment_attributes = None
 
