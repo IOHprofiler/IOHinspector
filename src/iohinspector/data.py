@@ -112,7 +112,8 @@ class Scenario:
         check_keys(data, required_keys)
 
         data["path"] = os.path.join(dirname, data["path"])
-        if not os.path.isfile(data["path"]):
+        parquet_path = data["path"].replace(".dat", ".parquet")
+        if not os.path.isfile(data["path"]) and not os.path.isfile(parquet_path):
             raise FileNotFoundError(f"{data['path']} is not found")
 
         return Scenario(
@@ -131,6 +132,25 @@ class Scenario:
         )
 
     def scan_ioh(self, header: list[str]):
+        parquet_file = self.data_file.replace(".dat", ".parquet")
+        if os.path.isfile(parquet_file):
+            try:
+                lf = pl.scan_parquet(parquet_file)
+                # Fail fast so we can fall back here if the parquet is corrupt or incompatible.
+                if not set(header).issubset(set(lf.collect_schema().names())):
+                    raise ValueError(
+                        f"Parquet file is missing required columns: {header}"
+                    )
+                lf.limit(1).collect()
+                return lf
+            except Exception as e:
+                warnings.warn(
+                    f"Failed to read {parquet_file} as parquet file: {e}. Falling back to reading the original data file."
+                )
+        if not os.path.isfile(self.data_file):
+            raise FileNotFoundError(
+                f"No data file found for {self.data_file!r}: neither .parquet nor .dat exists."
+            )
         return pl.scan_csv(
             self.data_file,
             separator=" ",
@@ -138,6 +158,7 @@ class Scenario:
             schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
             ignore_errors=True,
         )
+
 
     def scan_coco(self, header: list[str]):
         return pl.scan_csv(
@@ -152,9 +173,13 @@ class Scenario:
         )
 
     def extract_header(self, is_coco: bool = True) -> list[str]:
-        with open(self.data_file) as f:
-            if not is_coco:
+        if not is_coco:
+            parquet_file = self.data_file.replace(".dat", ".parquet")
+            if not os.path.isfile(self.data_file) and os.path.isfile(parquet_file):
+                return pl.scan_parquet(parquet_file).collect_schema().names()
+            with open(self.data_file) as f:
                 return next(f).strip().split()
+        with open(self.data_file) as f:
             header = process_header(next(f))
             nextline = next(f).strip().split()
             if len(nextline) > len(header):
@@ -223,7 +248,8 @@ class Dataset:
             with open(json_file) as f:
                 data = json.load(f)
                 return Dataset.from_dict(data, json_file)
-        except Exception:
+        except Exception as e:
+            warnings.warn(f"Failed to load {json_file}: {e}")
             return None
 
     @property
@@ -282,6 +308,13 @@ class Dataset:
             experiment_attributes = [
                 tuple(x.items())[0] for x in data["experiment_attributes"]
             ]
+            metadata_col_names = {col_name for col_name, _ in METADATA_SCHEMA}
+            for i, (name, value) in enumerate(experiment_attributes):
+                if name in metadata_col_names:
+                    warnings.warn(
+                        f"Experiment attribute '{name}' is already present in the metadata schema. It will be renamed to avoid conflicts."
+                    )
+                    experiment_attributes[i] = (f"{name}_exp_attr", value)
         else:
             experiment_attributes = None
 
