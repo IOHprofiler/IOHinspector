@@ -25,26 +25,23 @@ Status: in progress
 - step 5: `comparisons.md` (CM-1..CM-6; KS p-value methods compared in R
   4.3.3 and scipy 1.18.1) and `glicko2.md` (GL-1..GL-4; PlayerRatings 1.1-0
   installed in scratchpad `rlib`, checked on Glickman's example). Corrected
-  the inverted-`which` list in targets.md (Glicko-2 and Heatmaps are fine).
+  the inverted-`which` list in targets.md (Glicko-2 and Heatmaps are fine)
+  (commit bb66db9).
+- step 6: `portfolio.md` (SH-1..SH-3), `cdp.md` (CD-1..CD-4; RVCompare 0.1.8
+  source in scratchpad `rvcompare/`), `eaf.md` (EA-1..EA-4) and `dsc.md`
+  (DS-1..DS-4, partial: papers' full text and the DSCtool service were not
+  reachable; open questions listed for I18).
 
 ## Next step
-Step 6: write `docs/definitions/portfolio.md` (Shapley: IOHanalyzer
-`get_shapley_values` `R/stats.R` 1184+, `get_marg_contrib_ecdf` 1151, Shiny
-`Shapley_computations.R`; [Frechette2016]), `cdp.md` (`generate_data.CDP`
-`R/DataSetList.R` 1942-2019, RVCompare semantics, [Arza2023]; note
-`RTPMF.R:86` passes isMinimizationProblem = TRUE), `eaf.md`
-(`generate_data.EAF` 2005-2062 with eaf::eafs, ECDF_From_EAF 2102-2163,
-EAF_Difference 2164, EAF_diff_Approximate 2205 (xmax = Min bug in Shiny
-`EAF_plots.R`); iohinspector `metrics/eaf.py` with moocore) and `dsc.md`
-(spec for I18: papers [Eftimov2017, Eftimov2019, Eftimov2020], IOHanalyzer
-`R/stats.R` 735-1135 and `inst/shiny-server/server/RT_DSCinterface.R`,
-`FV_DSCinterface.R`; missing-value handling PAR-1/PAR-10/ERT/Remove-na on the
-client; bug B1). Keep DSC claims to what the papers' abstracts, the R client
-and the DSCtool API docs show; mark the rest as for I18 to confirm against
-recorded responses.
+Step 7: write `docs/definitions/README.md`: index of pages with parity-matrix
+row -> page mapping; a table of every decision ID (RT-*, AL-*, FB-*, TG-*,
+EC-*, DI-*, PA-*, CM-*, GL-*, SH-*, CD-*, EA-*, DS-*) with a one-line summary
+and whether it differs from IOHanalyzer; the plan's eight questions with
+answers and links; the list of IOHanalyzer defects found; all open questions
+(Q-*). Collect IDs with `grep -ho '\*\*[A-Z][A-Z]-[0-9]\.\*\*' docs/definitions/*.md`
+and `grep -ho 'Q-[A-Z]*-[0-9]' ...`. Then set Status to "ready for review".
 
 ## Planned pages (one per parity-matrix row group)
-- step 6 `portfolio.md` (Shapley), `cdp.md`, `eaf.md`, `dsc.md`.
 - step 7 `README.md`: decision table, differences from IOHanalyzer, open
   questions. Collect every decision ID (RT-*, AL-*, FB-*, ...) and open
   question (Q-*) from the pages.

@@ -157,6 +157,12 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
 - **[PlayerRatings]** A. Stephenson, J. Sonas. PlayerRatings: Dynamic updating
   methods for player ratings estimation. R package version 1.1-0 (CRAN,
   2020-03-01). doi:10.32614/CRAN.package.PlayerRatings. Checked: CRAN.
+- **[RVCompare]** E. Arza. RVCompare: compare real valued random variables.
+  R package version 0.1.8 (CRAN, 2023-08-21); read from the source tarball.
+  Reference implementation of [Arza2023]. Checked: CRAN.
+- **[eaf]**, **[moocore]**: the R package `eaf` (used by IOHanalyzer) and the
+  Python package `moocore` (a dependency of iohinspector), both maintained by
+  M. López-Ibáñez. Versions are pinned in I03 and I17.
 - **[Shapley1953]** L. S. Shapley. A value for n-person games. In H. W. Kuhn,
   A. W. Tucker (eds.), *Contributions to the Theory of Games II*, Annals of
   Mathematics Studies 28, Princeton University Press, pp. 307–318, 1953.
