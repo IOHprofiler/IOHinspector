@@ -100,6 +100,22 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
   verwandte Gebiete* 57(4):453–476, 1981. doi:10.1007/BF01025868.
   Checked: Crossref.
 
+- **[Silverman1986]** B. W. Silverman. *Density Estimation for Statistics
+  and Data Analysis*. Chapman & Hall, London, 1986; reissued by Routledge,
+  2018, doi:10.1201/9781315140919. Checked: Crossref (reissue). Source of the
+  rule-of-thumb kernel bandwidth.
+- **[Sheather1991]** S. J. Sheather, M. C. Jones. A reliable data-based
+  bandwidth selection method for kernel density estimation. *Journal of the
+  Royal Statistical Society, Series B* 53(3):683–690, 1991.
+  doi:10.1111/j.2517-6161.1991.tb01857.x. Checked: Crossref.
+- **[R]** R Core Team. R 4.3.3 (2024-02-29), base functions `quantile`,
+  `hist.default`, `nclass.FD`, `pretty`, `round`. Read from the installed R
+  in this environment (`Rscript -e 'body(nclass.FD)'`).
+- **[plotly.js]** plotly.js, violin and box traces, read at tag v2.25.2, the
+  version bundled with the plotly R package 4.12.1:
+  `src/traces/violin/calc.js` (bandwidth) and `src/traces/box/attributes.js`
+  (quartile method). <https://github.com/plotly/plotly.js>.
+
 ## Algorithm configuration
 
 - **[Hutter2009]** F. Hutter, H. H. Hoos, K. Leyton-Brown, T. Stützle.

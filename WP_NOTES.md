@@ -16,24 +16,28 @@ Status: in progress
   sourced from source/IOHanalyzer (scratchpad `ecdf_example/ioha.R`: magrittr
   and rjson in scratchpad `rlib`, `align.cc` via Rcpp::sourceCpp, a dplyr
   `mutate` shim) and with iohinspector from the worktree
-  (`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=<wt>/src venv1/bin/python`).
+  (`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=<wt>/src venv1/bin/python`)
+  (commit 6ec13be).
+- step 4: `distributions.md` (DI-1..DI-3) and `parameters.md` (PA-1..PA-5;
+  found IOHanalyzer's JSON parameter-by-target lookup broken: dcast without
+  fun.aggregate gives counts, and row order mismatch; reproduced with
+  scratchpad `ecdf_example/run4.R`).
 
 ## Next step
-Step 4: write `docs/definitions/distributions.md` (histogram breaks, PMF,
-KDE/violin: IOHanalyzer `generate_data.hist` and `generate_data.PMF`,
-`R/DataSetList.R` 1232-1333, plot code in `R/plotDataSetList.R`, Shiny
-`RTPMF.R`, `FCEPDF.R`) and `docs/definitions/parameters.md` (parameters by
-target/budget, `get_PAR_summary`/`get_PAR_sample` `R/DataSet.R` 1178-1318,
-`generate_data.Parameters` and `Parameter_correlation` `R/DataSetList.R`
-1577-1667, positions `get_position_dsl` 1802-1854, constraint penalties via
-option `IOHanalyzer.Violation_Function` and `FV_raw_mat`; Shiny `RT_Par.R`,
-`FV_PAR.R`, `parrallel_coord.R`). The R harness in the scratchpad can run
-these functions if needed.
+Step 5: write `docs/definitions/comparisons.md` (pairwise one-sided KS on
+runtimes/values with bootstrap option, Holm correction, win-fraction matrix,
+dominance graph: IOHanalyzer `pairwise.test*` `R/stats.R` 82-173,
+`bootstrap_RT` 41-66, Shiny `statistical_significance.R`, `fv_stat_tests.R`,
+plot `Plot.Stats.Significance_*` in `R/plotDataSetList.R`) and
+`docs/definitions/glicko2.md` (`glicko2_ranking` `R/stats.R` ~596-735,
+PlayerRatings `glicko2` semantics from its CRAN manual / source tarball,
+[Glickman2022] note in scratchpad `cite/g2.txt`; iohinspector
+`metrics/ranking.py` uses skelo Elo and robustranking). The plan says KS
+p-values differ: 0.146 (one tool) vs 0.226 (other) on the same input; explain
+(likely R's exact vs asymptotic, or one- vs two-sided). R's `ks.test` source
+can be read with `Rscript -e 'body(stats:::ks.test.default)'`.
 
 ## Planned pages (one per parity-matrix row group)
-- step 4 `distributions.md` (histogram breaks, PMF, KDE/violin) and
-  `parameters.md` (parameters, correlations, positions, constraint penalties;
-  this row is in the parity matrix but not named in the I02 step list).
 - step 5 `comparisons.md` (KS + Holm, win fractions, dominance graph) and
   `glicko2.md`.
 - step 6 `portfolio.md` (Shapley), `cdp.md`, `eaf.md`, `dsc.md`.
