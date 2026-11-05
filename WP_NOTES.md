@@ -21,25 +21,29 @@ Status: in progress
 - step 4: `distributions.md` (DI-1..DI-3) and `parameters.md` (PA-1..PA-5;
   found IOHanalyzer's JSON parameter-by-target lookup broken: dcast without
   fun.aggregate gives counts, and row order mismatch; reproduced with
-  scratchpad `ecdf_example/run4.R`).
+  scratchpad `ecdf_example/run4.R`) (commit cad37e1).
+- step 5: `comparisons.md` (CM-1..CM-6; KS p-value methods compared in R
+  4.3.3 and scipy 1.18.1) and `glicko2.md` (GL-1..GL-4; PlayerRatings 1.1-0
+  installed in scratchpad `rlib`, checked on Glickman's example). Corrected
+  the inverted-`which` list in targets.md (Glicko-2 and Heatmaps are fine).
 
 ## Next step
-Step 5: write `docs/definitions/comparisons.md` (pairwise one-sided KS on
-runtimes/values with bootstrap option, Holm correction, win-fraction matrix,
-dominance graph: IOHanalyzer `pairwise.test*` `R/stats.R` 82-173,
-`bootstrap_RT` 41-66, Shiny `statistical_significance.R`, `fv_stat_tests.R`,
-plot `Plot.Stats.Significance_*` in `R/plotDataSetList.R`) and
-`docs/definitions/glicko2.md` (`glicko2_ranking` `R/stats.R` ~596-735,
-PlayerRatings `glicko2` semantics from its CRAN manual / source tarball,
-[Glickman2022] note in scratchpad `cite/g2.txt`; iohinspector
-`metrics/ranking.py` uses skelo Elo and robustranking). The plan says KS
-p-values differ: 0.146 (one tool) vs 0.226 (other) on the same input; explain
-(likely R's exact vs asymptotic, or one- vs two-sided). R's `ks.test` source
-can be read with `Rscript -e 'body(stats:::ks.test.default)'`.
+Step 6: write `docs/definitions/portfolio.md` (Shapley: IOHanalyzer
+`get_shapley_values` `R/stats.R` 1184+, `get_marg_contrib_ecdf` 1151, Shiny
+`Shapley_computations.R`; [Frechette2016]), `cdp.md` (`generate_data.CDP`
+`R/DataSetList.R` 1942-2019, RVCompare semantics, [Arza2023]; note
+`RTPMF.R:86` passes isMinimizationProblem = TRUE), `eaf.md`
+(`generate_data.EAF` 2005-2062 with eaf::eafs, ECDF_From_EAF 2102-2163,
+EAF_Difference 2164, EAF_diff_Approximate 2205 (xmax = Min bug in Shiny
+`EAF_plots.R`); iohinspector `metrics/eaf.py` with moocore) and `dsc.md`
+(spec for I18: papers [Eftimov2017, Eftimov2019, Eftimov2020], IOHanalyzer
+`R/stats.R` 735-1135 and `inst/shiny-server/server/RT_DSCinterface.R`,
+`FV_DSCinterface.R`; missing-value handling PAR-1/PAR-10/ERT/Remove-na on the
+client; bug B1). Keep DSC claims to what the papers' abstracts, the R client
+and the DSCtool API docs show; mark the rest as for I18 to confirm against
+recorded responses.
 
 ## Planned pages (one per parity-matrix row group)
-- step 5 `comparisons.md` (KS + Holm, win fractions, dominance graph) and
-  `glicko2.md`.
 - step 6 `portfolio.md` (Shapley), `cdp.md`, `eaf.md`, `dsc.md`.
 - step 7 `README.md`: decision table, differences from IOHanalyzer, open
   questions. Collect every decision ID (RT-*, AL-*, FB-*, ...) and open
@@ -57,12 +61,11 @@ can be read with `Rscript -e 'body(stats:::ks.test.default)'`.
   OpenAlex, arXiv API. arxiv.org PDF download is blocked in this environment.
 
 ## Findings for later steps
-- `get_target_dt(which)` naming is inverted relative to `generate_data.*`:
-  `generate_data.Aggr` (`R/DataSetList.R:1679`) passes its fixed-target
-  `which='by_RT'` to `get_target_dt`, which then returns a budget
-  (`get_target_RT`, `R/stats.R` 572-574) used as an f target. Same pattern in
-  `R/stats.R:615` (Glicko-2) and `:912` (DSC). Shiny pages pass explicit
-  values: `RT_DSCinterface.R:200` passes "by_RT" (bug B1).
+- `which` conventions in IOHanalyzer: 'by_FV' = fixed target in
+  get_target_dt, generate_data.Heatmaps, glicko2_ranking; 'by_RT' = fixed
+  target in generate_data.ECDF, generate_data.Aggr, convert_to_dsc_compliant
+  and get_dsc_rank. Inverted defaults only at `R/DataSetList.R:1679` and
+  `R/stats.R:912` (fixed in targets.md in step 5).
 - IOHanalyzer ECDF (`generate_data.ECDF`, `R/DataSetList.R` 1334-1440): strict
   `<` (min) / `>` (max) against targets, mean over runs, then mean over
   (function, dim) DataSets per algorithm (equal weight per pair). x grid: 50

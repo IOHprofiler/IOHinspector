@@ -93,13 +93,14 @@ generators only fill it.
     minimisation target is reached by about 2 % of them. This asymmetry is
     not ported (TG-4).
   - **Inverted argument.** `get_target_dt(which = 'by_FV')` returns f
-    targets and `'by_RT'` returns budgets, but the `generate_data.*`
-    functions use `which = 'by_RT'` to mean the fixed-target view. When their
-    targets are left at NULL they pass their own `which` straight on:
-    `generate_data.Aggr` (`R/DataSetList.R:1679`), `generate_data.Heatmaps`
-    (1868), the Glicko-2 ranking (`R/stats.R:615`) and the DSC helpers
-    (`R/stats.R:912`). Their default fixed-target view then uses a budget as
-    an f target. The Shiny pages pass explicit values; the DSC page passes
+    targets and `'by_RT'` returns budgets. IOHanalyzer uses both conventions
+    for `which`: `generate_data.Heatmaps` and `glicko2_ranking` take
+    `'by_FV'` to mean fixed target, as `get_target_dt` does, but
+    `generate_data.ECDF`, `generate_data.Aggr` and `convert_to_dsc_compliant`
+    take `'by_RT'` to mean fixed target. The last two pass their `which`
+    straight to `get_target_dt` when no targets are given
+    (`R/DataSetList.R:1679`, `R/stats.R:912`), so their default fixed-target
+    view uses a budget as an f target. The Shiny pages pass explicit values; the DSC page passes
     `"by_RT"` for its runtime view (`inst/shiny-server/server/RT_DSCinterface.R:200`),
     which is the "DSC default targets are swapped" bug B1.
 
