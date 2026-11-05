@@ -10,24 +10,27 @@ Status: in progress
 - step 2: `alignment.md` (hit rule, ties, best-so-far, samples; AL-1..AL-7)
   and `fixed-budget.md` (FV summary, overviews; FB-1..FB-5). Tie and
   edge-case behaviour of iohinspector `align_data`/`turbo_align` checked with
-  a script on polars 1.44.2 and 2.1.0 (scratchpad `ties.py`).
+  a script on polars 1.44.2 and 2.1.0 (scratchpad `ties.py`) (commit 4d29aee).
+- step 3: `targets.md` (TG-1..TG-6) and `ecdf.md` (EC-1..EC-8, worked example
+  of 0.67 vs 0.90). Worked example computed with IOHanalyzer's own R functions
+  sourced from source/IOHanalyzer (scratchpad `ecdf_example/ioha.R`: magrittr
+  and rjson in scratchpad `rlib`, `align.cc` via Rcpp::sourceCpp, a dplyr
+  `mutate` shim) and with iohinspector from the worktree
+  (`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=<wt>/src venv1/bin/python`).
 
 ## Next step
-Step 3: write `docs/definitions/targets.md` (seq_FV, seq_RT,
-get_ECDF_targets, get_target_dt and its inverted `which`, COCO 51-target grid
-`10 ** np.arange(2, -8.2, -0.2)`, runlength-based targets) and
-`docs/definitions/ecdf.md` (target ECDF, aggregation weights, AUC, AOCC,
-multi-function ranks via `generate_data.Aggr`, and a worked example of the
-0.67 vs 0.90 difference: IOHanalyzer = fraction of (run, target) pairs over 10
-log-spaced targets with strict `<`; iohinspector `get_data_ecdf` = mean of
-log-normalised best-so-far). Build the example with a small script in the
-scratchpad venv1 (polars 1.x) and, if feasible, the IOHanalyzer R functions
-sourced directly (R 4.3 + data.table are installed; IOHanalyzer itself is not).
+Step 4: write `docs/definitions/distributions.md` (histogram breaks, PMF,
+KDE/violin: IOHanalyzer `generate_data.hist` and `generate_data.PMF`,
+`R/DataSetList.R` 1232-1333, plot code in `R/plotDataSetList.R`, Shiny
+`RTPMF.R`, `FCEPDF.R`) and `docs/definitions/parameters.md` (parameters by
+target/budget, `get_PAR_summary`/`get_PAR_sample` `R/DataSet.R` 1178-1318,
+`generate_data.Parameters` and `Parameter_correlation` `R/DataSetList.R`
+1577-1667, positions `get_position_dsl` 1802-1854, constraint penalties via
+option `IOHanalyzer.Violation_Function` and `FV_raw_mat`; Shiny `RT_Par.R`,
+`FV_PAR.R`, `parrallel_coord.R`). The R harness in the scratchpad can run
+these functions if needed.
 
 ## Planned pages (one per parity-matrix row group)
-- step 3 `targets.md` (seq_FV, seq_RT, get_ECDF_targets, get_target_dt, COCO
-  grid) and `ecdf.md` (ECDF, aggregation, AUC, AOCC, multi-function ranks, the
-  0.67 vs 0.90 worked example).
 - step 4 `distributions.md` (histogram breaks, PMF, KDE/violin) and
   `parameters.md` (parameters, correlations, positions, constraint penalties;
   this row is in the parity matrix but not named in the I02 step list).

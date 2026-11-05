@@ -114,7 +114,10 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
   black-box optimization algorithms. *IEEE Transactions on Evolutionary
   Computation* 29(5):1774–1782, 2025 (online 2024).
   doi:10.1109/TEVC.2024.3462758. Checked: Crossref. **Correction:** the plan
-  lists it as TEVC 2024; the issue is 2025.
+  lists it as TEVC 2024; the issue is 2025. Open preprint arXiv:2404.02031
+  (v3). Its abstract states that the target-based ECDF approximates the EAF
+  and that the average area over the convergence curves is an equivalent
+  measure of anytime performance. Checked: Crossref, arXiv abstract.
 - **[LopezIbanez2010]** M. López-Ibáñez, L. Paquete, T. Stützle. Exploratory
   analysis of stochastic local search algorithms in biobjective optimization.
   In *Experimental Methods for the Analysis of Optimization Algorithms*,
