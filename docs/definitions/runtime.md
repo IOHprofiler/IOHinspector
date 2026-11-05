@@ -102,7 +102,9 @@ middle values; both are kept.
   that maximum (line 20).
 - `get_RT_summary.DataSet` (`R/DataSet.R` 910–966): `maxRT` is the largest
   per-run budget, or the user's `budget` (913–917). mean, median and sd use
-  `na.rm = TRUE`, so they cover the runs that reached t (947–949). Quantiles
+  `na.rm = TRUE`, so they cover the runs that reached t (947–949). With a
+  user budget, runs that reach t only after it still enter mean, median, sd
+  and quantiles, although `SP()` counts them as failures. Quantiles
   use `IOHanalyzer_env$D_quantile` (940), which is `quantile(type = 3,
   na.rm = TRUE)` (`R/IOHanalyzer.R` 117–133) at the probabilities set in
   `R/IOHanalyzer.R:71`. PAR-k replaces NA and values above `maxRT` by

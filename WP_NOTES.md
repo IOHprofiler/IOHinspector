@@ -1,6 +1,6 @@
 # WP I02: Definitions audit
 Branch: wp/I02-definitions-audit
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 0: notes with runtime findings (commit ee4a9e6).
@@ -30,21 +30,21 @@ Status: in progress
 - step 6: `portfolio.md` (SH-1..SH-3), `cdp.md` (CD-1..CD-4; RVCompare 0.1.8
   source in scratchpad `rvcompare/`), `eaf.md` (EA-1..EA-4) and `dsc.md`
   (DS-1..DS-4, partial: papers' full text and the DSCtool service were not
-  reachable; open questions listed for I18).
+  reachable; open questions listed for I18) (commit 90df7d2).
+- step 7: `docs/definitions/README.md`: page index mapped to the parity
+  matrix, answers to the plan's eight questions, a table of all 65 decisions
+  (with whether each differs from IOHanalyzer), the IOHanalyzer defects found,
+  19 open questions, tolerances and how the worked examples were computed.
 
 ## Next step
-Step 7: write `docs/definitions/README.md`: index of pages with parity-matrix
-row -> page mapping; a table of every decision ID (RT-*, AL-*, FB-*, TG-*,
-EC-*, DI-*, PA-*, CM-*, GL-*, SH-*, CD-*, EA-*, DS-*) with a one-line summary
-and whether it differs from IOHanalyzer; the plan's eight questions with
-answers and links; the list of IOHanalyzer defects found; all open questions
-(Q-*). Collect IDs with `grep -ho '\*\*[A-Z][A-Z]-[0-9]\.\*\*' docs/definitions/*.md`
-and `grep -ho 'Q-[A-Z]*-[0-9]' ...`. Then set Status to "ready for review".
+None for the agent. HUMAN: review the decisions in
+`docs/definitions/README.md` and sign checkpoint H1. Q-DS-1 (DSC paper PDFs or
+DSCtool API docs) blocks I18 step 1, not this WP.
 
-## Planned pages (one per parity-matrix row group)
-- step 7 `README.md`: decision table, differences from IOHanalyzer, open
-  questions. Collect every decision ID (RT-*, AL-*, FB-*, ...) and open
-  question (Q-*) from the pages.
+## Pages
+`docs/definitions/`: README, references, runtime, alignment, fixed-budget,
+targets, ecdf, distributions, parameters, comparisons, glicko2, portfolio,
+cdp, eaf, dsc. No code, tests, CI or pyproject changes.
 
 ## Working material
 - cocopp report (model output, line numbers spot-checked for the items cited in
@@ -103,5 +103,13 @@ and `grep -ho 'Q-[A-Z]*-[0-9]' ...`. Then set Status to "ready for review".
 - Scope kept to docs/definitions/ and WP_NOTES.md; no code, tests or pyproject.
 
 ## Open questions / Blocked
-- Paywalled papers were not re-read; their content claims are cross-checked
-  against the authors' implementations instead (stated in references.md).
+- Not blocked. The 19 questions for the user are listed in
+  `docs/definitions/README.md` ("Open questions for the user").
+- Paywalled papers were not re-read; content claims are cross-checked against
+  the authors' implementations instead (stated in references.md).
+- `dsc.md` is a partial specification: the DSC papers' full text and the
+  DSCtool service were not reachable, so the ranking algorithm is left as
+  explicit questions for I18 (Q-DS-1).
+- The inputs behind the plan's "0.67 vs 0.90" and "0.146 vs 0.226" numbers are
+  not recorded; both gaps are re-derived from the definitions with worked
+  examples (Q-EC-1).
