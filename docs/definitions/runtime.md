@@ -90,7 +90,7 @@ middle values; both are kept.
 
 - Hitting times come from the RT matrix. Its rows are every distinct observed
   f value of the run set; its entries are the first evaluation whose
-  best-so-far value satisfies the hit rule (`src/align.cc` 70–100,
+  best-so-far value satisfies the hit rule (`src/align.cc` 76–107,
   `c_impute_running_time`). For IOHexperimenter JSON data the matrix is built
   in `R/readFiles.R` 1594–1600; for old `.dat` data in `align_running_time`,
   `R/readFiles.R` 754–809. A target t is looked up as the first row whose f

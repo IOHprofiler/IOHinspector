@@ -6,20 +6,25 @@ Status: in progress
 - step 0: notes with runtime findings (commit ee4a9e6).
 - step 1: `docs/definitions/runtime.md` (ERT/aRT, PAR-k, success rate, mean,
   median, sd, quantiles; decisions RT-1..RT-6) and
-  `docs/definitions/references.md` (verified bibliography).
+  `docs/definitions/references.md` (verified bibliography) (commit 1573fa4).
+- step 2: `alignment.md` (hit rule, ties, best-so-far, samples; AL-1..AL-7)
+  and `fixed-budget.md` (FV summary, overviews; FB-1..FB-5). Tie and
+  edge-case behaviour of iohinspector `align_data`/`turbo_align` checked with
+  a script on polars 1.44.2 and 2.1.0 (scratchpad `ties.py`).
 
 ## Next step
-Step 2: write `docs/definitions/alignment.md` (hit rule f <= t / f >= t, ties,
-best-so-far, maximisation, fixed-target alignment, runtime and value samples)
-and `docs/definitions/fixed-budget.md` (fixed-budget summary, overview tables,
-carrying values forward, runs that stopped before the budget). Sources:
-IOHanalyzer `src/align.cc` (c_impute, c_impute_running_time),
-`R/readFiles.R` 700-876 and 1513-1661, `R/DataSet.R` 767-874 (overviews) and
-1068-1163 (FV summary/sample); iohinspector `align.py`; cocopp report section
-2 and 7 (see below). runtime.md already links to alignment.md.
+Step 3: write `docs/definitions/targets.md` (seq_FV, seq_RT,
+get_ECDF_targets, get_target_dt and its inverted `which`, COCO 51-target grid
+`10 ** np.arange(2, -8.2, -0.2)`, runlength-based targets) and
+`docs/definitions/ecdf.md` (target ECDF, aggregation weights, AUC, AOCC,
+multi-function ranks via `generate_data.Aggr`, and a worked example of the
+0.67 vs 0.90 difference: IOHanalyzer = fraction of (run, target) pairs over 10
+log-spaced targets with strict `<`; iohinspector `get_data_ecdf` = mean of
+log-normalised best-so-far). Build the example with a small script in the
+scratchpad venv1 (polars 1.x) and, if feasible, the IOHanalyzer R functions
+sourced directly (R 4.3 + data.table are installed; IOHanalyzer itself is not).
 
 ## Planned pages (one per parity-matrix row group)
-- step 2 `alignment.md`, `fixed-budget.md`.
 - step 3 `targets.md` (seq_FV, seq_RT, get_ECDF_targets, get_target_dt, COCO
   grid) and `ecdf.md` (ECDF, aggregation, AUC, AOCC, multi-function ranks, the
   0.67 vs 0.90 worked example).
