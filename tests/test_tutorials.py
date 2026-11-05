@@ -26,7 +26,7 @@ def iter_notebook(filename):
             yield i, source
 
 
-def test_notebook_runner(self, notebook):
+def run_notebook(self, notebook):
     assert os.path.isfile(notebook)
     os.chdir(os.path.dirname(notebook))
     for i, block in iter_notebook(notebook):
@@ -51,7 +51,7 @@ class MetaTest(type):
             setattr(
                 instance,
                 f"test_notebook_{fname}",
-                partial(test_notebook_runner, instance, notebook),
+                partial(run_notebook, instance, notebook),
             )
         return instance
 
