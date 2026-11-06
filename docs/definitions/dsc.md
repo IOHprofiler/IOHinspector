@@ -1,144 +1,205 @@
 # Deep Statistical Comparison (DSC)
 
-Status: **partial specification**, for sign-off at checkpoint H1 and
-completion in I18 step 1.
+Status: **specification for I18**, for sign-off at checkpoint H1. Statements
+in the "Settled" lists follow from the sources named next to them. Points the
+sources leave open are numbered DQ-1 to DQ-21. I18 step 2 decides them from
+recorded service responses. I18 must not implement them from a guess.
 Parity-matrix row: "DSC" (local implementation, decision in the plan's I18).
 Implemented in: I18.
-Sources: [Eftimov2017], [Eftimov2019], [Eftimov2020], [IOHanalyzer]; see
+Sources: [Eftimov2020], [DSCTool2022], [IOHanalyzer]; see
 [references](references.md).
 
-**Limits of this audit.** The three DSC papers are behind publisher pages
-that could not be downloaded here (two are open access on the publisher's
-site, but its PDF links return an HTML page to scripts), and the DSCtool
-service (`ws.ijs.si:8443`) did not answer. This page therefore fixes only what
-was verified: the papers' abstracts (OpenAlex), and IOHanalyzer's client code,
-which shows the service's inputs, outputs and the client-side preparation.
-The step-by-step ranking algorithm is listed as questions for I18, not
-guessed. I18 needs the papers' full text (the user can supply the PDFs) and
-the recorded service responses (I18 step 2).
+## Sources
 
-## What the papers establish (abstracts)
+- **[Eftimov2020]** is the supplied `paper.pdf` (*Applied Soft Computing* 87,
+  2020, article 105977). Read in full. Page numbers are the journal's.
+- **[DSCTool2022]** is the supplied `documentation.pdf`, the DSCTool v1.5
+  service documentation of 20 January 2022. Read in full. Page numbers are PDF
+  pages. From page 2 on, the printed page number is one lower.
+- Both are copyrighted and are not in the repository. This page paraphrases
+  them and quotes only short phrases.
+- **Not supplied, not read:** [Eftimov2017], which defines the ranking scheme
+  in full; [Eftimov2019], which defines practical DSC in full; [Eftimov2017b],
+  which [Eftimov2020] cites for the choice between KS and AD (p. 3); and the
+  DSCTool R client manual ([DSCTool2022] p. 14).
+- **Available, not read:** [dsc-core], the source of DSCTool's core library,
+  which [Eftimov2020] names (pp. 3, 5). It is public and licensed
+  GPL-3.0-or-later (Q-DS-3). The example requests and responses of
+  [Eftimov2020] section 5 are public at `https://cs.ijs.si/dl/dsctool/`
+  (Q-DS-4).
 
-- **DSC** [Eftimov2017; summarised in Eftimov2020]: per problem, algorithms are
-  ranked "by comparing distributions of obtained solutions for a problem
-  instead of using a simple descriptive statistic such as the mean or the
-  median". For several problems, "an appropriate statistical test must be
-  applied to the rankings obtained for a set of problems" (the omnibus test).
-- **Practical DSC (pDSC)** [Eftimov2019]: takes practical significance into
-  account through preprocessing of the runs. Two variants: **sequential
-  pDSC**, which preprocesses the independent runs in a sequential order, and
-  **Monte Carlo pDSC**, which avoids the dependence on the order of the runs.
-  In DSCtool these appear as the `epsilon` and `monte_carlo_iterations`
-  parameters of the ranking service.
-- **DSCTool** [Eftimov2020]: REST web services for single-problem and
-  multiple-problem analysis.
+The two PDFs settle the structure of the method, the choice of tests, the
+Bonferroni correction, what `epsilon` and `monte_carlo_iterations` switch on,
+the omnibus and post-hoc interfaces, and every request and response field.
+They do not settle the exact transitivity check and rank assignment, the
+practical-DSC preprocessing, how the service picks the tests it offers, or
+the formulas of the statistics. [Eftimov2020] refers to [Eftimov2017] and
+[Eftimov2019] for these.
 
-## Pipeline as used by IOHanalyzer
+## Notation
 
-### 1. Client-side data preparation (`convert_to_dsc_compliant`)
+k algorithms, n problems. A problem is one (function, dimension) pair, which
+IOHanalyzer names `F{funcId}_{DIM}D` (`R/stats.R:964`). x(a, p) is the sample
+of algorithm a on problem p: one value per run, smaller is better (step 1).
+r(a, p) is the DSC rank of a on p.
 
-`R/stats.R` 901–973. For every algorithm and every (function, dimension)
-pair, a vector of per-run values named `F{funcId}_{DIM}D` (964):
+## Pipeline
+
+1. Client-side data preparation (not part of the service).
+2. Ranking per problem: DSC, or practical DSC (pDSC). Endpoint `rank`.
+3. Omnibus test on the k × n matrix of ranks. Endpoint `omnibus`.
+4. Post-hoc test against a control algorithm. Endpoint `posthoc`.
+
+[Eftimov2020] describes DSC as two statistical steps, a ranking and then a
+test on the rankings (p. 3), with the post-hoc test applied when the omnibus
+test finds a difference (p. 4; [DSCTool2022] p. 7). Its Fig. 2 (p. 6) shows
+the same chain of services.
+
+## Step 1: client-side data preparation
+
+The service takes, for each algorithm and problem, a list of double values
+([DSCTool2022] p. 3). The sources say nothing about missing values, about
+the direction of the ranking, or about sample sizes. All of this is the
+client's job. IOHanalyzer's `convert_to_dsc_compliant` (`R/stats.R` 901–973)
+builds one vector of per-run values per algorithm and (function, dimension)
+pair:
 
 - **fixed target**: the runtime sample at the pair's target. Failed runs are
   NA and are handled by `na.correction` (Shiny default `PAR-10`, the first
   choice in `inst/shiny-server/ui/DSC_interface.R` 155–156):
   - `PAR-1`: the run's own budget (929–932);
   - `PAR-10`: 10 × the run's own budget (933–936);
-  - `ERT`: the run set's ERT, or the sum of all budgets when the ERT is
-    infinite (937–943);
+  - `ERT`: the run set's ERT ([runtime](runtime.md)), or `sum(maxRT)` when
+    the ERT is infinite (937–943);
   - `Remove-na`: the failed runs are dropped (944–945).
 - **fixed budget**: the value sample at the pair's budget, negated under
-  maximisation so that smaller is always better (955).
+  maximisation so that smaller is always better (955). The Shiny value page
+  passes no `na.correction` (`inst/shiny-server/server/FV_DSCinterface.R`
+  12–16). `get_FV_sample` returns NA when the budget is below a run's first
+  logged evaluation ([fixed-budget](fixed-budget.md)), and the client then
+  only warns that NA "will likely result in an error" (957–962).
 
-Defect: for IOHexperimenter JSON data `maxRT` is a single number
-([runtime](runtime.md)), and `budgets[is.na(data)]` then indexes a length-1
-vector with a logical vector, which yields NA. PAR-1 and PAR-10 therefore
-leave the NA values in place for all JSON data, and the service call fails
-(checked in R 4.3.3: `budgets <- 100; data <- c(5, NA, 7, NA);
-data[is.na(data)] <- budgets[is.na(data)]` leaves `5 NA 7 NA`).
+Reconciled with the sources:
 
-Defect B1: when no targets are given, `convert_to_dsc_compliant` passes its
-fixed-target `which = 'by_RT'` to `get_target_dt` (912), which returns
-budgets; the Shiny runtime page does the same explicitly
-(`inst/shiny-server/server/RT_DSCinterface.R:200`). See
-[targets](targets.md).
+- **Orientation.** The sources rank "obtained solutions" and never state the
+  direction. Their post-hoc example takes the algorithm with the lowest mean
+  rank as control and finds that it significantly outperforms the others
+  ([Eftimov2020] p. 10; [DSCTool2022] p. 11), so rank 1 is best. That the
+  service puts the smallest values first is what IOHanalyzer's sign flip
+  assumes. DQ-1 confirms it.
+- **Missing values.** The documented format has no missing value, so the
+  PAR-k, ERT and Remove-na options are entirely the client's, as the plan
+  says. Nothing in the sources conflicts with them.
+- **Ties.** PAR-1, PAR-10 and ERT give every failed run of a set the same
+  value (with equal budgets), so samples with failures contain ties. How the
+  service's tests treat ties is DQ-2.
+- **Sample sizes.** `Remove-na` makes sample sizes unequal and leaves an
+  empty sample when every run failed. The sources do not say what the service
+  accepts (DQ-6, DQ-11).
 
-### 2. Ranking (`rank` endpoint)
+Defects in IOHanalyzer's preparation:
 
-`get_dsc_rank` (`R/stats.R` 1003–1037) posts to `/dsc-1.5/service/rank`:
-`method = {name: "AD" | "KS", alpha}`, `epsilon`, `monte_carlo_iterations`
-and the data (1014–1023). Shiny defaults: Anderson–Darling, α = 0.05,
-ε = 0 and 0 Monte Carlo iterations (`inst/shiny-server/ui/DSC_interface.R`
-157–182 for the runtime page, 15–40 for the value page). The response fields the client uses are `ranked_matrix`,
-`number_algorithms`, `parametric_tests` and `valid_methods`.
+- For IOHexperimenter JSON data `maxRT` is a single number
+  ([runtime](runtime.md)), and `budgets[is.na(data)]` then indexes a length-1
+  vector with a logical vector, which yields NA. PAR-1 and PAR-10 therefore
+  leave the NA values in place for all JSON data, and the service call fails
+  (checked in R 4.3.3: `budgets <- 100; data <- c(5, NA, 7, NA);
+  data[is.na(data)] <- budgets[is.na(data)]` leaves `5 NA 7 NA`).
+- When no run succeeds, the function's documentation promises "nr_runs *
+  budget" (`R/stats.R:993`), but the code uses `sum(attr(ds, 'maxRT'))`
+  (940). For JSON data that is one budget, the largest logged evaluation
+  (`R/readFiles.R:1638`), not n budgets.
+- Defect B1: when no targets are given, `convert_to_dsc_compliant` passes its
+  fixed-target `which = 'by_RT'` to `get_target_dt` (912), which returns
+  budgets; the Shiny runtime page does the same explicitly
+  (`inst/shiny-server/server/RT_DSCinterface.R:200`). See
+  [targets](targets.md).
 
-### 3. Omnibus test (`omnibus` endpoint)
+## Step 2: ranking per problem (`rank`)
 
-`get_dsc_omnibus` (1054–1080): `method = {name, alpha}` with the name taken
-from the ranking response's `valid_methods` (first one by default), plus
-`ranked_matrix`, `number_algorithms` and `parametric_tests` (1061–1067). The
-response's `algorithm_means` feeds the post-hoc step.
+Settled:
 
-### 4. Post-hoc test (`posthoc` endpoint)
+- Each problem is ranked on its own, from its k samples only. This step is
+  non-parametric ([Eftimov2020] p. 3).
+- Every pair of algorithms is compared with a two-sample test of whether the
+  two samples come from the same distribution: the two-sample
+  Kolmogorov–Smirnov test (KS) or the two-sample Anderson–Darling test (AD)
+  ([Eftimov2020] p. 3; [DSCTool2022] p. 3). All pairwise comparisons are
+  needed ([Eftimov2020] p. 3).
+- The pairwise p-values are corrected with the Bonferroni correction, which
+  controls the family-wise error rate, and are arranged in a matrix. The
+  ranks then follow from a "transitivity condition" on that matrix
+  ([Eftimov2020] pp. 3–4). The significance level is the request's
+  `method.alpha` ([DSCTool2022] p. 3).
+- The response gives one rank per (problem, algorithm) as a double
+  ([DSCTool2022] p. 4). Lower is better (step 1). The response contains no
+  p-values, so the pairwise tests are observable only through the ranks.
+- With more than four algorithms, the authors say the ranking suffers from
+  the family-wise error control, and they recommend comparisons with a
+  control algorithm, referring to their earlier studies ([Eftimov2020] p. 6).
+  The documentation sets no limit on k.
 
-`get_dsc_posthoc` (1102–1135): `method = {name, alpha}` with name
-`friedman` or `friedman-aligned-rank` (Shiny choices,
-`inst/shiny-server/ui/DSC_interface.R` 253–255), `algorithm_means`,
-`n` = number of problems, `k` = number of algorithms and a
-`base_algorithm` (default the first in `algorithm_means`, 1112). The Shiny
-page runs it once per algorithm as base and reads four p-value lists from
-`adjusted_p_values`: z, unadjusted, Holm and Hochberg
-(`inst/shiny-server/server/RT_DSCinterface.R` 106–125).
+Not settled by the supplied sources:
 
-## Questions I18 must answer from the papers and the recorded responses
+- **DQ-2. The tests.** Two-sided or one-sided; for KS, the exact or the
+  asymptotic p-value and the handling of ties; for AD, which two-sample
+  statistic (for example the k-sample test of [Scholz1987] with two samples)
+  and how its p-value is computed (asymptotic, tabulated, interpolated,
+  capped).
+- **DQ-3. The correction.** The number of comparisons m (presumably the
+  k(k−1)/2 unordered pairs), whether p is multiplied by m or α divided by m,
+  and whether two samples count as equal when the corrected p is > α or ≥ α.
+- **DQ-4. The transitivity check.** How the relation "not significantly
+  different" is checked for transitivity, and what the scheme does when the
+  check fails (for example A equal to B, B equal to C, A different from C).
+- **DQ-5. Rank values.** Which statistic orders the groups of equal
+  algorithms (mean, median or another), which rank a group of tied
+  algorithms receives (for example the average of the positions it spans,
+  which the double-valued ranks suggest), and the ranks when the transitivity
+  check fails.
+- **DQ-6. Edge cases.** Unequal sample sizes, a sample of one run, an empty
+  sample, a constant sample, identical samples, a problem that only some
+  algorithms have, and k = 1 (IOHanalyzer requires two algorithms,
+  `RT_DSCinterface.R` 189–193).
 
-1. Pairwise test per problem: KS and AD as which exact tests (two-sample,
-   two-sided?), and which p-value computation (for AD, [Scholz1987] k-sample
-   or two-sample; asymptotic or tabulated)?
-2. Multiple-comparison handling of the pairwise p-values within a problem
-   (for example a Bonferroni-type correction), and the decision rule.
-3. The transitivity check on the "same distribution" relation, and what
-   happens when it fails.
-4. How ranks are assigned: the order of groups (by which statistic), and
-   ties (fractional ranks).
-5. Sequential pDSC: the exact preprocessing with `epsilon` (on raw values or
-   relative?) and the run order it depends on. Monte Carlo pDSC: what is
-   resampled per iteration and how the iterations are combined.
-6. How the service fills `parametric_tests` and `valid_methods`: the
-   normality and equal-variance checks it applies to the ranked matrix and the
-   omnibus tests it may offer (the plan names Friedman, Iman–Davenport and
-   others; [Garcia2010] and [Derrac2011] describe the usual set).
-7. The post-hoc statistics: the z formula for Friedman and Friedman
-   aligned ranks with n problems and k algorithms, and the Holm and Hochberg
-   adjustments ([Holm1979]; [Garcia2010]).
+## Practical DSC (`epsilon`, `monte_carlo_iterations`)
 
-## How iohinspector 0.0.8 implements it
+Settled:
 
-No DSC.
+- pDSC separates practical from statistical significance ([Eftimov2020]
+  p. 2). Its threshold ε (the paper's ε_p) is chosen by the user and is the
+  difference within which two solutions are not considered practically
+  different. With ε = 0 the scheme reduces to standard DSC ([Eftimov2020]
+  p. 4).
+- There are two variants ([Eftimov2020] p. 2). **Sequential pDSC**
+  preprocesses the independent runs in their given order. **Monte Carlo
+  pDSC** removes the dependence on that order: for each pairwise comparison,
+  it repeats the analysis over permutations of the runs within each
+  algorithm ([Eftimov2020] p. 4).
+- The service takes one `epsilon` per request, for all problems
+  ([DSCTool2022] p. 3), although [Eftimov2020] calls the threshold problem
+  specific (p. 4). A value > 0 switches pDSC on. `monte_carlo_iterations` > 0
+  selects the Monte Carlo variant, with that number of permutations
+  ([DSCTool2022] p. 3). So ε = 0 gives DSC, ε > 0 with 0 iterations gives
+  sequential pDSC, and ε > 0 with iterations > 0 gives Monte Carlo pDSC.
+- In IOHanalyzer, ε is in the units of the samples: evaluations (after the
+  PAR-k substitution) on the runtime page, negated function values on the
+  value page. The same ε applies to every (function, dimension) pair.
+- Monte Carlo iterations dominate the service's run time ([Eftimov2020]
+  p. 6). The API has no seed parameter ([DSCTool2022] p. 3).
 
-## Proposed decisions
+Not settled by the supplied sources:
 
-- **DS-1.** iohinspector implements DSC locally (no network), as the plan's
-  I18 decides; DSCtool serves only to record reference responses.
-- **DS-2.** Inputs as in step 1 above, with the run's budget taken from run
-  metadata (fixing the PAR-1/PAR-10 NA defect), fixed-budget values oriented
-  so that smaller is better, and default targets from TG-4 (B1 not ported).
-- **DS-3.** Missing-value options PAR-1, PAR-10, ERT and Remove-na, default
-  PAR-10 as in Shiny. PAR-k here uses each run's own budget, unlike the
-  summary's PAR-k (RT-3), because that is what IOHanalyzer sends.
-- **DS-4.** The ranking, omnibus and post-hoc steps are specified in I18 step
-  1 from the papers and the recorded responses, answering the questions above.
-
-## Open questions for the user
-
-- Q-DS-1: Can you provide the PDFs of [Eftimov2017], [Eftimov2019] and
-  [Eftimov2020] (or the DSCtool API documentation) for I18? Without them the
-  ranking algorithm cannot be specified from the source.
-- Q-DS-2: DS-3 keeps two PAR-k conventions (own budget for DSC, a common
-  cutoff for the summary table). Should they be unified?
-
-## Test tolerance
-
-Set in I18: ranks and test decisions must match the recorded responses
-exactly; p-values within a tolerance stated there.
+- **DQ-7. The preprocessing.** Which values are compared with ε (the order
+  dependence suggests run j of one algorithm against run j of the other, but
+  the sources do not say), what replaces two values that are within ε, < or
+  ≤ ε, and whether ε is absolute (as the wording suggests) or relative.
+- **DQ-8. Combining the iterations.** What the Monte Carlo variant aggregates
+  over the permutations (p-values, test decisions or ranks) and how.
+- **DQ-9. ε = 0 with iterations > 0.** [Eftimov2020] p. 4 says ε = 0 is
+  standard DSC; [DSCTool2022] p. 3 says iterations > 0 start the Monte Carlo
+  variant. Which wins.
+- **DQ-10. Randomness.** Whether repeated identical Monte Carlo requests give
+  identical responses.
+- **DQ-11. Unequal sample sizes under pDSC**, which a run-by-run pairing
+  could not handle.
