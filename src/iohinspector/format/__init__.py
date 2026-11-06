@@ -28,6 +28,7 @@ from .schema import (
     is_reserved_trace_name,
     position_columns,
 )
+from .validate import DatasetValidationError, ValidationReport, validate_dataset
 from .writer import write_dataset
 
 __all__ = [
@@ -37,12 +38,14 @@ __all__ = [
     "RUNS_SCHEMA",
     "RUNS_SORT_KEYS",
     "TRACE_SCHEMA",
+    "DatasetValidationError",
     "DatasetWarning",
     "FormatError",
     "FormatWarning",
     "ManifestError",
     "StoredDataset",
     "UnsupportedFormatVersion",
+    "ValidationReport",
     "attributes_json",
     "check_dataset_id",
     "check_format_version",
@@ -55,6 +58,7 @@ __all__ = [
     "run_id",
     "run_ids",
     "scan_dataset",
+    "validate_dataset",
     "validate_manifest",
     "write_dataset",
     "write_manifest",

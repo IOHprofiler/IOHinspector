@@ -270,8 +270,8 @@ One row per logged evaluation.
 
 **Storage.** These rules make filters on function and dimension fast:
 
-- Compression MUST be zstd; writers SHOULD use level 3. `validate_dataset` warns about other codecs.
-- Row-group statistics (min and max) MUST be written for `run_id`, `function_id`, `dimension`, `row` and `evaluations`, and SHOULD be written for every column.
+- Compression SHOULD be zstd at level 3.
+- Row-group statistics (min and max) SHOULD be written for every column; without them for `run_id`, `function_id`, `dimension`, `row` and `evaluations`, filters cannot skip row groups.
 - Row groups SHOULD hold between 2^16 and 2^20 rows, and SHOULD start where (`suite`, `function_id`, `dimension`) changes, unless the previous row group would then hold fewer than 2^16 rows.
 - Each Parquet file SHOULD carry the key-value metadata `iohinspector.format_version` (for example `1.0`) and `iohinspector.table` (`runs`, `trace` or `positions`).
 

@@ -79,7 +79,7 @@ def write_dataset(
     overwrite: bool = False,
     extra_columns: Mapping[str, pl.DataType] | None = None,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
-    validate: bool = False,
+    validate: bool = True,
 ) -> dict[str, Any]:
     """Write a dataset in format v1 to the directory ``path`` and return its manifest.
 
