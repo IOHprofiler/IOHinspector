@@ -69,17 +69,27 @@ def get_data_ecdf(
             maximization=maximization,
             silence_warning=True,
         )
+    dt_ecdf = transform_fval(
+        data_aligned,
+        fval_var=fval_var,
+        maximization=maximization,
+        lb=f_min,
+        ub=f_max,
+        scale_log=scale_f_log,
+    )
+    keys = [eval_var] + free_vars
+    # polars 2 raises on mean() of non-numeric columns, polars 1 returned null.
     dt_ecdf = (
-        transform_fval(
-            data_aligned,
-            fval_var=fval_var,
-            maximization=maximization,
-            lb=f_min,
-            ub=f_max,
-            scale_log=scale_f_log,
+        dt_ecdf.group_by(keys)
+        .agg(
+            [
+                pl.col(c).mean()
+                if dt.is_numeric() or dt == pl.Boolean
+                else pl.lit(None, dtype=dt).alias(c)
+                for c, dt in dt_ecdf.schema.items()
+                if c not in keys
+            ]
         )
-        .group_by([eval_var] + free_vars)
-        .mean()
         .sort(eval_var)
     )
 
