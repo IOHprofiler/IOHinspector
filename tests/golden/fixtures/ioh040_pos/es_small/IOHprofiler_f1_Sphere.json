@@ -1,0 +1,20 @@
+{
+	"version": "0.4.0", 
+	"suite": "unknown_suite", 
+	"function_id": 1, 
+	"function_name": "Sphere", 
+	"maximization": false, 
+	"algorithm": {"name": "es_small", "info": "golden fixture ioh040_pos"},
+	"attributes": ["evaluations", "raw_y", "sigma", "x0", "x1", "x2"],
+	"scenarios": [
+		{"dimension": 3,
+		"path": "data_f1_Sphere/IOHprofiler_f1_DIM3.dat",
+		"runs": [
+			{"instance": 1, "evals": 60, "best": {"evals": 52, "y": 0.5129174249946752, "x": [0.7541445996772692, -1.6515156048642403, -0.5942791933692889]}},
+			{"instance": 2, "evals": 60, "best": {"evals": 59, "y": 0.16135501752677275, "x": [-3.5750873774301777, -2.9312210089263937, -4.037256575049598]}},
+			{"instance": 3, "evals": 60, "best": {"evals": 58, "y": 0.7017972403322745, "x": [-3.186474481396529, 0.7361442019930666, -0.48307773406931986]}},
+			{"instance": 4, "evals": 60, "best": {"evals": 54, "y": 0.013304026919239839, "x": [-0.3539758895939803, 1.4966933474773751, -3.9469280170134335]}},
+			{"instance": 5, "evals": 60, "best": {"evals": 59, "y": 0.10586697787342027, "x": [3.6506763885807088, 0.9319975395832722, -1.5499051908625594]}}
+		]}
+	]
+}

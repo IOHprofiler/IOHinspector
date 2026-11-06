@@ -22,6 +22,7 @@ class Tracked:
 
     def __init__(self) -> None:
         self.sigma = 0.0
+        self.x0 = self.x1 = self.x2 = 0.0
 
 
 def real_algorithm(name, problem, budget, rng, tracked):
@@ -36,6 +37,8 @@ def real_algorithm(name, problem, budget, rng, tracked):
         else:
             tracked.sigma = sigma
             y = np.clip(x + sigma * rng.standard_normal(dim), lb, ub)
+            if dim == 3:
+                tracked.x0, tracked.x1, tracked.x2 = (float(v) for v in y)
         fy = problem(y)
         if fy <= fx:
             x, fx = y, fy
@@ -78,7 +81,7 @@ def run_set(setname, algorithms, problems, runner, budget_of, trigger=None, extr
             algorithm_info=f"golden fixture {setname}", additional_properties=list(extra), **kwargs,
         )
         if alg != "rs":
-            logger.watch(tracked, ["sigma"])
+            logger.watch(tracked, ["sigma"] + (["x0", "x1", "x2"] if setname == "ioh040_pos" else []))
         for pi, make in enumerate(problems):
             for inst in INSTANCES:
                 rng = np.random.default_rng([seed, ai, pi, inst])
@@ -106,6 +109,9 @@ def main() -> None:
     ]
     run_set("ioh040_max", ["rs", "rls", "ea"], problems, bit_algorithm,
             lambda p: 20 * p.meta_data.n_variables, seed=2)
+    # positions logged as parameters x0..x2 (IOHanalyzer reads them as parameters)
+    run_set("ioh040_pos", ["es_small"], [lambda i: ioh.get_problem(1, i, 3, bb)], real_algorithm,
+            lambda p: 60, seed=4)
     # constrained: sphere with a soft linear constraint, every evaluation logged
     cons = lambda i: _constrained(i)  # noqa: E731
     run_set("ioh040_cons", ["rs", "es_small"], [cons], real_algorithm, lambda p: 200,
