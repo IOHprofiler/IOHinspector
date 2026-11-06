@@ -1,0 +1,29 @@
+{
+	"version": "0.4.0", 
+	"suite": "unknown_suite", 
+	"function_id": 2, 
+	"function_name": "LeadingOnes", 
+	"maximization": true, 
+	"algorithm": {"name": "ea", "info": "golden fixture ioh040_max"},
+	"attributes": ["evaluations", "raw_y", "sigma"],
+	"scenarios": [
+		{"dimension": 16,
+		"path": "data_f2_LeadingOnes/IOHprofiler_f2_DIM16.dat",
+		"runs": [
+			{"instance": 1, "evals": 320, "best": {"evals": 149, "y": 16, "x": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}},
+			{"instance": 2, "evals": 320, "best": {"evals": 161, "y": 16, "x": [1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0]}},
+			{"instance": 3, "evals": 320, "best": {"evals": 284, "y": 16, "x": [0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1]}},
+			{"instance": 4, "evals": 320, "best": {"evals": 113, "y": 16, "x": [1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]}},
+			{"instance": 5, "evals": 320, "best": {"evals": 242, "y": 16, "x": [1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1]}}
+		]},
+		{"dimension": 32,
+		"path": "data_f2_LeadingOnes/IOHprofiler_f2_DIM32.dat",
+		"runs": [
+			{"instance": 1, "evals": 640, "best": {"evals": 582, "y": 31, "x": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0]}},
+			{"instance": 2, "evals": 640, "best": {"evals": 549, "y": 28, "x": [1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0]}},
+			{"instance": 3, "evals": 640, "best": {"evals": 594, "y": 24, "x": [0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0]}},
+			{"instance": 4, "evals": 640, "best": {"evals": 550, "y": 32, "x": [1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1]}},
+			{"instance": 5, "evals": 640, "best": {"evals": 594, "y": 24, "x": [1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0]}}
+		]}
+	]
+}

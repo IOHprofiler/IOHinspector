@@ -164,4 +164,4 @@ cython_debug/
 
 data/
 aux/
-try.ipynb
+try.ipynbtests/golden/r/ctx/
