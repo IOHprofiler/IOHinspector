@@ -315,13 +315,16 @@ All of it lives in `iohinspector.format`.
 
 | Function | Purpose |
 |---|---|
-| `write_dataset(path, manifest, runs, trace, positions=None)` | Writes a dataset. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks in any order; the writer sorts them with an external merge sort in bounded memory, writes to a temporary directory, validates, and then moves the result into place |
-| `scan_dataset(path)` | Returns a `StoredDataset` with the manifest and `runs`, `trace` and `positions` as polars LazyFrames. Refuses an unknown major version |
-| `validate_dataset(path)` | Returns a `ValidationReport` with errors and warnings |
-| `read_manifest(path)`, `write_manifest(path, manifest)`, `validate_manifest(manifest)` | Manifest input and output |
-| `new_manifest(dataset_id, reader_name, reader_version, ...)` | Builds a manifest for a reader to fill in |
-| `run_id(dataset_id, source_file, source_run_index)`, `run_id_expr(...)` | Run ids, for one run or as a polars expression |
-| `RUNS_SCHEMA`, `TRACE_SCHEMA`, `POSITIONS_KEY_SCHEMA` | Polars schemas of the fixed columns |
+| `write_dataset(path, manifest, runs, trace, positions=None)` | Writes a dataset. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
+| `scan_dataset(path)` | Returns a `StoredDataset` with the manifest and `runs`, `trace` and `positions` as polars LazyFrames. Refuses an unknown major version, and issues the manifest's warnings as `DatasetWarning` |
+| `validate_dataset(path)` | Returns a `ValidationReport` with errors and warnings; `raise_for_errors()` raises `DatasetValidationError` |
+| `read_manifest(path)`, `write_manifest(path, manifest)`, `validate_manifest(manifest)` | Manifest input and output, with the JSON Schema check |
+| `new_manifest(dataset_id, reader_name, reader_version, ...)`, `file_entry(local_path, path, ...)` | Build a manifest, and a `sources` entry with the file's sha256 and size |
+| `run_id(dataset_id, source_file, source_run_index)`, `run_ids(...)` | Run ids, for one run or as an Int64 series |
+| `attributes_json(dict)` | Canonical text for the `attributes` column |
+| `RUNS_SCHEMA`, `TRACE_SCHEMA`, `POSITIONS_KEY_SCHEMA`, `MANIFEST_SCHEMA` | The fixed polars schemas and the manifest's JSON Schema |
+
+Data that breaks the format raises `FormatError`, an invalid manifest `ManifestError`, and an unknown version `UnsupportedFormatVersion`.
 
 ## Open questions for H2
 
@@ -338,4 +341,5 @@ Each question gives the recommendation that this draft implements.
 9. **Positions layout.** **Recommendation: wide columns `x0...x(D-1)` with D the largest dimension, null beyond each run's dimension**, rather than a list column or one row per coordinate.
 10. **`source_rows_sha256`.** **Recommendation: hash the whitespace-normalised data lines as text**, as described under runs.parquet, so that `verify` (I09) can recompute it independently. It is null for sources that are not text.
 11. **Versioning.** **Recommendation: minor versions only add; readers read newer minor versions with a warning and refuse unknown major versions.**
-12. **New dependency `jsonschema`.** The manifest is validated against the JSON Schema above. **Recommendation: depend on `jsonschema>=4`** (already present wherever Jupyter is installed) rather than keep a second, hand-written validator in step with the schema.
+12. **Function ids for sources without them** (Nevergrad, custom CSV). `function_id` is a not-null int32 because it is a sort key and the main filter. **Recommendation: such readers assign ids and keep the source's name in `function_name`**, and their reader page says how the ids are assigned.
+13. **New dependency `jsonschema`.** The manifest is validated against the JSON Schema above. **Recommendation: depend on `jsonschema>=4`** (already present wherever Jupyter is installed) rather than keep a second, hand-written validator in step with the schema.

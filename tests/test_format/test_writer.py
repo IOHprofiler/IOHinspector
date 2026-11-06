@@ -471,3 +471,13 @@ def test_dataset_id_changes_run_ids(tmp_path):
     b = make_dataset(dataset_id="second", seed=18)
     assert set(a.runs["run_id"]).isdisjoint(set(b.runs["run_id"]))
     assert DATASET_ID not in ("first", "second")
+
+
+def test_strings_sort_by_utf8_bytes(tmp_path):
+    names = ["b", "B", "é", "a", "Z", "aa", "😀", "￿"]
+    syn = make_dataset(
+        algorithms=names, functions=(1,), dimensions=(2,), runs_per_file=1
+    )
+    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    stored = scan_dataset(tmp_path / "ds").runs.collect()["algorithm_name"].to_list()
+    assert stored == sorted(names, key=lambda s: s.encode("utf-8"))

@@ -397,11 +397,19 @@ class _SortedTableWriter:
                         col.name
                     )
                 )
+        given = [c for c in COPIED_RUN_COLUMNS if c in chunk.columns]
+        for col in given:  # compared with the run's value after the join
+            cols.append(
+                fr.conform(chunk[col], pl.Int32(), f"{name} column {col!r}").alias(
+                    f"__given_{col}"
+                )
+            )
         df = pl.DataFrame(cols)
         problems = fr.null_problems(df, [c.name for c in spec.required], name)
         if problems:
             raise fr.FormatError(fr.first_problem(problems))
 
+        # The join's row order does not matter: rows are sorted by key later.
         df = df.join(self.run_map, on="run_id", how="left")
         unknown_runs = df.filter(pl.col(fr.RANK).is_null())
         if unknown_runs.height:
@@ -409,17 +417,11 @@ class _SortedTableWriter:
                 f"{name}: {unknown_runs.height} row(s) refer to run ids that are not in runs, "
                 f"for example {unknown_runs['run_id'][0]}"
             )
-        for col in COPIED_RUN_COLUMNS:
-            if col in chunk.columns:
-                given = fr.conform(
-                    chunk[col],
-                    TRACE_COLUMNS[1 if col == "function_id" else 2].dtype,
-                    f"{name} {col}",
+        for col in given:
+            if df.filter(pl.col(f"__given_{col}") != pl.col(col)).height:
+                raise fr.FormatError(
+                    f"{name}: column {col!r} differs from the run's {col}"
                 )
-                if not (given == df[col]).all():
-                    raise fr.FormatError(
-                        f"{name}: column {col!r} differs from the run's {col}"
-                    )
         if df.filter((pl.col("row") < 0) | (pl.col("row") >= fr.ROW_LIMIT)).height:
             raise fr.FormatError(
                 f"{name}: row must be between 0 and {fr.ROW_LIMIT - 1}"
@@ -443,18 +445,30 @@ class _SortedTableWriter:
         assert self._spill_schema is not None
         return self._arrow_schema, self._spill_schema
 
-    def _take_buffer(self) -> pl.DataFrame:
-        df = pl.concat(self.buffer, how="vertical")
+    def _take_buffer(self, slice_rows: int) -> tuple[int, int, Iterator[pl.DataFrame]]:
+        """Empty the buffer: its first and last key, and its rows in key order.
+
+        The rows come in slices gathered through an arg-sort, so the buffer is never
+        copied as a whole while it is sorted.
+        """
+        df = pl.concat(self.buffer, how="vertical", rechunk=False)
         self.buffer = []
         self.buffered_rows = 0
-        if not df[fr.KEY].is_sorted():
-            df = df.sort(fr.KEY)
-        return df
+        keys = df[fr.KEY]
+        if keys.is_sorted():
+            return int(keys[0]), int(keys[-1]), df.iter_slices(slice_rows)
+        order = keys.arg_sort()
+        first, last = int(keys[int(order[0])]), int(keys[int(order[-1])])
+
+        def slices() -> Iterator[pl.DataFrame]:
+            for start in range(0, order.len(), slice_rows):
+                yield df.select(pl.all().gather(order.slice(start, slice_rows)))
+
+        return first, last, slices()
 
     def _spill(self) -> None:
-        df = self._take_buffer()
+        first, last, parts = self._take_buffer(self.spill_batch_rows)
         _, spill_schema = self._schemas()
-        first = int(df[fr.KEY][0])
         if self.spill_writer is None or first <= self.spill_last_key:
             # The buffer does not continue the current sorted run: start a new spill file.
             self._close_spill()
@@ -466,11 +480,11 @@ class _SortedTableWriter:
             )
             self.spills.append(file)
         assert self.spill_writer is not None
-        for part in df.iter_slices(self.spill_batch_rows):
+        for part in parts:
             table = part.to_arrow().cast(spill_schema)
             for batch in table.to_batches():
                 self.spill_writer.write_batch(batch)
-        self.spill_last_key = int(df[fr.KEY][-1])
+        self.spill_last_key = last
 
     def _close_spill(self) -> None:
         if self.spill_writer is not None:
@@ -482,9 +496,7 @@ class _SortedTableWriter:
     def _sorted_blocks(self) -> Iterator[pl.DataFrame]:
         if not self.spills:
             if self.buffer:
-                yield from self._take_buffer().iter_slices(
-                    max(self.spill_batch_rows, 2**16)
-                )
+                yield from self._take_buffer(max(self.spill_batch_rows, 2**16))[2]
             return
         if self.buffer:
             self._spill()
@@ -520,7 +532,9 @@ class _SpillReader:
     """Reads the record batches of one sorted spill file, one at a time."""
 
     def __init__(self, file: Path):
-        self._source = pa.memory_map(str(file))
+        self._source = pa.OSFile(
+            str(file), "rb"
+        )  # not mmap: mapped pages would count as RSS
         self._reader = pa.ipc.open_file(self._source)
         self._count = self._reader.num_record_batches
         self._next = 0

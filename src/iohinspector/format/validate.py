@@ -342,7 +342,12 @@ class _Checker:
         for batch in self.batches(pf, columns):
             for problem in fr.null_problems(batch, not_null, table):
                 self.error(problem)
-            df = batch.join(run_map, on="run_id", how="left", suffix="_run")
+            # Keep the file's row order through the join: the order checks need it.
+            df = (
+                batch.with_row_index("__ioh_pos")
+                .join(run_map, on="run_id", how="left", suffix="_run")
+                .sort("__ioh_pos")
+            )
             unknown = df.filter(pl.col(fr.RANK).is_null())
             if unknown.height:
                 self.error(
