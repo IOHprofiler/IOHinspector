@@ -113,7 +113,7 @@ def main() -> None:
     run_set("ioh040_pos", ["es_small"], [lambda i: ioh.get_problem(1, i, 3, bb)], real_algorithm,
             lambda p: 60, seed=4)
     # constrained: sphere with a soft linear constraint, every evaluation logged
-    cons = lambda i: _constrained(i)  # noqa: E731
+    cons = lambda i: _constrained(i)
     run_set("ioh040_cons", ["rs", "es_small"], [cons], real_algorithm, lambda p: 200,
             trigger=ioh.logger.trigger.ALWAYS,
             extra=[ioh.logger.property.VIOLATION, ioh.logger.property.PENALTY], seed=3)

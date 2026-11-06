@@ -7,11 +7,21 @@ Status: in progress
 
 - step 3/5: tests/golden/r/generate.R, 329 Parquet files under tests/golden/iohanalyzer/ (2.9 MB, zstd), second run byte-identical (verified by sha256); 24 recorded skips in versions.json (IOHanalyzer errors, kept as evidence)
 
+- step 4/5: cocopp references (tests/golden/cocopp, cocopp 2.9.1, pinned in requirements-golden.txt)
+- step 5/5: load.py, Makefile (golden, golden-check, golden-fixtures), tests/golden/README.md, test_golden_files.py
+
 ## Next step
-Step 4: cocopp references (tests/golden/cocopp/generate.py), then step 5: load.py, Makefile, README, test
+Run `sg docker -c 'make golden-check'`; if it passes, set Status to ready for review.
 
 ## Decisions
-- IOHanalyzer tree for the build context is `git archive caecada^` into tests/golden/r/ctx (git-ignored, made by `make golden-ctx`).
-- eaf needs libgsl at run time (apt libgsl-dev added); igraph needs libglpk.
+- IOHanalyzer tree for the build context is `git archive caecada^` into tests/golden/r/ctx (git-ignored, made by `make golden-ctx`). The reference copy has the history (caecada^ = 81b8dba).
+- eaf needs libgsl at run time (apt libgsl-dev added); igraph needs libglpk. Image tag ioh-golden:1.
+- Parquet written with zstd level 9 (2.9 MB instead of 16 MB uncompressed); still byte-identical on rerun.
+- DSC not generated (needs the DSCtool web service); AOCC has no IOHanalyzer function. Both explained in tests/golden/README.md.
+- IOHanalyzer calls that error on a fixture are listed under `skipped` in versions.json with the error text; known I02 defects are listed in tests/golden/README.md.
+- No change to pyproject.toml. A Makefile was added at the repository root. `uv` is used for the cocopp venv.
+- tests/golden/test_golden_files.py runs in the normal pytest run (needs polars, already a dependency).
+- Repository-wide `ruff check src tests` already reports ~277 findings on main; tests/golden itself is clean.
 
 ## Open questions / Blocked
+- None.

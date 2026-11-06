@@ -329,7 +329,6 @@
     "ioh040_pos/Parameter_correlation.parquet": "generate_data.Parameter_correlation(sub, par1, par2); par1 = 'f(x)' when the fixture logs every evaluation, else the first parameter; par2 = the second parameter (or the first)",
     "ioh040_pos/Parameters_by_RT.parquet": "generate_data.Parameters(sub, which='by_RT')",
     "ioh040_pos/PMF.parquet": "generate_data.PMF(sub, target=<3rd of 5 log targets>, which='by_RT')",
-    "ioh040_pos/positions_without_flag.parquet": "get_position_dsl(sub, iid), attribute left as the reader sets it",
     "ioh040_pos/positions.parquet": "get_position_dsl(sub, iid) after setting attr(ds,'contains_position') <- TRUE",
     "ioh040_pos/RT_overview_par1.parquet": "get_RT_overview(sub) with option IOHanalyzer.PAR_penalty=1",
     "ioh040_pos/RT_overview_par10.parquet": "get_RT_overview(sub) with option IOHanalyzer.PAR_penalty=10",

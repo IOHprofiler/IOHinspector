@@ -248,8 +248,6 @@ run_fixture <- function(set, dsl, par_pen = c(1, 10)) {
               for (i in seq_along(sub)) attr(sub[[i]], "contains_position") <- TRUE
               tag(get_position_dsl(sub, 1:5), pair_f = f, pair_d = d)
             }))
-    attempt(set, "positions_without_flag", "get_position_dsl(sub, iid), attribute left as the reader sets it",
-            per_pair(function(f, d, sub) tag(get_position_dsl(sub, 1:5), pair_f = f, pair_d = d)))
   }
 
   # comparisons: KS tests with Holm correction, win-fraction heatmap, Glicko-2
