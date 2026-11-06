@@ -8,7 +8,10 @@
 DOCKER      ?= docker
 IMAGE       ?= ioh-golden:1
 GOLDEN      := $(CURDIR)/tests/golden
-IOHANALYZER ?= /home/jacob/code/ioh_web/source/IOHanalyzer
+# Local IOHanalyzer checkout to use instead of cloning (optional).
+IOHANALYZER ?=
+IOHANALYZER_URL ?= https://github.com/IOHprofiler/IOHanalyzer
+IOHANALYZER_CACHE := $(GOLDEN)/r/cache/IOHanalyzer
 GOLDEN_VENV ?= $(CURDIR)/.venv
 GOLDEN_PY   := $(GOLDEN_VENV)/bin/python
 
@@ -17,9 +20,16 @@ GOLDEN_PY   := $(GOLDEN_VENV)/bin/python
 golden: golden-r golden-cocopp
 
 # IOHanalyzer at caecada^ (the parent of the commit that broke c.DataSet), exported without history.
+# Cloned from GitHub into r/cache unless IOHANALYZER points at a local checkout.
 golden-ctx:
-	test -d $(GOLDEN)/r/ctx/IOHanalyzer || { mkdir -p $(GOLDEN)/r/ctx/IOHanalyzer && \
-	  git -C $(IOHANALYZER) archive caecada^ | tar -x -C $(GOLDEN)/r/ctx/IOHanalyzer; }
+	test -d $(GOLDEN)/r/ctx/IOHanalyzer || { \
+	  src="$(IOHANALYZER)"; \
+	  if [ -z "$$src" ]; then \
+	    src=$(IOHANALYZER_CACHE); \
+	    test -d "$$src/.git" || git clone --quiet $(IOHANALYZER_URL) "$$src"; \
+	  fi; \
+	  mkdir -p $(GOLDEN)/r/ctx/IOHanalyzer && \
+	  git -C "$$src" archive caecada^ | tar -x -C $(GOLDEN)/r/ctx/IOHanalyzer; }
 
 golden-image: golden-ctx
 	$(DOCKER) image inspect $(IMAGE) >/dev/null 2>&1 || $(DOCKER) build -t $(IMAGE) $(GOLDEN)/r

@@ -166,3 +166,5 @@ data/
 aux/
 try.ipynb
 tests/golden/r/ctx/
+tests/golden/r/cache/
+tests/golden/__pycache__/
