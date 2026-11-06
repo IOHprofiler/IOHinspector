@@ -182,9 +182,10 @@ Settled:
   selects the Monte Carlo variant, with that number of permutations
   ([DSCTool2022] p. 3). So ε = 0 gives DSC, ε > 0 with 0 iterations gives
   sequential pDSC, and ε > 0 with iterations > 0 gives Monte Carlo pDSC.
-- In IOHanalyzer, ε is in the units of the samples: evaluations (after the
-  PAR-k substitution) on the runtime page, negated function values on the
-  value page. The same ε applies to every (function, dimension) pair.
+- IOHanalyzer passes ε unscaled, and the same ε applies to every (function,
+  dimension) pair. If ε is absolute (DQ-7), it is in the units of the
+  samples: evaluations (after the PAR-k substitution) on the runtime page,
+  negated function values on the value page.
 - Monte Carlo iterations dominate the service's run time ([Eftimov2020]
   p. 6). The API has no seed parameter ([DSCTool2022] p. 3).
 
@@ -225,7 +226,8 @@ Settled:
   and `algorithm_means`, one mean ranking per algorithm ([DSCTool2022] p. 7).
 - Method names in the sources: `"wilcoxon-signed-rank-less"`, a two-algorithm
   test whose p-value is that of the algorithm with the lower mean against the
-  one with the higher mean, so it is one-sided ([DSCTool2022] p. 7); the
+  one with the higher mean; the name and the description indicate a
+  one-sided test ([DSCTool2022] p. 7); the
   Friedman, Friedman aligned-ranks and Iman–Davenport tests, named by the
   post-hoc description ([DSCTool2022] p. 8) and the worked example
   ([Eftimov2020] p. 9). The documentation gives no complete list and no
