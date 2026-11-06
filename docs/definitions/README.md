@@ -34,7 +34,7 @@ checked against Crossref, arXiv, OpenAlex or the publisher.
 | Shapley portfolio values | [portfolio](portfolio.md) | I16 |
 | Cumulative difference plot | [cdp](cdp.md) | I16 |
 | EAF and EAF differences | [eaf](eaf.md) | I17 |
-| DSC | [dsc](dsc.md) (partial) | I18 |
+| DSC | [dsc](dsc.md) (points DQ-1 to DQ-21 left to I18 step 2) | I18 |
 | AOCC (from the "New" row) | [ecdf](ecdf.md) | I12 |
 
 The parity matrix is the metric part of the "Gap between IOHanalyzer and
@@ -167,9 +167,13 @@ golden tests name the decision there.
 | EA-3 | Multi-function EAF on normalised quality | yes |
 | EA-4 | `xmax = Min` bug not ported | yes |
 | DS-1 | Local DSC, no network | – |
-| DS-2 | Inputs as IOHanalyzer's client, budgets from run metadata, B1 not ported | yes |
-| DS-3 | NA options PAR-1, PAR-10 (default), ERT, Remove-na | no |
-| DS-4 | Ranking, omnibus, post-hoc specified in I18 from papers and recordings | – |
+| DS-2 | Inputs as IOHanalyzer's client, budgets from run metadata, B1 not ported; no NA sent; only problems every algorithm has | yes |
+| DS-3 | NA options PAR-1, PAR-10 (default), ERT, Remove-na; ERT fallback is the sum of budgets | yes, JSON data |
+| DS-4 | Ranking: all pairs, KS or AD (default AD, α = 0.05), Bonferroni, transitivity grouping; details from recordings (DQ-1 to DQ-6) | no |
+| DS-5 | pDSC: one ε, iteration count, the service's switches; seeded Monte Carlo (DQ-7 to DQ-11) | no (seed added) |
+| DS-6 | Omnibus: the service's method names, valid-method rule, parametric check and statistics (DQ-12 to DQ-17) | no |
+| DS-7 | Post-hoc statistic follows the omnibus test; all controls in one call; n, k from the ranked matrix | yes |
+| DS-8 | Result fields keep the service's names | – |
 
 ## IOHanalyzer defects found in this audit
 
@@ -196,7 +200,10 @@ file:line, on the page named.
   algorithms truncate the estimate ([portfolio](portfolio.md)).
 - The Shiny CDP calls pass an argument `generate_data.CDP` does not accept
   ([cdp](cdp.md)).
-- DSC PAR-1/PAR-10 leave NA in place for JSON data ([dsc](dsc.md)).
+- DSC PAR-1/PAR-10 leave NA in place for JSON data, and the ERT fallback for
+  runs that never succeed is one budget instead of n for JSON data. The
+  post-hoc test is chosen independently of the omnibus test, which the
+  DSCTool documentation rules out ([dsc](dsc.md)).
 
 ## Open questions for the user
 
@@ -219,16 +226,21 @@ file:line, on the page named.
 | Q-SH-1 | Is 15 algorithms the right limit for exact Shapley values? | [portfolio](portfolio.md) |
 | Q-CD-1 | Subsample unequal run counts for the CDP instead of refusing? | [cdp](cdp.md) |
 | Q-EA-1 | Default bounds for the multi-function EAF (observed or 1e-8..1e2)? | [eaf](eaf.md) |
-| Q-DS-1 | Provide the DSC papers or DSCtool API docs for I18 (blocking for I18) | [dsc](dsc.md) |
+| Q-DS-1 | Answered: the DSCTool paper (2020) and the v1.5 documentation were supplied; the 2017 and 2019 papers were not | [dsc](dsc.md) |
 | Q-DS-2 | Unify the two PAR-k conventions (DSC and summary)? | [dsc](dsc.md) |
+| Q-DS-3 | May I18 read the GPL-3.0-or-later dsc-core source to settle the DQ points (no copying into MIT code)? | [dsc](dsc.md) |
+| Q-DS-4 | May I18 use, and commit, the public DSCTool example files as a reference case? | [dsc](dsc.md) |
+| Q-DS-5 | Also accept one ε per problem, beyond the service's single ε? | [dsc](dsc.md) |
 
 ## Tolerances
 
 Counts, hitting times, ranks and test decisions match exactly. Means, rates,
 ERT, AUC, AOCC and closed-form p-values agree to a relative error of 1e-12.
 Exceptions are stated per page: Glicko-2 volatility (1e-5, minimiser
-tolerance), log-spaced targets (1e-15), and bootstrap-based outputs, which are
-compared as distributions with a fixed seed.
+tolerance), log-spaced targets (1e-15), bootstrap-based outputs, which are
+compared as distributions with a fixed seed, and DSC: omnibus and post-hoc
+statistics to 1e-9 against the recorded service responses, and Monte Carlo
+pDSC compared over several seeds ([dsc](dsc.md)).
 
 ## How the worked examples were computed
 
