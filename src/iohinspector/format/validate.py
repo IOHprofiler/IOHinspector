@@ -13,10 +13,14 @@ import polars as pl
 import pyarrow.parquet as pq
 
 from . import _frames as fr
+from .descriptors import descriptor_problems, summary_problems
 from .manifest import UnsupportedFormatVersion, check_format_version, validate_manifest
 from .schema import (
     COPIED_RUN_COLUMNS,
     DATASET_FILES,
+    DESCRIPTOR_COLUMNS,
+    DESCRIPTORS_FILE,
+    DESCRIPTORS_SCHEMA,
     EXTRA_COLUMN_DTYPES,
     FORMAT_MINOR,
     KV_FORMAT_VERSION,
@@ -83,6 +87,7 @@ class _Checker:
         self.minor = FORMAT_MINOR
         self.manifest: dict[str, Any] = {}
         self.run_map: pl.DataFrame | None = None
+        self.runs: pl.DataFrame | None = None
         self.trace_rows_per_run: np.ndarray | None = None
 
     def error(self, message: str) -> None:
@@ -271,6 +276,31 @@ class _Checker:
             )
         if df["run_id"].n_unique() == df.height:
             self.run_map = fr.run_map(ordered)
+            self.runs = df
+
+    # -- descriptors -----------------------------------------------------------
+
+    def check_descriptors(self) -> None:
+        pf = self.open_table(DESCRIPTORS_FILE, "descriptors")
+        if pf is None:
+            return
+        schema = dict(pl.scan_parquet(self.path / DESCRIPTORS_FILE).collect_schema())
+        if not self.schema_problems("descriptors", schema, list(DESCRIPTOR_COLUMNS)):
+            return
+        unknown = [c for c in schema if c not in DESCRIPTORS_SCHEMA]
+        if unknown:
+            self.problem(f"descriptors: unknown column(s) {unknown}")
+        self.storage("descriptors", pf, ("run_id", "key"))
+        df = pl.read_parquet(
+            self.path / DESCRIPTORS_FILE, columns=list(DESCRIPTORS_SCHEMA)
+        )
+        self.count("descriptors_rows", df.height)
+        problems = descriptor_problems(df, self.runs)
+        for problem in problems:
+            self.error(problem)
+        if not any("null value" in p for p in problems):
+            for problem in summary_problems(self.manifest.get("descriptors"), df):
+                self.error(problem)
 
     # -- trace and positions ---------------------------------------------------
 
@@ -420,6 +450,7 @@ def validate_dataset(
         elif checker.check_manifest():
             checker.check_files()
             checker.check_runs()
+            checker.check_descriptors()
             checker.check_trace()
             checker.check_positions()
     except _TooManyErrors:

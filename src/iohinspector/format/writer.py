@@ -20,6 +20,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from . import _frames as fr
+from ._io import PARQUET_OPTIONS, write_table
+from .descriptors import prepare_descriptors, summarize
 from .ids import check_dataset_id, run_ids
 from .manifest import (
     ManifestError,
@@ -32,6 +34,8 @@ from .manifest import (
 )
 from .schema import (
     COPIED_RUN_COLUMNS,
+    DESCRIPTOR_COLUMNS,
+    DESCRIPTORS_FILE,
     FORMAT_NAME,
     FORMAT_VERSION,
     MANIFEST_FILE,
@@ -62,11 +66,7 @@ _INPUT_SLICE_ROWS = 2**18
 _MIN_MEMORY_LIMIT = 2**20
 _MIN_SPILL_ROWS = 2**12
 _MIN_BATCH_ROWS = 2**10
-_PARQUET_OPTIONS: dict[str, Any] = {
-    "compression": "zstd",
-    "compression_level": 3,
-    "write_statistics": True,
-}
+_PARQUET_OPTIONS = PARQUET_OPTIONS
 
 
 def write_dataset(
@@ -75,6 +75,7 @@ def write_dataset(
     runs: pl.DataFrame | pl.LazyFrame,
     trace: FrameSource,
     positions: FrameSource | None = None,
+    descriptors: FrameSource | None = None,
     *,
     overwrite: bool = False,
     extra_columns: Mapping[str, pl.DataType] | None = None,
@@ -88,8 +89,13 @@ def write_dataset(
 
     ``runs`` has one row per run with the columns of ``RUNS_SCHEMA``. ``run_id`` is
     computed when absent and checked when present; optional columns that are absent
-    get their defaults (``""`` for ``suite`` and ``algorithm_info``, ``"{}"`` for
-    ``attributes``, 1 for ``n_objectives``, null otherwise).
+    get their defaults (``""`` for ``suite`` and ``algorithm_info``, 1 for
+    ``n_objectives``, null otherwise).
+
+    ``descriptors`` holds the runs' other descriptors (D17), with the columns of
+    ``DESCRIPTORS_SCHEMA``; build it with ``descriptor_frame``. The
+    ``algorithm_name`` and ``algorithm_info`` descriptors are made from the runs
+    columns, and must agree with them when given.
 
     ``trace`` holds ``run_id``, ``row``, ``evaluations``, ``raw_y`` and any extra
     logged columns; ``function_id`` and ``dimension`` are copied from the runs.
@@ -112,7 +118,8 @@ def write_dataset(
     manifest["format_version"] = FORMAT_VERSION
     manifest["writer"] = writer_entry()
     manifest.setdefault("created", utc_now())
-    manifest["counts"] = {"runs": 0, "trace_rows": 0}
+    manifest["counts"] = {"runs": 0, "descriptors_rows": 0, "trace_rows": 0}
+    manifest["descriptors"] = {}
     check_format_version(manifest, warn=False)
     problems = validate_manifest(manifest)
     if problems:
@@ -121,14 +128,25 @@ def write_dataset(
     _check_target(path, overwrite)
 
     runs_df = prepare_runs(runs, dataset_id, {s["path"] for s in manifest["sources"]})
+    descriptors_df = prepare_descriptors(descriptors, runs_df)
     run_map = fr.run_map(runs_df)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.parent / f".{path.name}.tmp-{uuid.uuid4().hex[:12]}"
     tmp.mkdir()
     try:
-        _write_runs(runs_df, tmp / RUNS_FILE)
-        counts: dict[str, int] = {"runs": runs_df.height}
+        write_table(runs_df, list(RUNS_COLUMNS), "runs", tmp / RUNS_FILE)
+        write_table(
+            descriptors_df,
+            list(DESCRIPTOR_COLUMNS),
+            "descriptors",
+            tmp / DESCRIPTORS_FILE,
+        )
+        counts: dict[str, int] = {
+            "runs": runs_df.height,
+            "descriptors_rows": descriptors_df.height,
+        }
+        manifest["descriptors"] = summarize(descriptors_df)
         trace_table = _TableSpec.trace(extra_columns)
         counts["trace_rows"] = _SortedTableWriter(
             trace_table, run_map, tmp, memory_limit
@@ -167,7 +185,7 @@ def prepare_runs(
     unknown = [c for c in runs.columns if c not in RUNS_SCHEMA]
     if unknown:
         raise fr.FormatError(
-            f"runs: unknown column(s) {unknown}; put other run information in the 'attributes' JSON column"
+            f"runs: unknown column(s) {unknown}; other run information goes into descriptors"
         )
     missing = [c for c in RUNS_REQUIRED_INPUT if c not in runs.columns]
     if missing:
@@ -196,11 +214,6 @@ def prepare_runs(
     if problems:
         raise fr.FormatError(fr.first_problem(problems))
     return fr.sort_runs(df)
-
-
-def _write_runs(df: pl.DataFrame, file: Path) -> None:
-    schema = arrow_schema(list(RUNS_COLUMNS), "runs")
-    pq.write_table(df.to_arrow().cast(schema), file, **_PARQUET_OPTIONS)
 
 
 def _check_target(path: Path, overwrite: bool) -> None:

@@ -35,13 +35,7 @@ def small_spills(monkeypatch):
 def expected_trace(syn):
     """The trace the format requires: run order, then row; with the copied run columns."""
     runs = syn.runs.sort(
-        [
-            "function_id",
-            "dimension",
-            "algorithm_name",
-            "source_file",
-            "source_run_index",
-        ]
+        ["function_id", "dimension", "source_file", "source_run_index"]
     )
     order = runs.select(
         "run_id", "function_id", "dimension", pl.int_range(pl.len()).alias("_o")
@@ -68,13 +62,23 @@ def assert_same_values(actual: pl.DataFrame, expected: pl.DataFrame):
 
 def test_round_trip(tmp_path):
     syn = make_dataset(seed=1)
-    manifest = write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    manifest = write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     ds = scan_dataset(tmp_path / "ds")
     assert ds.manifest == manifest
     assert manifest["counts"] == {
         "runs": syn.runs.height,
+        "descriptors_rows": syn.descriptors.height + 2 * syn.runs.height,
         "trace_rows": syn.trace.height,
     }
+    assert sorted(manifest["descriptors"]) == [
+        "algorithm_info",
+        "algorithm_name",
+        "folder",
+        "popsize",
+        "seed",
+    ]
 
     runs = ds.runs.collect()
     assert dict(runs.schema) == RUNS_SCHEMA
@@ -93,14 +97,14 @@ def test_round_trip(tmp_path):
     assert_same_values(trace, expected_trace(syn))
 
 
-def test_runs_are_sorted_by_suite_function_dimension_algorithm_and_source(tmp_path):
+def test_runs_are_sorted_by_suite_function_dimension_and_source(tmp_path):
     syn = make_dataset(
         functions=(3, 1), dimensions=(10, 2), algorithms=("zeta", "alpha"), seed=2
     )
     write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
     runs = scan_dataset(tmp_path / "ds").runs.collect()
     keys = runs.select(
-        "function_id", "dimension", "algorithm_name", "source_run_index"
+        "function_id", "dimension", "source_file", "source_run_index"
     ).rows()
     assert keys == sorted(keys)
 
@@ -166,11 +170,21 @@ def test_lazy_and_iterable_inputs(tmp_path):
 
 def test_scanned_dataset_writes_back_identically(tmp_path):
     syn = make_dataset(positions=True, seed=4)
-    write_dataset(tmp_path / "a", syn.manifest, syn.runs, syn.trace, syn.positions)
+    write_dataset(
+        tmp_path / "a",
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        syn.positions,
+        syn.descriptors,
+    )
     ds = scan_dataset(tmp_path / "a")
-    write_dataset(tmp_path / "b", ds.manifest, ds.runs, ds.trace, ds.positions)
+    write_dataset(
+        tmp_path / "b", ds.manifest, ds.runs, ds.trace, ds.positions, ds.descriptors
+    )
     again = scan_dataset(tmp_path / "b")
-    for table in ("runs", "trace", "positions"):
+    assert again.manifest["descriptors"] == ds.manifest["descriptors"]
+    for table in ("runs", "descriptors", "trace", "positions"):
         assert_same_values(
             getattr(again, table).collect(), getattr(ds, table).collect()
         )
@@ -363,8 +377,7 @@ def test_bad_trace_is_refused(tmp_path, mutate, message):
         (lambda r: r.with_columns(pl.lit(None, pl.String).alias("suite")), "null"),
         (lambda r: r.with_columns(pl.lit(2).alias("n_objectives")), "n_objectives"),
         (lambda r: r.with_columns(pl.lit(0).alias("dimension")), "dimension"),
-        (lambda r: r.with_columns(pl.lit("[1]").alias("attributes")), "JSON object"),
-        (lambda r: r.with_columns(pl.lit('{"a": NaN}').alias("attributes")), "JSON"),
+        (lambda r: r.with_columns(pl.lit("{}").alias("attributes")), "descriptors"),
         (lambda r: r.with_columns(pl.lit("abc").alias("source_rows_sha256")), "sha256"),
         (lambda r: r.with_columns(pl.lit(2**40).alias("function_id")), "do not fit"),
         (lambda r: pl.concat([r, r.head(1)]), "not unique"),
@@ -458,11 +471,7 @@ def test_minimal_runs_get_defaults(tmp_path):
     )
     write_dataset(tmp_path / "ds", manifest, runs, trace)
     stored = scan_dataset(tmp_path / "ds").runs.collect().row(0, named=True)
-    assert (
-        stored["run_id"] == rid
-        and stored["attributes"] == "{}"
-        and stored["algorithm_info"] == ""
-    )
+    assert stored["run_id"] == rid and stored["algorithm_info"] == ""
     assert stored["instance"] is None and stored["n_objectives"] == 1
 
 

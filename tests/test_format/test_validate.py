@@ -141,7 +141,6 @@ def test_newer_minor_version_allows_unknown_columns(ds):
             lambda df: df.with_columns(pl.lit(2, pl.Int32).alias("n_objectives")),
             "n_objectives",
         ),
-        (lambda df: df.with_columns(pl.lit("[]").alias("attributes")), "JSON object"),
         (lambda df: pl.concat([df, df.tail(1)]), "not unique"),
     ],
 )
@@ -268,7 +267,11 @@ def test_error_limit(ds):
     rewrite(
         ds, "trace", lambda df: df.with_columns(pl.lit(9, pl.Int32).alias("dimension"))
     )
-    rewrite(ds, "runs", lambda df: df.with_columns(pl.lit("[]").alias("attributes")))
+    rewrite(
+        ds,
+        "runs",
+        lambda df: df.with_columns(pl.lit(2, pl.Int32).alias("n_objectives")),
+    )
     edit_manifest(ds, lambda m: m["counts"].update(runs=0, trace_rows=0))
     report = validate_dataset(ds, max_errors=2)
     assert len(report.errors) == 3 and report.errors[-1] == "stopped after 2 errors"

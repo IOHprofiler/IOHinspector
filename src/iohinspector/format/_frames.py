@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any
@@ -156,41 +155,11 @@ def runs_problems(
             f"runs: {bad_sha.height} source_rows_sha256 value(s) are not 64 lower-case hex digits"
         )
 
-    for text in df["attributes"].unique().to_list():
-        problem = attributes_problem(text)
-        if problem is not None:
-            problems.append(f"runs: attributes {text[:80]!r}: {problem}")
-            break
     return problems
-
-
-def attributes_problem(text: str) -> str | None:
-    """Why ``text`` is not a valid ``attributes`` value, or None."""
-    try:
-        value = json.loads(text, parse_constant=_reject_constant)
-    except ValueError as exc:
-        return f"not valid JSON ({exc})"
-    if not isinstance(value, dict):
-        return "not a JSON object"
-    return None
 
 
 def _reject_constant(name: str) -> Any:
     raise ValueError(f"{name} is not allowed in JSON")
-
-
-def attributes_json(attributes: dict[str, Any] | None) -> str:
-    """Canonical ``attributes`` text: a JSON object with sorted keys and compact separators.
-
-    Raises ``ValueError`` for NaN or infinite numbers, which JSON cannot hold.
-    """
-    return json.dumps(
-        attributes or {},
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    )
 
 
 def sort_runs(df: pl.DataFrame) -> pl.DataFrame:

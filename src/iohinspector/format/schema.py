@@ -18,9 +18,10 @@ FORMAT_VERSION = f"{FORMAT_MAJOR}.{FORMAT_MINOR}"
 
 MANIFEST_FILE = "manifest.json"
 RUNS_FILE = "runs.parquet"
+DESCRIPTORS_FILE = "descriptors.parquet"
 TRACE_FILE = "trace.parquet"
 POSITIONS_FILE = "positions.parquet"
-DATASET_FILES = (MANIFEST_FILE, RUNS_FILE, TRACE_FILE, POSITIONS_FILE)
+DATASET_FILES = (MANIFEST_FILE, RUNS_FILE, DESCRIPTORS_FILE, TRACE_FILE, POSITIONS_FILE)
 
 #: Parquet key-value metadata written into every table.
 KV_FORMAT_VERSION = "iohinspector.format_version"
@@ -51,7 +52,6 @@ RUNS_COLUMNS: tuple[Column, ...] = (
     Column("evals_used", pl.Int64(), True),
     Column("best_y", pl.Float64(), True),
     Column("n_objectives", pl.Int32(), False),
-    Column("attributes", pl.String(), False),
     Column("source_file", pl.String(), False),
     Column("source_run_index", pl.Int64(), False),
     Column("source_rows_sha256", pl.String(), True),
@@ -78,17 +78,15 @@ RUNS_DEFAULTS: dict[str, str | int | None] = {
     "evals_used": None,
     "best_y": None,
     "n_objectives": 1,
-    "attributes": "{}",
     "source_rows_sha256": None,
 }
 
-#: Sort order of runs.parquet; the trace follows it.
+#: Sort order of runs.parquet; the trace follows it. No descriptor is a sort key
+#: (D17), so editing descriptors never reorders the trace.
 RUNS_SORT_KEYS = (
     "suite",
     "function_id",
     "dimension",
-    "algorithm_name",
-    "algorithm_info",
     "source_file",
     "source_run_index",
 )
@@ -127,8 +125,47 @@ POSITIONS_KEY_SCHEMA: dict[str, pl.DataType] = {
     c.name: c.dtype for c in POSITIONS_KEY_COLUMNS
 }
 
+DESCRIPTOR_COLUMNS: tuple[Column, ...] = (
+    Column("run_id", pl.Int64(), False),
+    Column("key", pl.String(), False),
+    Column("origin", pl.String(), False),
+    Column("type", pl.String(), False),
+    Column("value", pl.String(), False),
+    Column("value_int", pl.Int64(), True),
+    Column("value_float", pl.Float64(), True),
+    Column("value_bool", pl.Boolean(), True),
+)
+DESCRIPTORS_SCHEMA: dict[str, pl.DataType] = {
+    c.name: c.dtype for c in DESCRIPTOR_COLUMNS
+}
+DESCRIPTOR_ORIGINS = ("algorithm", "experiment", "path", "run", "user")
+DESCRIPTOR_TYPES = ("bool", "float", "int", "json", "null", "string")
+#: The typed column each type uses (``int`` only when the value fits in int64).
+TYPED_VALUE_COLUMN = {"int": "value_int", "float": "value_float", "bool": "value_bool"}
+DESCRIPTORS_SORT_KEYS = ("key", "run_id")
+#: Descriptors that every run has, mirrored by the runs columns of the same name.
+MIRRORED_DESCRIPTORS = ("algorithm_name", "algorithm_info")
+MAX_DESCRIPTOR_KEY_LENGTH = 256
+
 _RESERVED_PATTERN = re.compile(r"[xy][0-9]+")
 RESERVED_TRACE_NAMES = frozenset(TRACE_SCHEMA) | frozenset(RUNS_SCHEMA)
+
+
+RESERVED_DESCRIPTOR_KEYS = (
+    frozenset(RUNS_SCHEMA) | frozenset(TRACE_SCHEMA)
+) - frozenset(MIRRORED_DESCRIPTORS)
+_CONTROL = re.compile(r"[\x00-\x1f]")
+
+
+def descriptor_key_problem(key: object) -> str | None:
+    """Why ``key`` is not a valid descriptor key, or None."""
+    if not isinstance(key, str) or not key or len(key) > MAX_DESCRIPTOR_KEY_LENGTH:
+        return f"keys must have 1 to {MAX_DESCRIPTOR_KEY_LENGTH} characters"
+    if _CONTROL.search(key):
+        return "keys must not contain control characters"
+    if key in RESERVED_DESCRIPTOR_KEYS:
+        return "the name of a runs or trace column is reserved"
+    return None
 
 
 def is_reserved_trace_name(name: str) -> bool:

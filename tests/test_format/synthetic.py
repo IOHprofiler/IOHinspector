@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-from iohinspector.format import new_manifest, run_ids
+from iohinspector.format import descriptor_frame, new_manifest, run_ids
 
 DATASET_ID = "synthetic-1"
 
@@ -20,6 +20,7 @@ class Synthetic:
     runs: pl.DataFrame
     trace: pl.DataFrame
     positions: pl.DataFrame | None
+    descriptors: pl.DataFrame
 
 
 def make_dataset(
@@ -62,13 +63,20 @@ def make_dataset(
                             "maximization": f % 2 == 0,
                             "source_file": path,
                             "source_run_index": i,
-                            "attributes": f'{{"seed":{i}}}',
                         }
                     )
     runs = pl.DataFrame(run_rows)
     runs = runs.with_columns(
         run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
     )
+    records = []
+    for run in runs.iter_rows(named=True):
+        records.append((run["run_id"], "seed", run["source_run_index"] * 7 + 1, "run"))
+        records.append(
+            (run["run_id"], "popsize", 10 * (1 + run["function_id"] % 2), "algorithm")
+        )
+        records.append((run["run_id"], "folder", run["algorithm_name"], "path"))
+    descriptors = descriptor_frame(records)
     special = [0.0, float("inf"), float("-inf"), float("nan"), 1e-300, -0.0]
     trace_rows, pos_rows = [], []
     for run in runs.iter_rows(named=True):
@@ -109,7 +117,7 @@ def make_dataset(
         }
         pos_df = pl.DataFrame(pos_rows, schema=pos_schema)
     manifest = new_manifest(dataset_id, "synthetic", "0.0", sources=sources)
-    return Synthetic(manifest, runs, trace, pos_df)
+    return Synthetic(manifest, runs, trace, pos_df, descriptors)
 
 
 def shuffled_chunks(

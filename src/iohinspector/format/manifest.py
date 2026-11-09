@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from .ids import check_dataset_id
+from .ids import DATASET_ID_PATTERN, check_dataset_id
 from .schema import (
     FORMAT_MAJOR,
     FORMAT_MINOR,
@@ -30,12 +30,13 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
   "title": "iohinspector dataset manifest, format version 1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format", "format_version", "dataset_id", "created", "reader", "writer", "sources", "counts"],
+  "required": ["format", "format_version", "dataset_id", "created", "reader", "writer", "sources", "counts", "descriptors"],
   "properties": {
     "format": {"const": "iohinspector-dataset"},
     "format_version": {"type": "string", "pattern": "^1\\.(0|[1-9][0-9]*)$"},
     "dataset_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
-    "created": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "created": {"$ref": "#/$defs/time"},
+    "updated": {"$ref": "#/$defs/time"},
     "reader": {"$ref": "#/$defs/software"},
     "writer": {"$ref": "#/$defs/software"},
     "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
@@ -43,12 +44,18 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
     "counts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["runs", "trace_rows"],
+      "required": ["runs", "descriptors_rows", "trace_rows"],
       "properties": {
         "runs": {"type": "integer", "minimum": 0},
+        "descriptors_rows": {"type": "integer", "minimum": 0},
         "trace_rows": {"type": "integer", "minimum": 0},
         "positions_rows": {"type": "integer", "minimum": 0}
       }
+    },
+    "descriptors": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/descriptor_key"},
+      "additionalProperties": {"$ref": "#/$defs/descriptor_summary"}
     },
     "renamed_columns": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
     "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
@@ -56,6 +63,7 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
     "extra": {"type": "object"}
   },
   "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
     "path": {
       "type": "string",
       "pattern": "^[^/\\\\\\u0000-\\u001f][^\\\\\\u0000-\\u001f]*$",
@@ -124,7 +132,36 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
       "properties": {
         "from": {"type": "string", "minLength": 1},
         "to": {"type": "string", "minLength": 1},
-        "source": {"$ref": "#/$defs/path"}
+        "source": {"$ref": "#/$defs/path"},
+        "table": {"enum": ["trace", "descriptors"]}
+      }
+    },
+    "descriptor_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": {"pattern": "[\\u0000-\\u001f]"}
+    },
+    "descriptor_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["types", "origins", "runs", "distinct", "examples"],
+      "properties": {
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["bool", "float", "int", "json", "null", "string"]}
+        },
+        "origins": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["algorithm", "experiment", "path", "run", "user"]}
+        },
+        "runs": {"type": "integer", "minimum": 1},
+        "distinct": {"type": "integer", "minimum": 1},
+        "examples": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "string"}}
       }
     },
     "warning": {
@@ -258,6 +295,10 @@ def validate_manifest(manifest: Mapping[str, Any]) -> list[str]:
         problems.append(f"manifest {where}: {error.message}")
     if problems:
         return problems
+    if DATASET_ID_PATTERN.fullmatch(manifest["dataset_id"]) is None:  # "$" allows "\n"
+        return [
+            f"manifest dataset_id: {manifest['dataset_id']!r} is not a valid dataset id"
+        ]
 
     archives = [a["path"] for a in manifest.get("archives", [])]
     sources = [s["path"] for s in manifest["sources"]]
@@ -368,7 +409,8 @@ def new_manifest(
         "reader": reader,
         "writer": writer_entry(),
         "sources": [dict(s) for s in sources],
-        "counts": {"runs": 0, "trace_rows": 0},
+        "counts": {"runs": 0, "descriptors_rows": 0, "trace_rows": 0},
+        "descriptors": {},
     }
     for key, values in (
         ("archives", archives),
