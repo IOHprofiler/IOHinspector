@@ -1,6 +1,7 @@
 # Cumulative difference plot
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Cumulative difference plot".
 Implemented in: I16.
 Sources: [IOHanalyzer], [Arza2023], RVCompare 0.1.8 (CRAN, read from the
@@ -15,7 +16,8 @@ is the reference implementation; IOHanalyzer calls it.
 Inputs: one (function, dimension) pair, exactly two algorithms A and B, and a
 target (runtimes) or a budget (values). X_A, X_B are the samples, oriented so
 that smaller is better: runtimes as they are, with **failed runs as +∞**;
-values negated under maximisation. The samples must have the same size.
+values negated under maximisation. The samples must have the same size: when
+they differ, the larger one is subsampled (CD-3).
 
 Following RVCompare's `get_Y_AB_bounds_bootstrap`: the pooled observations
 are ranked (values closer than ε, default 1e-20 in RVCompare and 1e-80 in
@@ -55,18 +57,25 @@ estimator to RVCompare's code.
 
 No cumulative difference plot.
 
-## Proposed decisions
+## Decisions
 
 - **CD-1.** Port RVCompare 0.1.8's bootstrap estimator as specified above,
   with a seed.
 - **CD-2.** Failed runs count as +∞ (the worst value), not NA.
-- **CD-3.** Unequal sample sizes are an error with a clear message.
+- **CD-3.** Unequal sample sizes: by default the larger sample is subsampled
+  without replacement to the size of the smaller one, with the caller's seed.
+  The user is always told: the view and the download state both original
+  sizes, the size used and which runs were dropped (`run_id`s). `subsample=False`
+  restores the error with a clear message. Decided by the D6 review (dvermetten, 2026-11-06).
 - **CD-4.** ε defaults to 1e-80 as in IOHanalyzer.
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-CD-1: The plot needs equal run counts. Should the website subsample the
-  larger sample (seeded) instead of refusing?
+- Q-CD-1 (subsample unequal run counts): yes, subsample by default, and show
+  it to the user. See CD-3.
+
+Remaining points for H1: the subsample is drawn by seed from the larger set
+only (the smaller set is used whole). Confirm, or ask for repeated subsamples.
 
 ## Test tolerance
 
