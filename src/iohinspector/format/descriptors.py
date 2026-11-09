@@ -129,27 +129,24 @@ def conform_descriptors(data: Any) -> pl.DataFrame:
     """Descriptors given to the writer, with the format's columns and types."""
     if data is None:
         return empty_descriptors()
-    frames = list(fr.iter_frames(data, 2**20, "descriptors"))
-    if not frames:
-        return empty_descriptors()
-    out = []
-    for df in frames:
-        missing = [c for c in DESCRIPTORS_SCHEMA if c not in df.columns]
-        unknown = [c for c in df.columns if c not in DESCRIPTORS_SCHEMA]
-        if missing or unknown:
-            raise fr.FormatError(
-                f"descriptors: expected the columns {list(DESCRIPTORS_SCHEMA)}, "
-                f"missing {missing}, unknown {unknown}; build them with descriptor_frame"
-            )
-        out.append(
-            pl.DataFrame(
-                [
-                    fr.conform(df[c.name], c.dtype, f"descriptors column {c.name!r}")
-                    for c in DESCRIPTOR_COLUMNS
-                ]
-            )
+    frames = [_conform_frame(df) for df in fr.iter_frames(data, 2**20, "descriptors")]
+    return pl.concat(frames, how="vertical") if frames else empty_descriptors()
+
+
+def _conform_frame(df: pl.DataFrame) -> pl.DataFrame:
+    missing = [c for c in DESCRIPTORS_SCHEMA if c not in df.columns]
+    unknown = [c for c in df.columns if c not in DESCRIPTORS_SCHEMA]
+    if missing or unknown:
+        raise fr.FormatError(
+            f"descriptors: expected the columns {list(DESCRIPTORS_SCHEMA)}, "
+            f"missing {missing}, unknown {unknown}; build them with descriptor_frame"
         )
-    return pl.concat(out, how="vertical")
+    return pl.DataFrame(
+        [
+            fr.conform(df[c.name], c.dtype, f"descriptors column {c.name!r}")
+            for c in DESCRIPTOR_COLUMNS
+        ]
+    )
 
 
 def mirrored_rows(runs: pl.DataFrame) -> pl.DataFrame:
@@ -218,7 +215,15 @@ def descriptor_problems(df: pl.DataFrame, runs: pl.DataFrame | None) -> list[str
     problems = fr.null_problems(df, not_null, "descriptors")
     if problems:
         return problems
+    problems = [*_row_problems(df), *_value_problems(df)]
+    if runs is not None:
+        problems += _run_problems(df, runs)
+    return problems
 
+
+def _row_problems(df: pl.DataFrame) -> list[str]:
+    """Known origins and types, valid keys, one value per run and key, sort order."""
+    problems = []
     for column, allowed in (("origin", DESCRIPTOR_ORIGINS), ("type", DESCRIPTOR_TYPES)):
         bad = df.filter(~pl.col(column).is_in(list(allowed)))
         if bad.height:
@@ -230,54 +235,52 @@ def descriptor_problems(df: pl.DataFrame, runs: pl.DataFrame | None) -> list[str
         problem = descriptor_key_problem(key)
         if problem is not None:
             problems.append(f"descriptors: invalid key {key!r}: {problem}")
-    if df.select(pl.struct("run_id", "key").n_unique()).item() != df.height:
-        dup = df.filter(pl.struct("run_id", "key").is_duplicated()).row(0, named=True)
+    pair = pl.struct("run_id", "key")
+    if df.select(pair.n_unique()).item() != df.height:
+        dup = df.filter(pair.is_duplicated()).row(0, named=True)
         problems.append(
             f"descriptors: (run_id, key) is not unique, for example run {dup['run_id']} "
             f"key {dup['key']!r}"
         )
-    problems += _value_problems(df)
-
     ordered = sort_descriptors(df)
     if not ordered.select("key", "run_id").equals(df.select("key", "run_id")):
         problems.append("descriptors: rows are not sorted by key and run_id")
+    return problems
 
-    if runs is not None:
-        unknown = df.join(runs.select("run_id"), on="run_id", how="anti")
-        if unknown.height:
-            problems.append(
-                f"descriptors: {unknown.height} row(s) refer to run ids that are not in "
-                f"runs, for example {unknown['run_id'][0]}"
-            )
-        derived = mirrored_rows(runs)
-        stored = df.filter(pl.col("key").is_in(list(MIRRORED_DESCRIPTORS)))
-        joined = derived.join(
-            stored.select("run_id", "key", "type", pl.col("value").alias("stored")),
-            on=["run_id", "key"],
-            how="left",
-            suffix="_stored",
+
+def _run_problems(df: pl.DataFrame, runs: pl.DataFrame) -> list[str]:
+    """Every run id exists; every run has the mirrored keys, equal to its columns."""
+    problems = []
+    unknown = df.join(runs.select("run_id"), on="run_id", how="anti")
+    if unknown.height:
+        problems.append(
+            f"descriptors: {unknown.height} row(s) refer to run ids that are not in "
+            f"runs, for example {unknown['run_id'][0]}"
         )
-        absent = joined.filter(pl.col("stored").is_null())
-        if absent.height:
-            r = absent.row(0, named=True)
-            problems.append(
-                f"descriptors: {absent.height} run(s) lack a required {r['key']} "
-                f"descriptor, for example run {r['run_id']}"
-            )
-        differ = joined.filter(
-            pl.col("stored").is_not_null()
-            & (
-                (pl.col("stored") != pl.col("value"))
-                | (pl.col("type_stored") != "string")
-            )
+    stored = df.filter(pl.col("key").is_in(list(MIRRORED_DESCRIPTORS)))
+    joined = mirrored_rows(runs).join(
+        stored.select("run_id", "key", "type", pl.col("value").alias("stored")),
+        on=["run_id", "key"],
+        how="left",
+        suffix="_stored",
+    )
+    absent = joined.filter(pl.col("stored").is_null())
+    if absent.height:
+        r = absent.row(0, named=True)
+        problems.append(
+            f"descriptors: {absent.height} run(s) lack a required {r['key']} "
+            f"descriptor, for example run {r['run_id']}"
         )
-        if differ.height:
-            r = differ.row(0, named=True)
-            problems.append(
-                f"descriptors: {differ.height} {r['key']} descriptor(s) disagree with "
-                f"runs.parquet, for example run {r['run_id']}: {r['stored']!r} against "
-                f"{r['value']!r}"
-            )
+    differ = joined.filter(
+        (pl.col("stored") != pl.col("value")) | (pl.col("type_stored") != "string")
+    )
+    if differ.height:
+        r = differ.row(0, named=True)
+        problems.append(
+            f"descriptors: {differ.height} {r['key']} descriptor(s) disagree with "
+            f"runs.parquet, for example run {r['run_id']}: {r['stored']!r} against "
+            f"{r['value']!r}"
+        )
     return problems
 
 
@@ -357,7 +360,7 @@ def _same_float(text: str, number: float) -> bool:
 
 def _json_container(text: str) -> bool:
     try:
-        value = json.loads(text, parse_constant=fr._reject_constant)
+        value = json.loads(text, parse_constant=fr.reject_json_constant)
     except ValueError:
         return False
     return isinstance(value, (list, dict))
@@ -402,30 +405,38 @@ def summary_problems(summary: Any, df: pl.DataFrame) -> list[str]:
     for key in sorted(set(summary) ^ set(actual)):
         where = "the manifest" if key in summary else "descriptors.parquet only"
         problems.append(f"manifest descriptors: key {key!r} is in {where}")
-    values = df.group_by("key").agg(pl.col("value").unique()) if df.height else None
-    known = {k: set(v) for k, v in values.iter_rows()} if values is not None else {}
+    known: dict[str, set[str]] = {}
+    if df.height:
+        values = df.group_by("key").agg(pl.col("value").unique())
+        known = {k: set(v) for k, v in values.iter_rows()}
     for key in sorted(set(summary) & set(actual)):
-        given, expected = summary[key], actual[key]
-        if not isinstance(given, dict):
-            problems.append(f"manifest descriptors[{key!r}] must be an object")
-            continue
-        for field in ("types", "origins", "runs", "distinct"):
-            if given.get(field) != expected[field]:
-                problems.append(
-                    f"manifest descriptors[{key!r}].{field} is {given.get(field)!r}, "
-                    f"but the table has {expected[field]!r}"
-                )
-        examples = given.get("examples")
-        if (
-            not isinstance(examples, list)
-            or not 1 <= len(examples) <= MAX_EXAMPLES
-            or len(set(map(str, examples))) != len(examples)
-            or not set(map(str, examples)) <= known[key]
-        ):
-            problems.append(
-                f"manifest descriptors[{key!r}].examples must be 1 to {MAX_EXAMPLES} "
-                "distinct values of the key"
-            )
+        problems += _entry_problems(key, summary[key], actual[key], known[key])
+    return problems
+
+
+def _entry_problems(
+    key: str, given: Any, expected: dict[str, Any], values: set[str]
+) -> list[str]:
+    """Differences between one key's summary and the table's values of that key."""
+    if not isinstance(given, dict):
+        return [f"manifest descriptors[{key!r}] must be an object"]
+    problems = [
+        f"manifest descriptors[{key!r}].{field} is {given.get(field)!r}, "
+        f"but the table has {expected[field]!r}"
+        for field in ("types", "origins", "runs", "distinct")
+        if given.get(field) != expected[field]
+    ]
+    examples = given.get("examples")
+    texts = [str(e) for e in examples] if isinstance(examples, list) else []
+    if not (
+        1 <= len(texts) <= MAX_EXAMPLES
+        and len(set(texts)) == len(texts)
+        and set(texts) <= values
+    ):
+        problems.append(
+            f"manifest descriptors[{key!r}].examples must be 1 to {MAX_EXAMPLES} "
+            "distinct values of the key"
+        )
     return problems
 
 
@@ -497,50 +508,22 @@ def update_descriptors(
     ``(run_id, key)`` and are stored with origin ``user``. ``remove_keys`` drops
     keys from every run; ``algorithm_name`` and ``algorithm_info`` cannot be removed.
     Changing them also updates ``runs.parquet``. The trace and positions are not
-    touched. Returns the new manifest.
+    touched. Nothing is written when a check fails. Returns the new manifest.
     """
     path = Path(path)
     manifest = read_manifest(path, warn=False)
     runs = pl.read_parquet(path / RUNS_FILE)
-    current = pl.read_parquet(path / DESCRIPTORS_FILE)
-
-    remove = list(dict.fromkeys(remove_keys))
-    protected = [k for k in remove if k in MIRRORED_DESCRIPTORS]
-    if protected:
-        raise fr.FormatError(
-            f"descriptors {protected} are required and cannot be removed"
-        )
-    absent = [k for k in remove if k not in set(current["key"].unique().to_list())]
-    if absent:
-        raise fr.FormatError(f"descriptors {absent} do not exist")
-    table = current.filter(~pl.col("key").is_in(remove))
-
+    table = _without_keys(pl.read_parquet(path / DESCRIPTORS_FILE), remove_keys)
     runs_changed = False
     if upsert is not None:
         if not isinstance(upsert, pl.DataFrame):
             upsert = descriptor_frame(upsert)
         new = conform_descriptors(upsert).with_columns(pl.lit("user").alias("origin"))
+        pairs = new.select("run_id", "key")
         table = pl.concat(
-            [
-                table.join(
-                    new.select("run_id", "key"), on=["run_id", "key"], how="anti"
-                ),
-                new,
-            ],
-            how="vertical",
+            [table.join(pairs, on=["run_id", "key"], how="anti"), new], how="vertical"
         )
-        for key in MIRRORED_DESCRIPTORS:
-            changes = new.filter(pl.col("key") == key).select(
-                "run_id", pl.col("value").alias("__new")
-            )
-            if changes.height:
-                runs_changed = True
-                runs = (
-                    runs.join(changes, on="run_id", how="left")
-                    .with_columns(pl.coalesce("__new", key).alias(key))
-                    .drop("__new")
-                )
-        runs = fr.sort_runs(runs)  # joins may reorder; run order has no descriptor
+        runs, runs_changed = _runs_with_mirrored(runs, new)
 
     table = sort_descriptors(table)
     problems = descriptor_problems(table, runs)
@@ -557,3 +540,38 @@ def update_descriptors(
         replace_table(runs, list(RUNS_COLUMNS), "runs", path / RUNS_FILE)
     write_manifest(path, manifest)
     return manifest
+
+
+def _without_keys(table: pl.DataFrame, remove_keys: Iterable[str]) -> pl.DataFrame:
+    """``table`` without the keys to remove, which must exist and not be mirrored."""
+    remove = list(dict.fromkeys(remove_keys))
+    protected = [k for k in remove if k in MIRRORED_DESCRIPTORS]
+    if protected:
+        raise fr.FormatError(
+            f"descriptors {protected} are required and cannot be removed"
+        )
+    existing = set(table["key"].unique().to_list())
+    absent = [k for k in remove if k not in existing]
+    if absent:
+        raise fr.FormatError(f"descriptors {absent} do not exist")
+    return table.filter(~pl.col("key").is_in(remove))
+
+
+def _runs_with_mirrored(
+    runs: pl.DataFrame, new: pl.DataFrame
+) -> tuple[pl.DataFrame, bool]:
+    """The runs with edited ``algorithm_name`` and ``algorithm_info`` copied in."""
+    changed = False
+    for key in MIRRORED_DESCRIPTORS:
+        changes = new.filter(pl.col("key") == key).select(
+            "run_id", pl.col("value").alias("__new")
+        )
+        if changes.height:
+            changed = True
+            runs = (
+                runs.join(changes, on="run_id", how="left")
+                .with_columns(pl.coalesce("__new", key).alias(key))
+                .drop("__new")
+            )
+    # Joins may reorder rows; run order does not depend on descriptors.
+    return fr.sort_runs(runs), changed

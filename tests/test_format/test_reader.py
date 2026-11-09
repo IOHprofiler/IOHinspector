@@ -30,7 +30,7 @@ def stored(tmp_path_factory):
         }
     ]
     path = tmp_path_factory.mktemp("stored") / "ds"
-    write_dataset(path, syn.manifest, syn.runs, syn.trace, syn.positions)
+    write_dataset(path, syn.manifest, syn.runs, syn.trace, positions=syn.positions)
     return path
 
 
@@ -108,7 +108,9 @@ def grouped(tmp_path, monkeypatch):
         positions=True,
         seed=32,
     )
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace, syn.positions)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, positions=syn.positions
+    )
     return tmp_path / "ds"
 
 

@@ -21,7 +21,7 @@ def valid_dataset(tmp_path_factory):
         dimensions=(2, 3), positions=True, rows=lambda r: r.randint(2, 8), seed=20
     )
     path = tmp_path_factory.mktemp("valid") / "ds"
-    write_dataset(path, syn.manifest, syn.runs, syn.trace, syn.positions)
+    write_dataset(path, syn.manifest, syn.runs, syn.trace, positions=syn.positions)
     return path
 
 

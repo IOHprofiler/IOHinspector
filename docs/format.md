@@ -113,7 +113,10 @@ The schema below is normative. iohinspector ships the same schema as `iohinspect
   "title": "iohinspector dataset manifest, format version 1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format", "format_version", "dataset_id", "created", "reader", "writer", "sources", "counts", "descriptors"],
+  "required": [
+    "format", "format_version", "dataset_id", "created", "reader", "writer",
+    "sources", "counts", "descriptors"
+  ],
   "properties": {
     "format": {"const": "iohinspector-dataset"},
     "format_version": {"type": "string", "pattern": "^1\\.(0|[1-9][0-9]*)$"},
@@ -146,7 +149,10 @@ The schema below is normative. iohinspector ships the same schema as `iohinspect
     "extra": {"type": "object"}
   },
   "$defs": {
-    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
     "path": {
       "type": "string",
       "pattern": "^[^/\\\\\\u0000-\\u001f][^\\\\\\u0000-\\u001f]*$",
@@ -323,7 +329,7 @@ Types, and what `value` holds for each:
 | Type | `value` | Typed column |
 |---|---|---|
 | `string` | The string itself | none |
-| `int` | Decimal digits with an optional `-`, no leading zeros (`-?(0\|[1-9][0-9]*)`), of any size. Seeds above 2^63 are kept exactly here | `value_int`, when the integer fits in int64 |
+| `int` | Decimal digits with an optional `-`, no leading zeros and no `-0` (`0\|-?[1-9][0-9]*`), of any size. Seeds above 2^63 are kept exactly here | `value_int`, when the integer fits in int64 |
 | `float` | Text that parses back to the same float64, including the sign of zero; `inf`, `-inf` or `nan`. Writers SHOULD use the shortest such text (Python's `repr`) | `value_float` |
 | `bool` | `true` or `false` | `value_bool` |
 | `json` | An array or object as compact JSON text (RFC 8259, so no NaN), for list-valued and nested attributes. Writers SHOULD sort object keys | none |
@@ -428,7 +434,7 @@ All of it lives in `iohinspector.format`.
 
 | Function | Purpose |
 |---|---|
-| `write_dataset(path, manifest, runs, trace, positions=None, descriptors=None)` | Writes a dataset. The `algorithm_name` and `algorithm_info` descriptors are made from the runs columns. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
+| `write_dataset(path, manifest, runs, trace, *, positions=None, descriptors=None)` | Writes a dataset. The `algorithm_name` and `algorithm_info` descriptors are made from the runs columns. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
 | `scan_dataset(path)` | Returns a `StoredDataset` with the manifest and `runs`, `descriptors`, `trace` and `positions` as polars LazyFrames. Refuses an unknown major version, and issues the manifest's warnings as `DatasetWarning` |
 | `StoredDataset.run_columns(by)` | A LazyFrame of `run_id` and one column per name in `by`, taken from `runs.parquet` or turned from descriptors into columns, ready for `trace.join(..., on="run_id").group_by(by)` |
 | `descriptor_columns(descriptors, keys)` | The same for a descriptors table alone |

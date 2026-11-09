@@ -9,8 +9,11 @@ import json
 import os
 import warnings
 from collections.abc import Iterable, Mapping
+from importlib import metadata
 from pathlib import Path
 from typing import Any
+
+from jsonschema import Draft202012Validator
 
 from .ids import DATASET_ID_PATTERN, check_dataset_id
 from .schema import (
@@ -30,7 +33,10 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
   "title": "iohinspector dataset manifest, format version 1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format", "format_version", "dataset_id", "created", "reader", "writer", "sources", "counts", "descriptors"],
+  "required": [
+    "format", "format_version", "dataset_id", "created", "reader", "writer",
+    "sources", "counts", "descriptors"
+  ],
   "properties": {
     "format": {"const": "iohinspector-dataset"},
     "format_version": {"type": "string", "pattern": "^1\\.(0|[1-9][0-9]*)$"},
@@ -63,7 +69,10 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
     "extra": {"type": "object"}
   },
   "$defs": {
-    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
     "path": {
       "type": "string",
       "pattern": "^[^/\\\\\\u0000-\\u001f][^\\\\\\u0000-\\u001f]*$",
@@ -197,11 +206,9 @@ class DatasetWarning(UserWarning):
 
 
 def _iohinspector_version() -> str:
-    from importlib.metadata import PackageNotFoundError, version
-
     try:
-        return version("iohinspector")
-    except PackageNotFoundError:
+        return metadata.version("iohinspector")
+    except metadata.PackageNotFoundError:
         return "unknown"
 
 
@@ -232,7 +239,8 @@ def check_format_version(
     """
     if manifest.get("format") != FORMAT_NAME:
         raise UnsupportedFormatVersion(
-            f"not an iohinspector dataset: format is {manifest.get('format')!r}, expected {FORMAT_NAME!r}"
+            f"not an iohinspector dataset: format is {manifest.get('format')!r}, "
+            f"expected {FORMAT_NAME!r}"
         )
     major, minor = parse_format_version(manifest.get("format_version"))
     if major != FORMAT_MAJOR:
@@ -268,8 +276,6 @@ _VALIDATORS: dict[bool, Any] = {}
 
 def _validator(relaxed: bool) -> Any:
     if relaxed not in _VALIDATORS:
-        from jsonschema import Draft202012Validator
-
         schema = _relaxed(MANIFEST_SCHEMA) if relaxed else MANIFEST_SCHEMA
         _VALIDATORS[relaxed] = Draft202012Validator(schema)
     return _VALIDATORS[relaxed]
@@ -286,20 +292,29 @@ def validate_manifest(manifest: Mapping[str, Any]) -> list[str]:
         _, minor = check_format_version(manifest, warn=False)
     except UnsupportedFormatVersion as exc:
         return [str(exc)]
-    problems = []
-    for error in sorted(
-        _validator(minor > FORMAT_MINOR).iter_errors(manifest),
-        key=lambda e: list(e.path),
-    ):
-        where = "/".join(str(p) for p in error.absolute_path) or "(top level)"
-        problems.append(f"manifest {where}: {error.message}")
+    problems = _schema_problems(manifest, relaxed=minor > FORMAT_MINOR)
     if problems:
         return problems
     if DATASET_ID_PATTERN.fullmatch(manifest["dataset_id"]) is None:  # "$" allows "\n"
         return [
             f"manifest dataset_id: {manifest['dataset_id']!r} is not a valid dataset id"
         ]
+    return _path_problems(manifest)
 
+
+def _schema_problems(manifest: Mapping[str, Any], relaxed: bool) -> list[str]:
+    errors = sorted(
+        _validator(relaxed).iter_errors(manifest), key=lambda e: list(e.path)
+    )
+    return [
+        f"manifest {'/'.join(str(p) for p in e.absolute_path) or '(top level)'}: {e.message}"
+        for e in errors
+    ]
+
+
+def _path_problems(manifest: Mapping[str, Any]) -> list[str]:
+    """Unique source and archive paths, and every ``archive`` reference listed."""
+    problems = []
     archives = [a["path"] for a in manifest.get("archives", [])]
     sources = [s["path"] for s in manifest["sources"]]
     for kind, paths in (("source", sources), ("archive", archives)):
@@ -313,7 +328,8 @@ def validate_manifest(manifest: Mapping[str, Any]) -> list[str]:
         ref = entry.get("archive")
         if ref is not None and ref not in known_archives:
             problems.append(
-                f"manifest: {entry['path']!r} names archive {ref!r}, which is not in 'archives'"
+                f"manifest: {entry['path']!r} names archive {ref!r}, which is not "
+                "in 'archives'"
             )
     return problems
 
@@ -380,27 +396,36 @@ def write_manifest(path: str | os.PathLike[str], manifest: Mapping[str, Any]) ->
     return file
 
 
+#: Optional manifest fields that ``new_manifest`` takes as keyword arguments.
+NEW_MANIFEST_FIELDS = ("archives", "warnings", "renamed_columns", "extra")
+
+
 def new_manifest(
     dataset_id: str,
     reader_name: str,
     reader_version: str | None = None,
     *,
-    reader_options: Mapping[str, Any] | None = None,
     sources: Iterable[Mapping[str, Any]] = (),
-    archives: Iterable[Mapping[str, Any]] = (),
-    warnings: Iterable[Mapping[str, Any]] = (),
-    renamed_columns: Iterable[Mapping[str, Any]] = (),
-    extra: Mapping[str, Any] | None = None,
-    created: str | None = None,
+    **fields: Any,
 ) -> dict[str, Any]:
-    """A manifest for a reader to fill in. ``write_dataset`` sets the counts and the writer."""
+    """A manifest for a reader to fill in. ``write_dataset`` sets the counts and the writer.
+
+    ``fields`` may hold ``reader_options`` (stored as ``reader.options``),
+    ``created`` (default: now), and the optional manifest fields ``archives``,
+    ``warnings``, ``renamed_columns`` and ``extra``; empty ones are left out.
+    """
     check_dataset_id(dataset_id)
     reader: dict[str, Any] = {
         "name": reader_name,
         "version": reader_version or _iohinspector_version(),
     }
+    reader_options = fields.pop("reader_options", None)
     if reader_options is not None:
         reader["options"] = dict(reader_options)
+    created = fields.pop("created", None)
+    unknown = sorted(set(fields) - set(NEW_MANIFEST_FIELDS))
+    if unknown:
+        raise TypeError(f"new_manifest() got unexpected fields {unknown}")
     manifest: dict[str, Any] = {
         "format": FORMAT_NAME,
         "format_version": FORMAT_VERSION,
@@ -412,16 +437,11 @@ def new_manifest(
         "counts": {"runs": 0, "descriptors_rows": 0, "trace_rows": 0},
         "descriptors": {},
     }
-    for key, values in (
-        ("archives", archives),
-        ("warnings", warnings),
-        ("renamed_columns", renamed_columns),
-    ):
-        values = [dict(v) for v in values]
-        if values:
-            manifest[key] = values
-    if extra is not None:
-        manifest["extra"] = dict(extra)
+    for key, value in fields.items():
+        if value:
+            manifest[key] = (
+                dict(value) if isinstance(value, Mapping) else [dict(v) for v in value]
+            )
     return manifest
 
 

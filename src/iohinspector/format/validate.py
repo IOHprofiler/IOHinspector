@@ -30,6 +30,7 @@ from .schema import (
     POSITIONS_KEY_COLUMNS,
     RUNS_COLUMNS,
     RUNS_FILE,
+    RUNS_SCHEMA,
     TRACE_COLUMNS,
     TRACE_FILE,
     TRACE_STATISTICS_COLUMNS,
@@ -118,7 +119,7 @@ class _Checker:
             return False
         try:
             manifest = json.loads(
-                file.read_text(encoding="utf-8"), parse_constant=fr._reject_constant
+                file.read_text(encoding="utf-8"), parse_constant=fr.reject_json_constant
             )
         except (ValueError, UnicodeDecodeError) as exc:
             self.error(f"{MANIFEST_FILE} is not valid JSON: {exc}")
@@ -197,7 +198,8 @@ class _Checker:
                 readable = False
             elif schema[col.name] != col.dtype:
                 self.error(
-                    f"{name}: column {col.name!r} has type {schema[col.name]}, expected {col.dtype}"
+                    f"{name}: column {col.name!r} has type {schema[col.name]}, "
+                    f"expected {col.dtype}"
                 )
                 readable = False
         names = list(schema)
@@ -229,33 +231,16 @@ class _Checker:
             1024, min(self.batch_rows, _BATCH_BYTES // (8 * max(1, len(columns))))
         )
         for batch in pf.iter_batches(batch_size=rows, columns=columns):
-            df = pl.from_arrow(batch)
-            assert isinstance(df, pl.DataFrame)
-            yield df
+            yield fr.frame_from_arrow(batch)
 
     # -- runs ------------------------------------------------------------------
 
     def check_runs(self) -> None:
-        pf = self.open_table(RUNS_FILE, "runs")
-        if pf is None:
+        """Schema and content of runs.parquet; keeps the runs for later checks."""
+        df = self.read_runs()
+        if df is None:
             return
-        schema = dict(pl.scan_parquet(self.path / RUNS_FILE).collect_schema())
-        if not self.schema_problems("runs", schema, list(RUNS_COLUMNS)):
-            return
-        known = {c.name for c in RUNS_COLUMNS}
-        unknown = [c for c in schema if c not in known]
-        if unknown:
-            self.problem(f"runs: unknown column(s) {unknown}")
-        df = pl.read_parquet(
-            self.path / RUNS_FILE, columns=[c.name for c in RUNS_COLUMNS]
-        )
         self.count("runs", df.height)
-        sources = self.manifest.get("sources")
-        paths = (
-            {str(s.get("path")) for s in sources if isinstance(s, dict)}
-            if isinstance(sources, list)
-            else None
-        )
         nulls = fr.null_problems(
             df, [c.name for c in RUNS_COLUMNS if not c.nullable], "runs"
         )
@@ -263,9 +248,8 @@ class _Checker:
             self.error(problem)
         if nulls:
             return
-        for problem in fr.runs_problems(
-            df, str(self.manifest.get("dataset_id")), paths
-        ):
+        dataset_id = str(self.manifest.get("dataset_id"))
+        for problem in fr.runs_problems(df, dataset_id, self.source_paths()):
             self.error(problem)
         ordered = fr.sort_runs(df)
         if not ordered["run_id"].equals(df["run_id"]):
@@ -277,6 +261,25 @@ class _Checker:
         if df["run_id"].n_unique() == df.height:
             self.run_map = fr.run_map(ordered)
             self.runs = df
+
+    def read_runs(self) -> pl.DataFrame | None:
+        """The runs table if its fixed columns are present and typed, else None."""
+        if self.open_table(RUNS_FILE, "runs") is None:
+            return None
+        schema = dict(pl.scan_parquet(self.path / RUNS_FILE).collect_schema())
+        if not self.schema_problems("runs", schema, list(RUNS_COLUMNS)):
+            return None
+        unknown = [c for c in schema if c not in RUNS_SCHEMA]
+        if unknown:
+            self.problem(f"runs: unknown column(s) {unknown}")
+        return pl.read_parquet(self.path / RUNS_FILE, columns=list(RUNS_SCHEMA))
+
+    def source_paths(self) -> set[str] | None:
+        """The manifest's source paths, or None when the manifest has none to check."""
+        sources = self.manifest.get("sources")
+        if not isinstance(sources, list):
+            return None
+        return {str(s.get("path")) for s in sources if isinstance(s, dict)}
 
     # -- descriptors -----------------------------------------------------------
 
@@ -358,56 +361,55 @@ class _Checker:
         """Row-by-row checks in batches; returns the number of rows per run rank."""
         if self.run_map is None:
             return None
-        run_map = self.run_map
-        key_columns = [
-            c.name for c in (TRACE_COLUMNS if contiguous else POSITIONS_KEY_COLUMNS)
-        ]
-        not_null = [
-            c.name for c in TRACE_COLUMNS if not c.nullable and c.name in key_columns
-        ]
-        checker = fr.OrderChecker(table, contiguous, fr.describe_runs(run_map))
-        order_ok = True
-        per_run = np.zeros(run_map.height, dtype=np.int64)
-        coords = [c for c in columns if c.startswith("x")]
+        state = _StreamState(table, contiguous, self.run_map)
         for batch in self.batches(pf, columns):
-            for problem in fr.null_problems(batch, not_null, table):
-                self.error(problem)
-            # Keep the file's row order through the join: the order checks need it.
-            df = (
-                batch.with_row_index("__ioh_pos")
-                .join(run_map, on="run_id", how="left", suffix="_run")
-                .sort("__ioh_pos")
-            )
-            unknown = df.filter(pl.col(fr.RANK).is_null())
-            if unknown.height:
-                self.error(
-                    f"{table}: {unknown.height} row(s) refer to run ids that are not in runs, "
-                    f"for example {unknown['run_id'][0]}"
-                )
-                df = df.filter(pl.col(fr.RANK).is_not_null())
-            for col in COPIED_RUN_COLUMNS:
-                bad = df.filter(pl.col(col) != pl.col(f"{col}_run"))
-                if bad.height:
-                    self.error(
-                        f"{table}: {bad.height} row(s) have a {col} that differs from their "
-                        f"run's, for example run {bad['run_id'][0]}"
-                    )
-            if order_ok:
+            df = self.batch_with_runs(state, batch)
+            if state.order_ok:
                 keys = df.select(fr.sort_key(pl.col(fr.RANK), pl.col("row")))
-                problem = checker.check(keys.to_series())
+                problem = state.checker.check(keys.to_series())
                 if problem is not None:
                     self.error(problem)
-                    order_ok = False
+                    state.order_ok = False
             counts = df.group_by(fr.RANK).len()
-            np.add.at(per_run, counts[fr.RANK].to_numpy(), counts["len"].to_numpy())
+            np.add.at(
+                state.per_run, counts[fr.RANK].to_numpy(), counts["len"].to_numpy()
+            )
             if not contiguous:
-                self.positions_rows(df, coords)
-        return per_run
+                self.positions_rows(df, [c for c in columns if c.startswith("x")])
+        return state.per_run
+
+    def batch_with_runs(self, state: _StreamState, batch: pl.DataFrame) -> pl.DataFrame:
+        """One batch joined with its runs, in file order; reports nulls, unknown
+        runs and copied columns that differ from the run's."""
+        table = state.table
+        for problem in fr.null_problems(batch, state.not_null, table):
+            self.error(problem)
+        # Keep the file's row order through the join: the order checks need it.
+        df = (
+            batch.with_row_index("__ioh_pos")
+            .join(state.run_map, on="run_id", how="left", suffix="_run")
+            .sort("__ioh_pos")
+        )
+        unknown = df.filter(pl.col(fr.RANK).is_null())
+        if unknown.height:
+            self.error(
+                f"{table}: {unknown.height} row(s) refer to run ids that are not in "
+                f"runs, for example {unknown['run_id'][0]}"
+            )
+            df = df.filter(pl.col(fr.RANK).is_not_null())
+        for col in COPIED_RUN_COLUMNS:
+            bad = df.filter(pl.col(col) != pl.col(f"{col}_run"))
+            if bad.height:
+                self.error(
+                    f"{table}: {bad.height} row(s) have a {col} that differs from "
+                    f"their run's, for example run {bad['run_id'][0]}"
+                )
+        return df
 
     def positions_rows(self, df: pl.DataFrame, coords: list[str]) -> None:
         if self.trace_rows_per_run is not None:
-            limit = pl.Series(self.trace_rows_per_run).gather(df[fr.RANK])
-            missing = df.filter(df["row"] >= limit)
+            limit = self.trace_rows_per_run[df[fr.RANK].to_numpy()]
+            missing = df.filter(df["row"].to_numpy() >= limit)
             if missing.height:
                 self.error(
                     f"positions: {missing.height} row(s) have no trace row, for example "
@@ -423,9 +425,23 @@ class _Checker:
             bad = df.filter(pattern)
             if bad.height:
                 self.error(
-                    f"positions: {bad.height} row(s) have coordinates whose nulls do not match "
-                    f"the run's dimension, for example run {bad['run_id'][0]} row {bad['row'][0]}"
+                    f"positions: {bad.height} row(s) have coordinates whose nulls do "
+                    f"not match the run's dimension, for example run {bad['run_id'][0]} "
+                    f"row {bad['row'][0]}"
                 )
+
+
+class _StreamState:
+    """What ``stream`` carries from one batch to the next."""
+
+    def __init__(self, table: str, contiguous: bool, run_map: pl.DataFrame):
+        self.table = table
+        self.run_map = run_map
+        keys = TRACE_COLUMNS if contiguous else POSITIONS_KEY_COLUMNS
+        self.not_null = [c.name for c in keys if not c.nullable]
+        self.checker = fr.OrderChecker(table, contiguous, fr.describe_runs(run_map))
+        self.order_ok = True
+        self.per_run = np.zeros(run_map.height, dtype=np.int64)
 
 
 def validate_dataset(

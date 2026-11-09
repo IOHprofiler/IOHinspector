@@ -245,7 +245,12 @@ def test_adding_a_user_tag_after_conversion(tmp_path):
     syn = make_dataset(positions=True, seed=41)
     path = tmp_path / "ds"
     write_dataset(
-        path, syn.manifest, syn.runs, syn.trace, syn.positions, syn.descriptors
+        path,
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        positions=syn.positions,
+        descriptors=syn.descriptors,
     )
     untouched = {
         name: _file_digest(path / name)

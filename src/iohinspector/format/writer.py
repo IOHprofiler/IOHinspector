@@ -12,6 +12,7 @@ import os
 import shutil
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,6 @@ from .descriptors import prepare_descriptors, summarize
 from .ids import check_dataset_id, run_ids
 from .manifest import (
     ManifestError,
-    check_format_version,
     copy_manifest,
     utc_now,
     validate_manifest,
@@ -53,6 +53,7 @@ from .schema import (
     is_reserved_trace_name,
     position_columns,
 )
+from .validate import validate_dataset
 
 FrameSource = pl.DataFrame | pl.LazyFrame | Iterable[pl.DataFrame | pl.LazyFrame]
 
@@ -74,9 +75,9 @@ def write_dataset(
     manifest: Mapping[str, Any],
     runs: pl.DataFrame | pl.LazyFrame,
     trace: FrameSource,
+    *,
     positions: FrameSource | None = None,
     descriptors: FrameSource | None = None,
-    *,
     overwrite: bool = False,
     extra_columns: Mapping[str, pl.DataType] | None = None,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
@@ -113,61 +114,68 @@ def write_dataset(
     when the manifest is invalid.
     """
     path = Path(path)
-    manifest = copy_manifest(manifest)
-    manifest["format"] = FORMAT_NAME
-    manifest["format_version"] = FORMAT_VERSION
-    manifest["writer"] = writer_entry()
-    manifest.setdefault("created", utc_now())
-    manifest["counts"] = {"runs": 0, "descriptors_rows": 0, "trace_rows": 0}
-    manifest["descriptors"] = {}
-    check_format_version(manifest, warn=False)
-    problems = validate_manifest(manifest)
-    if problems:
-        raise ManifestError("invalid manifest:\n  " + "\n  ".join(problems))
-    dataset_id = check_dataset_id(manifest["dataset_id"])
+    manifest = _writable_manifest(manifest)
     _check_target(path, overwrite)
-
-    runs_df = prepare_runs(runs, dataset_id, {s["path"] for s in manifest["sources"]})
+    runs_df = prepare_runs(
+        runs, manifest["dataset_id"], {s["path"] for s in manifest["sources"]}
+    )
     descriptors_df = prepare_descriptors(descriptors, runs_df)
-    run_map = fr.run_map(runs_df)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.parent / f".{path.name}.tmp-{uuid.uuid4().hex[:12]}"
     tmp.mkdir()
     try:
-        write_table(runs_df, list(RUNS_COLUMNS), "runs", tmp / RUNS_FILE)
-        write_table(
-            descriptors_df,
-            list(DESCRIPTOR_COLUMNS),
-            "descriptors",
-            tmp / DESCRIPTORS_FILE,
-        )
-        counts: dict[str, int] = {
-            "runs": runs_df.height,
-            "descriptors_rows": descriptors_df.height,
-        }
+        counts = _write_small_tables(tmp, runs_df, descriptors_df)
         manifest["descriptors"] = summarize(descriptors_df)
-        trace_table = _TableSpec.trace(extra_columns)
-        counts["trace_rows"] = _SortedTableWriter(
-            trace_table, run_map, tmp, memory_limit
-        ).write(trace, tmp / TRACE_FILE)
+        run_map = fr.run_map(runs_df)
+        sorted_tables = [(_TableSpec.trace(extra_columns), trace, TRACE_FILE)]
         if positions is not None:
             max_dim = int(runs_df["dimension"].max() or 0)  # type: ignore[arg-type]
-            positions_table = _TableSpec.positions(max_dim)
-            counts["positions_rows"] = _SortedTableWriter(
-                positions_table, run_map, tmp, memory_limit
-            ).write(positions, tmp / POSITIONS_FILE)
+            sorted_tables.append(
+                (_TableSpec.positions(max_dim), positions, POSITIONS_FILE)
+            )
+        for spec, data, name in sorted_tables:
+            writer = _SortedTableWriter(spec, run_map, tmp, memory_limit)
+            counts[f"{spec.name}_rows"] = writer.write(data, tmp / name)
         manifest["counts"] = counts
         write_manifest(tmp / MANIFEST_FILE, manifest)
         if validate:
-            from .validate import validate_dataset
-
             validate_dataset(tmp).raise_for_errors()
         _publish(tmp, path, overwrite)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     return manifest
+
+
+def _writable_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """A copy of the caller's manifest, with the fields the writer owns reset.
+
+    Raises ``ManifestError`` if the rest is invalid.
+    """
+    out = copy_manifest(manifest)
+    out["format"] = FORMAT_NAME
+    out["format_version"] = FORMAT_VERSION
+    out["writer"] = writer_entry()
+    out.setdefault("created", utc_now())
+    out["counts"] = {"runs": 0, "descriptors_rows": 0, "trace_rows": 0}
+    out["descriptors"] = {}
+    problems = validate_manifest(out)
+    if problems:
+        raise ManifestError("invalid manifest:\n  " + "\n  ".join(problems))
+    check_dataset_id(out["dataset_id"])
+    return out
+
+
+def _write_small_tables(
+    tmp: Path, runs: pl.DataFrame, descriptors: pl.DataFrame
+) -> dict[str, int]:
+    """Write runs.parquet and descriptors.parquet; return their row counts."""
+    write_table(runs, list(RUNS_COLUMNS), "runs", tmp / RUNS_FILE)
+    write_table(
+        descriptors, list(DESCRIPTOR_COLUMNS), "descriptors", tmp / DESCRIPTORS_FILE
+    )
+    return {"runs": runs.height, "descriptors_rows": descriptors.height}
 
 
 def prepare_runs(
@@ -240,29 +248,23 @@ def _publish(tmp: Path, path: Path, overwrite: bool) -> None:
         os.rename(tmp, path)
 
 
+@dataclass
 class _TableSpec:
     """What one sorted table (trace or positions) looks like."""
 
-    def __init__(
-        self,
-        name: str,
-        required: tuple[Column, ...],
-        fixed_optional: tuple[Column, ...],
-        extras: dict[str, pl.DataType] | None,
-        extras_allowed: bool,
-        contiguous: bool,
-    ):
-        self.name = name
-        self.required = required  # must be in every chunk (besides the copied columns)
-        self.fixed_optional = (
-            fixed_optional  # fixed columns a chunk may leave out (null)
-        )
-        self.extras = extras
-        self.extras_allowed = extras_allowed
-        self.contiguous = contiguous
+    name: str
+    #: Columns every chunk must have (besides the copied run columns).
+    required: tuple[Column, ...]
+    #: Fixed columns a chunk may leave out; they are null then.
+    fixed_optional: tuple[Column, ...]
+    #: Extra column types; None until the first chunk (or ``extra_columns``) sets them.
+    extras: dict[str, pl.DataType] | None
+    extras_allowed: bool
+    contiguous: bool
 
     @classmethod
     def trace(cls, extra_columns: Mapping[str, pl.DataType] | None) -> _TableSpec:
+        """The trace: required keys and values, and extra logged columns."""
         extras = None
         if extra_columns is not None:
             extras = {}
@@ -274,6 +276,7 @@ class _TableSpec:
 
     @classmethod
     def positions(cls, max_dimension: int) -> _TableSpec:
+        """Positions: required keys and the coordinates ``x0`` to ``x(D-1)``."""
         required = tuple(
             c for c in POSITIONS_KEY_COLUMNS if c.name not in COPIED_RUN_COLUMNS
         )
@@ -282,11 +285,15 @@ class _TableSpec:
         )
         return cls("positions", required, coords, {}, False, contiguous=False)
 
+    def value_columns(self) -> list[Column]:
+        """The fixed optional columns and the extra columns, in output order."""
+        extras = [Column(n, t, True) for n, t in (self.extras or {}).items()]
+        return [*self.fixed_optional, *extras]
+
     def output_columns(self) -> list[Column]:
+        """All columns of the written table, in order."""
         key_cols = TRACE_COLUMNS if self.name == "trace" else POSITIONS_KEY_COLUMNS
-        cols = list(key_cols) + list(self.fixed_optional)
-        cols += [Column(n, t, True) for n, t in (self.extras or {}).items()]
-        return cols
+        return [*key_cols, *self.value_columns()]
 
 
 def _check_extra_name(name: str) -> None:
@@ -294,9 +301,15 @@ def _check_extra_name(name: str) -> None:
         raise fr.FormatError("trace: extra column names must be non-empty strings")
     if is_reserved_trace_name(name):
         raise fr.FormatError(
-            f"trace: extra column {name!r} has a reserved name; rename it and record that in "
-            "manifest['renamed_columns']"
+            f"trace: extra column {name!r} has a reserved name; rename it and record "
+            "that in manifest['renamed_columns']"
         )
+
+
+@dataclass(frozen=True)
+class _Schemas:
+    output: pa.Schema  # the Parquet file
+    spill: pa.Schema  # the spill files: output plus the sort key and group
 
 
 class _SortedTableWriter:
@@ -312,18 +325,16 @@ class _SortedTableWriter:
         self.describe = fr.describe_runs(run_map)
         self.buffer: list[pl.DataFrame] = []
         self.buffered_rows = 0
-        self.spill_rows = 0
-        self.spill_batch_rows = 0
-        self.max_group_rows = MAX_ROW_GROUP_ROWS
+        self.sizes = _Sizes()
         self.spills: list[Path] = []
         self.spill_writer: pa.ipc.RecordBatchFileWriter | None = None
         self.spill_last_key = -1
-        self._arrow_schema: pa.Schema | None = None
-        self._spill_schema: pa.Schema | None = None
+        self._schemas: _Schemas | None = None
 
     # -- input -----------------------------------------------------------------
 
     def write(self, data: FrameSource, file: Path) -> int:
+        """Sort and write every row of ``data``; return the number of rows."""
         try:
             for chunk in fr.iter_frames(data, _INPUT_SLICE_ROWS, self.spec.name):
                 self._add(chunk)
@@ -338,27 +349,34 @@ class _SortedTableWriter:
         df = self._normalise(chunk)
         if df is None:
             return
-        if self.spill_rows == 0:
-            row_bytes = max(8.0, df.estimated_size() / df.height)
-            self.spill_rows = max(_MIN_SPILL_ROWS, int(self.memory_limit / row_bytes))
-            self.spill_batch_rows = max(
-                _MIN_BATCH_ROWS, int(SPILL_BATCH_BYTES / row_bytes)
-            )
-            self.max_group_rows = max(
-                _MIN_BATCH_ROWS,
-                min(MAX_ROW_GROUP_ROWS, int(ROW_GROUP_BYTES / row_bytes)),
+        if not self.sizes.known:
+            self.sizes = _Sizes.for_rows(
+                df.estimated_size() / df.height, self.memory_limit
             )
         self.buffer.append(df)
         self.buffered_rows += df.height
-        if self.buffered_rows >= self.spill_rows:
+        if self.buffered_rows >= self.sizes.spill_rows:
             self._spill()
 
     def _normalise(self, chunk: pl.DataFrame) -> pl.DataFrame | None:
+        """The chunk with format types, run order key and group; None if empty."""
+        self._check_chunk_columns(chunk)
+        if chunk.height == 0:
+            return None
+        given = [c for c in COPIED_RUN_COLUMNS if c in chunk.columns]
+        df = self._conformed(chunk, given)
+        df = self._with_runs(df, given)
+        out = [c.name for c in self.spec.output_columns()]
+        return df.select(
+            *out, fr.sort_key(pl.col(fr.RANK), pl.col("row")).alias(fr.KEY), fr.GROUP
+        )
+
+    def _check_chunk_columns(self, chunk: pl.DataFrame) -> None:
+        """Required columns are present; extra columns are known or set by this chunk."""
         spec = self.spec
-        name = spec.name
         missing = [c.name for c in spec.required if c.name not in chunk.columns]
         if missing:
-            raise fr.FormatError(f"{name}: missing required column(s) {missing}")
+            raise fr.FormatError(f"{spec.name}: missing required column(s) {missing}")
         known = (
             {c.name for c in spec.required}
             | set(COPIED_RUN_COLUMNS)
@@ -367,68 +385,61 @@ class _SortedTableWriter:
         others = [c for c in chunk.columns if c not in known]
         if others and not spec.extras_allowed:
             raise fr.FormatError(
-                f"{name}: unknown column(s) {others}; positions hold run_id, row and x0 to "
-                f"x{len(spec.fixed_optional) - 1} (the largest dimension)"
+                f"{spec.name}: unknown column(s) {others}; positions hold run_id, row "
+                f"and x0 to x{len(spec.fixed_optional) - 1} (the largest dimension)"
             )
         if spec.extras is None:
-            extras = {}
-            for col in others:
-                _check_extra_name(col)
-                extras[col] = fr.extra_column_dtype(
-                    chunk[col].dtype, f"trace column {col!r}"
-                )
-            spec.extras = extras
-        else:
-            unknown = [c for c in others if c not in spec.extras]
-            if unknown:
-                raise fr.FormatError(
-                    f"trace: column(s) {unknown} are not in the first chunk; pass every extra column "
-                    "and its type in extra_columns"
-                )
-        if chunk.height == 0:
-            return None
+            spec.extras = _infer_extras(chunk, others)
+            return
+        unknown = [c for c in others if c not in spec.extras]
+        if unknown:
+            raise fr.FormatError(
+                f"trace: column(s) {unknown} are not in the first chunk; pass every "
+                "extra column and its type in extra_columns"
+            )
 
+    def _conformed(self, chunk: pl.DataFrame, given: list[str]) -> pl.DataFrame:
+        """Chunk columns cast to the format types, missing optional ones as null.
+
+        Copied run columns the caller gave are kept as ``__given_<name>``, to be
+        compared with the run's value.
+        """
+        name = self.spec.name
         cols = [
             fr.conform(chunk[c.name], c.dtype, f"{name} column {c.name!r}").alias(
                 c.name
             )
-            for c in spec.required
+            for c in self.spec.required
         ]
-        for col in [
-            *spec.fixed_optional,
-            *(Column(n, t, True) for n, t in spec.extras.items()),
-        ]:
+        for col in self.spec.value_columns():
             if col.name in chunk.columns:
-                cols.append(
-                    fr.conform(
-                        chunk[col.name], col.dtype, f"{name} column {col.name!r}"
-                    ).alias(col.name)
+                series = fr.conform(
+                    chunk[col.name], col.dtype, f"{name} column {col.name!r}"
                 )
             else:
-                cols.append(
-                    pl.repeat(None, chunk.height, dtype=col.dtype, eager=True).alias(
-                        col.name
-                    )
-                )
-        given = [c for c in COPIED_RUN_COLUMNS if c in chunk.columns]
-        for col in given:  # compared with the run's value after the join
-            cols.append(
-                fr.conform(chunk[col], pl.Int32(), f"{name} column {col!r}").alias(
-                    f"__given_{col}"
-                )
-            )
+                series = pl.repeat(None, chunk.height, dtype=col.dtype, eager=True)
+            cols.append(series.alias(col.name))
+        for col in given:
+            series = fr.conform(chunk[col], pl.Int32(), f"{name} column {col!r}")
+            cols.append(series.alias(f"__given_{col}"))
         df = pl.DataFrame(cols)
-        problems = fr.null_problems(df, [c.name for c in spec.required], name)
+        problems = fr.null_problems(df, [c.name for c in self.spec.required], name)
         if problems:
             raise fr.FormatError(fr.first_problem(problems))
+        return df
 
-        # The join's row order does not matter: rows are sorted by key later.
+    def _with_runs(self, df: pl.DataFrame, given: list[str]) -> pl.DataFrame:
+        """Join the run's rank, group and copied columns, and check them.
+
+        The join's row order does not matter: rows are sorted by key later.
+        """
+        name = self.spec.name
         df = df.join(self.run_map, on="run_id", how="left")
-        unknown_runs = df.filter(pl.col(fr.RANK).is_null())
-        if unknown_runs.height:
+        unknown = df.filter(pl.col(fr.RANK).is_null())
+        if unknown.height:
             raise fr.FormatError(
-                f"{name}: {unknown_runs.height} row(s) refer to run ids that are not in runs, "
-                f"for example {unknown_runs['run_id'][0]}"
+                f"{name}: {unknown.height} row(s) refer to run ids that are not in runs, "
+                f"for example {unknown['run_id'][0]}"
             )
         for col in given:
             if df.filter(pl.col(f"__given_{col}") != pl.col(col)).height:
@@ -439,24 +450,19 @@ class _SortedTableWriter:
             raise fr.FormatError(
                 f"{name}: row must be between 0 and {fr.ROW_LIMIT - 1}"
             )
-        out = [c.name for c in spec.output_columns()]
-        return df.select(
-            *out, fr.sort_key(pl.col(fr.RANK), pl.col("row")).alias(fr.KEY), fr.GROUP
-        )
+        return df
 
     # -- spilling --------------------------------------------------------------
 
-    def _schemas(self) -> tuple[pa.Schema, pa.Schema]:
-        if self._arrow_schema is None:
+    def _get_schemas(self) -> _Schemas:
+        if self._schemas is None:
             out = arrow_schema(self.spec.output_columns(), self.spec.name)
             internal = [
                 pa.field(fr.KEY, pa.int64(), nullable=False),
                 pa.field(fr.GROUP, pa.int64(), nullable=False),
             ]
-            self._arrow_schema = out
-            self._spill_schema = pa.schema([*out, *internal])
-        assert self._spill_schema is not None
-        return self._arrow_schema, self._spill_schema
+            self._schemas = _Schemas(out, pa.schema([*out, *internal]))
+        return self._schemas
 
     def _take_buffer(self, slice_rows: int) -> tuple[int, int, Iterator[pl.DataFrame]]:
         """Empty the buffer: its first and last key, and its rows in key order.
@@ -480,24 +486,25 @@ class _SortedTableWriter:
         return first, last, slices()
 
     def _spill(self) -> None:
-        first, last, parts = self._take_buffer(self.spill_batch_rows)
-        _, spill_schema = self._schemas()
-        if self.spill_writer is None or first <= self.spill_last_key:
-            # The buffer does not continue the current sorted run: start a new spill file.
-            self._close_spill()
-            self.spill_dir.mkdir(exist_ok=True)
-            file = self.spill_dir / f"{len(self.spills):05d}.arrow"
-            options = pa.ipc.IpcWriteOptions(compression="lz4")
-            self.spill_writer = pa.ipc.new_file(
-                str(file), spill_schema, options=options
-            )
-            self.spills.append(file)
-        assert self.spill_writer is not None
+        first, last, parts = self._take_buffer(self.sizes.spill_batch_rows)
+        spill_schema = self._get_schemas().spill
+        writer = self.spill_writer
+        if writer is None or first <= self.spill_last_key:
+            # The buffer does not continue the current sorted run: start a new file.
+            writer = self._new_spill_file(spill_schema)
         for part in parts:
-            table = part.to_arrow().cast(spill_schema)
-            for batch in table.to_batches():
-                self.spill_writer.write_batch(batch)
+            for batch in part.to_arrow().cast(spill_schema).to_batches():
+                writer.write_batch(batch)
         self.spill_last_key = last
+
+    def _new_spill_file(self, schema: pa.Schema) -> pa.ipc.RecordBatchFileWriter:
+        self._close_spill()
+        self.spill_dir.mkdir(exist_ok=True)
+        file = self.spill_dir / f"{len(self.spills):05d}.arrow"
+        options = pa.ipc.IpcWriteOptions(compression="lz4")
+        self.spill_writer = pa.ipc.new_file(str(file), schema, options=options)
+        self.spills.append(file)
+        return self.spill_writer
 
     def _close_spill(self) -> None:
         if self.spill_writer is not None:
@@ -509,7 +516,7 @@ class _SortedTableWriter:
     def _sorted_blocks(self) -> Iterator[pl.DataFrame]:
         if not self.spills:
             if self.buffer:
-                yield from self._take_buffer(max(self.spill_batch_rows, 2**16))[2]
+                yield from self._take_buffer(max(self.sizes.spill_batch_rows, 2**16))[2]
             return
         if self.buffer:
             self._spill()
@@ -522,13 +529,13 @@ class _SortedTableWriter:
                 r.close()
 
     def _write_sorted(self, file: Path) -> int:
-        arrow_out, _ = self._schemas()
         checker = fr.OrderChecker(self.spec.name, self.spec.contiguous, self.describe)
+        max_rows = self.sizes.max_group_rows
         out = _RowGroupWriter(
             file,
-            arrow_out,
-            min(MIN_ROW_GROUP_ROWS, self.max_group_rows),
-            self.max_group_rows,
+            self._get_schemas().output,
+            min(MIN_ROW_GROUP_ROWS, max_rows),
+            max_rows,
         )
         try:
             for block in self._sorted_blocks():
@@ -541,13 +548,46 @@ class _SortedTableWriter:
             out.close()
 
 
+def _infer_extras(chunk: pl.DataFrame, names: list[str]) -> dict[str, pl.DataType]:
+    """Extra column types from the first chunk."""
+    extras = {}
+    for col in names:
+        _check_extra_name(col)
+        extras[col] = fr.extra_column_dtype(chunk[col].dtype, f"trace column {col!r}")
+    return extras
+
+
+@dataclass(frozen=True)
+class _Sizes:
+    """Row counts derived from the estimated bytes per row of the first chunk."""
+
+    spill_rows: int = 0
+    spill_batch_rows: int = 0
+    max_group_rows: int = MAX_ROW_GROUP_ROWS
+
+    @property
+    def known(self) -> bool:
+        return self.spill_rows > 0
+
+    @classmethod
+    def for_rows(cls, row_bytes: float, memory_limit: int) -> _Sizes:
+        row_bytes = max(8.0, row_bytes)
+        return cls(
+            spill_rows=max(_MIN_SPILL_ROWS, int(memory_limit / row_bytes)),
+            spill_batch_rows=max(_MIN_BATCH_ROWS, int(SPILL_BATCH_BYTES / row_bytes)),
+            max_group_rows=max(
+                _MIN_BATCH_ROWS,
+                min(MAX_ROW_GROUP_ROWS, int(ROW_GROUP_BYTES / row_bytes)),
+            ),
+        )
+
+
 class _SpillReader:
     """Reads the record batches of one sorted spill file, one at a time."""
 
     def __init__(self, file: Path):
-        self._source = pa.OSFile(
-            str(file), "rb"
-        )  # not mmap: mapped pages would count as RSS
+        # Not a memory map: mapped pages would count towards the resident memory.
+        self._source = pa.OSFile(str(file), "rb")
         self._reader = pa.ipc.open_file(self._source)
         self._count = self._reader.num_record_batches
         self._next = 0
@@ -558,13 +598,12 @@ class _SpillReader:
         return self._next >= self._count
 
     def next(self) -> pl.DataFrame | None:
+        """The next non-empty batch, or None at the end of the file."""
         while self._next < self._count:
             batch = self._reader.get_batch(self._next)
             self._next += 1
             if batch.num_rows:
-                df = pl.from_arrow(batch)
-                assert isinstance(df, pl.DataFrame)
-                return df
+                return fr.frame_from_arrow(batch)
         return None
 
     def close(self) -> None:
@@ -579,31 +618,35 @@ def _merge(readers: list[_SpillReader]) -> Iterator[pl.DataFrame]:
     before an emitted one. The file that sets that bound is drained, so every round
     makes progress.
     """
-    buffers = [r.next() for r in readers]
-    while True:
-        live = [i for i, b in enumerate(buffers) if b is not None]
-        if not live:
-            return
-        bounds = [int(buffers[i][fr.KEY][-1]) for i in live if not readers[i].exhausted]  # type: ignore[index]
+    live = [(r, b) for r in readers if (b := r.next()) is not None]
+    while live:
+        bounds = [int(buf[fr.KEY][-1]) for r, buf in live if not r.exhausted]
         bound = min(bounds) if bounds else None
-        parts = []
-        for i in live:
-            buf = buffers[i]
-            assert buf is not None
-            n = (
-                buf.height
-                if bound is None
-                else int(buf[fr.KEY].search_sorted(bound, side="right"))
-            )
-            if n == 0:
-                continue
-            parts.append(buf.slice(0, n))
-            rest = buf.slice(n)
-            buffers[i] = rest if rest.height else readers[i].next()
+        parts, still = [], []
+        for reader, buf in live:
+            head, rest = _split_at(buf, bound)
+            if head.height:
+                parts.append(head)
+            nxt = rest if rest.height else reader.next()
+            if nxt is not None:
+                still.append((reader, nxt))
+        live = still
         if len(parts) == 1:
             yield parts[0]
         elif parts:
             yield pl.concat(parts, how="vertical").sort(fr.KEY)
+
+
+def _split_at(
+    buf: pl.DataFrame, bound: int | None
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """The rows of sorted ``buf`` with key at most ``bound`` (all if None), and the rest."""
+    n = (
+        buf.height
+        if bound is None
+        else int(buf[fr.KEY].search_sorted(bound, side="right"))
+    )
+    return buf.slice(0, n), buf.slice(n)
 
 
 class _RowGroupWriter:

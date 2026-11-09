@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any
 
 import polars as pl
+import pyarrow as pa
 
 from .ids import run_ids, source_path_problem
 from .schema import (
@@ -110,24 +111,36 @@ def runs_problems(
     )
     if problems:
         return problems
+    return [
+        *_run_id_problems(df, dataset_id),
+        *_range_problems(df),
+        *_source_problems(df, source_paths),
+    ]
 
+
+def _run_id_problems(df: pl.DataFrame, dataset_id: str) -> list[str]:
+    problems = []
     expected = run_ids(dataset_id, df["source_file"], df["source_run_index"])
-    wrong = df.filter(df["run_id"] != expected)
+    wrong = df.with_columns(expected.alias("__expected")).filter(
+        pl.col("run_id") != pl.col("__expected")
+    )
     if wrong.height:
         r = wrong.row(0, named=True)
         problems.append(
-            f"runs: {wrong.height} run id(s) differ from the stable hash, for example run {r['run_id']} "
-            f"({r['source_file']!r}, index {r['source_run_index']}) should be "
-            f"{expected.filter(df['run_id'] != expected)[0]}"
+            f"runs: {wrong.height} run id(s) differ from the stable hash, for example "
+            f"run {r['run_id']} ({r['source_file']!r}, index {r['source_run_index']}) "
+            f"should be {r['__expected']}"
         )
     if df["run_id"].n_unique() != df.height:
         problems.append("runs: run_id is not unique")
-    if (
-        df.select(pl.struct("source_file", "source_run_index").n_unique()).item()
-        != df.height
-    ):
+    pairs = df.select(pl.struct("source_file", "source_run_index").n_unique()).item()
+    if pairs != df.height:
         problems.append("runs: (source_file, source_run_index) is not unique")
+    return problems
 
+
+def _range_problems(df: pl.DataFrame) -> list[str]:
+    problems = []
     for column, condition, rule in (
         ("dimension", pl.col("dimension") < 1, "at least 1"),
         ("source_run_index", pl.col("source_run_index") < 0, ">= 0"),
@@ -136,7 +149,18 @@ def runs_problems(
         n = df.filter(condition).height
         if n:
             problems.append(f"runs: {n} run(s) have {column} that is not {rule}")
+    sha = pl.col("source_rows_sha256")
+    bad_sha = df.filter(sha.is_not_null() & ~sha.str.contains(f"^{_SHA256.pattern}$"))
+    if bad_sha.height:
+        problems.append(
+            f"runs: {bad_sha.height} source_rows_sha256 value(s) are not 64 "
+            "lower-case hex digits"
+        )
+    return problems
 
+
+def _source_problems(df: pl.DataFrame, source_paths: set[str] | None) -> list[str]:
+    problems = []
     for path in df["source_file"].unique().sort().to_list():
         problem = source_path_problem(path)
         if problem is not None:
@@ -145,21 +169,20 @@ def runs_problems(
             problems.append(
                 f"runs: source_file {path!r} is not listed in the manifest's sources"
             )
-
-    bad_sha = df.filter(
-        pl.col("source_rows_sha256").is_not_null()
-        & ~pl.col("source_rows_sha256").str.contains(f"^{_SHA256.pattern}$")
-    )
-    if bad_sha.height:
-        problems.append(
-            f"runs: {bad_sha.height} source_rows_sha256 value(s) are not 64 lower-case hex digits"
-        )
-
     return problems
 
 
-def _reject_constant(name: str) -> Any:
+def reject_json_constant(name: str) -> Any:
+    """``parse_constant`` hook for ``json.loads`` that refuses NaN and Infinity."""
     raise ValueError(f"{name} is not allowed in JSON")
+
+
+def frame_from_arrow(data: pa.RecordBatch | pa.Table) -> pl.DataFrame:
+    """A polars DataFrame from an Arrow batch or table."""
+    df = pl.from_arrow(data)
+    if not isinstance(df, pl.DataFrame):  # from_arrow returns a Series for arrays
+        raise TypeError(f"expected a table, got {type(data).__name__}")
+    return df
 
 
 def sort_runs(df: pl.DataFrame) -> pl.DataFrame:
@@ -232,22 +255,27 @@ class OrderChecker:
         self.last = int(keys[-1])
         if bad.height == 0:
             return None
-        b = bad.row(0, named=True)
+        return self._message(bad.row(0, named=True))
+
+    def _message(self, b: dict[str, int]) -> str:
+        """Explain the first key that is out of order."""
         run = self.describe(b["rank"])
         if b["key"] == b["prev"]:
-            return f"{self.table}: {run} has row {b['row']} twice"
-        if b["rank"] < b["prank"]:
-            return (
-                f"{self.table}: rows are not in run order: {run} comes after "
+            problem = f"{run} has row {b['row']} twice"
+        elif b["rank"] < b["prank"]:
+            problem = (
+                f"rows are not in run order: {run} comes after "
                 f"{self.describe(b['prank'])}, or its rows are not contiguous"
             )
-        if b["rank"] == b["prank"]:
-            if b["row"] < b["prow"]:
-                return (
-                    f"{self.table}: {run}: row {b['row']} comes after row {b['prow']}"
-                )
-            return f"{self.table}: {run}: row {b['row']} follows row {b['prow']}; rows must have no gaps"
-        return f"{self.table}: {run}: the first row is {b['row']}; rows must start at 0"
+        elif b["rank"] > b["prank"]:
+            problem = f"{run}: the first row is {b['row']}; rows must start at 0"
+        elif b["row"] < b["prow"]:
+            problem = f"{run}: row {b['row']} comes after row {b['prow']}"
+        else:
+            problem = (
+                f"{run}: row {b['row']} follows row {b['prow']}; rows must have no gaps"
+            )
+        return f"{self.table}: {problem}"
 
 
 def sort_key(rank: pl.Expr, row: pl.Expr) -> pl.Expr:

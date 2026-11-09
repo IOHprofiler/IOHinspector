@@ -28,7 +28,11 @@ def test_ten_million_rows_stay_under_two_gigabytes(tmp_path):
     print(
         f"\nwrite of {ROWS} rows: {report['seconds']:.1f} s, peak RSS {report['peak_rss_bytes'] / 2**20:.0f} MiB"
     )
-    assert report["counts"] == {"runs": RUNS, "trace_rows": ROWS}
+    assert report["counts"] == {
+        "runs": RUNS,
+        "descriptors_rows": 2 * RUNS,  # algorithm_name and algorithm_info
+        "trace_rows": ROWS,
+    }
     assert report["peak_rss_bytes"] < LIMIT_BYTES
 
     assert pq.ParquetFile(out / "trace.parquet").metadata.num_rows == ROWS

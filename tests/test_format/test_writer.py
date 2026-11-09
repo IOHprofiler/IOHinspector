@@ -175,12 +175,17 @@ def test_scanned_dataset_writes_back_identically(tmp_path):
         syn.manifest,
         syn.runs,
         syn.trace,
-        syn.positions,
-        syn.descriptors,
+        positions=syn.positions,
+        descriptors=syn.descriptors,
     )
     ds = scan_dataset(tmp_path / "a")
     write_dataset(
-        tmp_path / "b", ds.manifest, ds.runs, ds.trace, ds.positions, ds.descriptors
+        tmp_path / "b",
+        ds.manifest,
+        ds.runs,
+        ds.trace,
+        positions=ds.positions,
+        descriptors=ds.descriptors,
     )
     again = scan_dataset(tmp_path / "b")
     assert again.manifest["descriptors"] == ds.manifest["descriptors"]
@@ -239,7 +244,7 @@ def test_positions_round_trip(tmp_path):
         syn.manifest,
         syn.runs,
         syn.trace,
-        shuffled_chunks(syn.positions, 3),
+        positions=shuffled_chunks(syn.positions, 3),
     )
     ds = scan_dataset(tmp_path / "ds")
     pos = ds.positions.collect()
@@ -266,7 +271,9 @@ def test_positions_chunks_may_leave_out_high_coordinates(tmp_path):
     pos = syn.positions.join(syn.runs.select("run_id", "dimension"), on="run_id")
     low = pos.filter(pl.col("dimension") == 2).select("run_id", "row", "x0", "x1")
     high = pos.filter(pl.col("dimension") == 3).drop("dimension")
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace, [low, high])
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, positions=[low, high]
+    )
     assert (
         scan_dataset(tmp_path / "ds").positions.collect().height == syn.positions.height
     )
