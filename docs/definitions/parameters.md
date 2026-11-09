@@ -1,6 +1,7 @@
 # Parameters, positions and constraint penalties
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "Parameters, correlations, positions" and "Constraint
 penalties". These rows are on the parity matrix but not named in I02's step
 list; they are covered here because I14 depends on them.
@@ -11,8 +12,9 @@ Sources: [IOHanalyzer], [iohinspector]; see [references](references.md).
 
 - Each logged row of run i may carry extra columns: algorithm parameters
   (for example a step size σ), positions x0…x(d−1) (stored apart in
-  `positions.parquet`), and a constraint `violation` v_ij ≥ 0, where 0 means
-  feasible. These columns need not be monotone.
+  `positions.parquet`), and a constraint `violation` v_ij, a signed real number
+  as logged (see "Constraint violations in IOHexperimenter" below). These
+  columns need not be monotone.
 - j*(i, t) is the row at which run i first reaches target t, the row of
   T_i(t) ([alignment](alignment.md)); j°(i, b) is the last row with
   e_ij ≤ b.
@@ -51,16 +53,66 @@ are shown per instance and per run, unaligned.
 ### Constraint penalties
 
 A penalised value g_ij = g(f_ij, v_ij) replaces f_ij **before** best-so-far,
-hitting times and every metric are computed. With factor c ≥ 0 and the sign
-s = +1 when minimising and −1 when maximising (a penalty always makes a value
-worse):
+hitting times and every metric are computed. With factor c ≥ 0, exponent
+p > 0 (default 1) and the sign s = +1 when minimising and −1 when maximising (a
+penalty always makes a value worse). A row is **infeasible** when the
+feasibility rule says so: by default v ≠ 0 (`feasible = "zero"`), so negative
+violations are supported and count as infeasible; `feasible = "nonpositive"`
+(v ≤ 0 is feasible) reproduces IOHanalyzer's `y <= 0` test. The size of the
+violation is |v|:
 
 | Method | g(f, v) |
 |---|---|
 | ignore | f |
-| relative | f + s · c · v |
-| absolute | f + s · c if v > 0, else f |
-| set to value | f if v = 0, else c |
+| relative | f + s · c · \|v\|^p if infeasible, else f |
+| absolute | f + s · c if infeasible, else f |
+| set to value | f if feasible, else c |
+
+With p = 1 and v ≥ 0 this is IOHanalyzer's relative penalty on infeasible
+rows. With general c and p it reproduces IOHexperimenter's own penalty
+`weight · violation^exponent` (where the sign s is the user's choice of
+direction, see below).
+
+#### Constraint violations in IOHexperimenter
+
+Read from `source/iohexperimenter` at 1e44e067 (the sources; no logged data
+was needed). This answers Q-PA-1.
+
+- A constraint has an enforcement `Enforced` (`include/ioh/problem/constraints.hpp`
+  9–18): `NOT` (nothing computed; the logged violation is always 0), `HIDDEN`
+  (violation computed, y not penalised), `SOFT` (y + penalty, the penalties of
+  all constraints summed), `HARD` and `OVERRIDE` (y replaced by the penalty).
+  Only `HIDDEN` and `NOT` leave the logged y unpenalised.
+- The penalty is `weight · pow(violation, exponent)` (line 112) and is **added**
+  to y (`y + penalty()`, lines 106 and 215), whatever the optimisation
+  direction. For a maximisation problem a positive weight therefore improves y;
+  the sign is the user's weight.
+- `BoxConstraint` (lines 283–336): the violation is the sum over coordinates of
+  the squared distance outside the bounds, so v ≥ 0 and 0 means feasible.
+- `FunctionalConstraint` (lines 370–397): the violation is whatever the user's
+  function returns, and the point is infeasible when `abs(violation) > 0`
+  (line 392). So **negative values are possible and infeasible**, and zero is
+  feasible.
+- `GraphConstraint` (`problem/submodular/graph_problem.hpp` 245–278) and
+  `PWTConstraint` (`problem/submodular/pack_while_travel.hpp` 195–225), both
+  `HARD`: the "violation" is the load (the weighted sum of the selected
+  items), which is positive also for feasible points; the point is infeasible
+  only when the load exceeds the limit or capacity, and the penalty is
+  `weight · (limit − load [+ penalty term])^exponent`, so it can be negative.
+  For these problems v = 0 does **not** mean feasible, and the logged y is
+  already penalised.
+- The logger's `violation` and `penalty` properties
+  (`include/ioh/logger/properties.hpp` 314–377) log index 0 by default, the
+  **sum** over all constraints of the set (`logger/loginfo.hpp` 91–92); index i
+  logs one constraint.
+
+Consequences: the logged y already contains the penalty unless the constraint
+was `HIDDEN` or `NOT`, so the post-hoc penalties here are meant for those;
+`ignore` is right for `SOFT`, `HARD` and `OVERRIDE` data. The default rule
+`feasible = "zero"` is correct for box and functional constraints; load-type
+violations (graph, pack-while-travel) need the user to give their threshold
+(a callable `feasible`). The reader (I05) must keep the signed violation
+unchanged.
 
 ## How IOHanalyzer implements it
 
@@ -125,11 +177,12 @@ which are outside the parity list.
 |---|---|---|---|
 | Parameter at budget | next logged row (≥ b) | – | last row ≤ b, carried forward |
 | Parameter at target (JSON data) | wrong rows, counts | – | value on the hitting row |
-| Penalty "absolute" | added to every row | – | only when v > 0 |
+| Feasibility | `y <= 0` is feasible (`violation` column) | – | v = 0 (IOHexperimenter's rule); `nonpositive` option |
+| Penalty "absolute" | added to every row | – | only on infeasible rows |
 | Penalty under maximisation | added (improves value) | – | subtracted |
 | Penalty then best-so-far | yes | – | yes |
 
-## Proposed decisions
+## Decisions
 
 - **PA-1.** Parameter at target = value on the first row that reaches the
   target; at budget = value on the last row at or before the budget, carried
@@ -138,16 +191,29 @@ which are outside the parity list.
 - **PA-3.** Correlation views return raw matched rows, no coefficient.
 - **PA-4.** Penalties are applied to raw values before best-so-far, with the
   four methods above; "absolute" penalises only infeasible rows and every
-  penalty makes the value worse under both directions.
+  penalty makes the value worse under both directions. A row is infeasible when
+  v ≠ 0 by default, so negative violations are supported (`feasible` selects
+  other rules); the penalty size uses |v|. Decided by the D6 review (dvermetten, 2026-11-06).
 - **PA-5.** IOHanalyzer's JSON parameter-by-target lookup is not ported; the
   golden tests name PA-1.
+- **PA-6.** The signed violation is stored and passed through as logged,
+  including negative values. Its meaning follows IOHexperimenter's constraint
+  types, as documented above: 0 is feasible for box and functional constraints,
+  and the load-type violations of the graph and pack-while-travel problems need
+  a user-given threshold. Logged y values of `SOFT`, `HARD` and `OVERRIDE`
+  constraints already contain the penalty. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-PA-1: Is "violation ≥ 0, 0 = feasible" the right reading of
-  IOHexperimenter's `violation` column for every constrained suite, or do
-  some suites log a signed value (IOHanalyzer's `y <= 0` test suggests
-  negative values may occur)?
+- Q-PA-1 (values a constraint violation can take): IOHexperimenter's sources
+  were checked, see "Constraint violations in IOHexperimenter". Negative
+  values are possible (functional constraints) and are supported. See PA-4 and
+  PA-6.
+
+Remaining points for H1: the default feasibility rule v ≠ 0 and the size |v|^p
+(with p = 1), which keep "a penalty never improves a value" while supporting
+negative violations; the review asked only that negative values be supported.
+Whether load-type violations need a different default is for the user to see.
 
 ## Test tolerance
 
