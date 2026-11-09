@@ -1,6 +1,7 @@
 # Empirical attainment function (EAF) and EAF differences
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "EAF and EAF differences".
 Implemented in: I17.
 Sources: [IOHanalyzer], [iohinspector], the R package `eaf` and the Python
@@ -28,6 +29,19 @@ IOHanalyzer shows the surfaces at the percentages 0, 10, …, 100 (11 levels)
 by default, as computed by `eaf::eafs(..., percentiles = ...)`; I17 must check
 that `moocore` maps percentages to levels in the same way before using it.
 
+### Two modes: precise and discretised
+
+Every EAF output, the EAF and the EAF difference alike, comes in two modes
+(EA-5):
+
+- **precise**: the true EAF, as `moocore` computes it, valid at any budget and
+  any value: the attainment surfaces, and for differences the rectangles where
+  Δ is constant. Nothing is sampled.
+- **discretised**: both the evaluation axis and the target (value) axis are
+  discretised, so the EAF becomes a matrix α[b_l, y_m] of 50 log-spaced budgets
+  by 50 log-spaced values by default (IOHanalyzer's difference grid), each
+  adjustable. The EAF difference is the difference of two such matrices.
+
 ### EAF difference
 
 For two run sets A and B, Δ(b, y) = α_A(b, y) − α_B(b, y). It is reported
@@ -40,7 +54,10 @@ pointwise maximum of the others: Δ_a = α_a − max_{c ≠ a} α_c.
 
 Raw f values of different functions are not comparable, so a multi-function
 EAF uses the normalised quality q of [ecdf](ecdf.md) (EC-5, bounds per pair)
-instead of f. Its area is the AOCC (equivalence in [ecdf](ecdf.md)).
+instead of f. Its area is the AOCC (equivalence in [ecdf](ecdf.md)). The
+default bounds are 10² and 10⁻⁸ on Δf = f − f_opt for BBOB data (AL-7), as in
+COCO's grid; for other data they are the observed range of each pair. The user
+can set both.
 
 ## How IOHanalyzer implements it
 
@@ -85,25 +102,39 @@ instead of f. Its area is the AOCC (equivalence in [ecdf](ecdf.md)).
 | Quantity | raw f | normalised log quality | raw f per pair; q across pairs |
 | Best-so-far | yes | not in `turbo_align` | always |
 | Levels | 11 percentages via `eaf` | 101 quality levels | 11 percentages, configurable |
-| Difference | exact rectangles, or 50 × 50 grid | moocore rectangles | both |
+| Modes | EAF: levels; difference: exact or 50 × 50 grid | moocore; discretised version of the EAF | precise and discretised, for the EAF and the difference |
 | Multi-function | raw f pooled; xmax bug | – | q per pair; bug not ported |
 | Maximisation | negated | not passed in the discretised EAF | negated |
 
-## Proposed decisions
+## Decisions
 
 - **EA-1.** α(b, y) on best-so-far values, with levels at 0, 10, …, 100 % by
   default, computed with `moocore` once its level convention is checked
   against `eaf` (I17).
-- **EA-2.** EAF differences exactly (rectangles) and on the 50 × 50 log grid;
-  with more than two algorithms, against the pointwise maximum of the others.
+- **EA-2.** EAF differences in the two modes of EA-5 (rectangles, and the
+  discretised matrix with a 50 × 50 log grid by default); with more than two
+  algorithms, against the pointwise maximum of the others.
 - **EA-3.** Multi-function EAFs use the normalised quality q with fixed
-  bounds per pair.
+  bounds per pair. For BBOB data the default bounds are 10² (upper) and 10⁻⁸
+  (lower) on Δf; otherwise the observed range per pair. Decided by the D6 review (dvermetten, 2026-11-06).
 - **EA-4.** The Shiny `xmax = Min` bug is not ported.
+- **EA-5.** Two modes, for both the EAF and the EAF difference. *Precise*: the
+  true EAF as `moocore` returns it, at any budget. *Discretised*: evaluation
+  and target axes are both discretised so the EAF is a matrix; default 50
+  log-spaced budgets × 50 log-spaced values, both axes adjustable. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-EA-1: For the multi-function EAF, are the observed ranges per pair the
-  right default bounds, or should bbob data use 1e-8 and 1e2 as COCO does?
+- Q-EA-1 (default bounds for the multi-function EAF): for BBOB data 10² and
+  10⁻⁸. See EA-3.
+- Added requirement: precise and discretised modes, for the EAF and the EAF
+  difference. See EA-5.
+
+Remaining points for H1: the default 50 × 50 grid for the discretised mode is
+IOHanalyzer's difference grid, chosen because the review named no size; the
+review did not say how BBOB data is recognised (proposed: the suite name in the
+run metadata). The same bounds apply to AOCC through EC-5 (see
+[ecdf](ecdf.md)).
 
 ## Test tolerance
 

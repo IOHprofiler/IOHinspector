@@ -1,6 +1,7 @@
 # ECDF, aggregation, AUC, AOCC and multi-function ranks
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "ECDF and AUC as in IOHanalyzer", "Multi-function
 aggregation and ranks"; AOCC from the "New" row.
 Implemented in: I12.
@@ -29,9 +30,14 @@ exactly at those points and sampled on a grid only for display.
 
 ### Aggregation over pairs
 
-    ECDF_A(b) = (1 / |P_A|) Σ_{p ∈ P_A} ECDF_{A,p}(b)
+    ECDF_A(b) = (1 / |P|) Σ_{p ∈ P} ECDF_{A,p}(b)
 
-Each (function, dimension) pair has equal weight; inside a pair each target and
+with P the set of pairs that **every** compared algorithm has (the common
+pairs; EC-2). When the algorithms' pairs differ, a clear warning names the
+pairs that were left out and for which algorithm. A parameter `pairs = "all"`
+averages each algorithm over its own pairs, P_A, instead, and the warning is
+still raised, because such curves are hard to interpret. Each (function,
+dimension) pair has equal weight; inside a pair each target and
 each run has equal weight. When every pair has the same number of targets,
 which is the default (10 per pair, or the 51 bbob targets), this is the same as
 weighting each (pair, target) combination equally, as cocopp does. Runs of
@@ -227,20 +233,25 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 | AOCC bounds | – | – | from aligned data | fixed per pair |
 | Ranks | `frank`, average ties, NA last | – | – | same |
 
-## Proposed decisions
+## Decisions
 
 - **EC-1.** The ECDF is target-based, inclusive in f and in budget, with
   targets per pair from TG-1 (default 10 log-linear). The strict comparison is
   not ported.
 - **EC-2.** Aggregation weights each (function, dimension) pair equally, then
-  each target and each run within the pair. This answers the plan's question.
+  each target and each run within the pair. When the compared algorithms do not
+  all have the same pairs, only the common pairs are used and a clear warning
+  says which pairs were dropped. A parameter (`pairs = "all"`) averages over
+  each algorithm's own pairs; it still raises the warning. This answers the
+  plan's question. Decided by the D6 review (dvermetten, 2026-11-06).
 - **EC-3.** The ECDF is computed exactly at the hitting times; display grids
   only sample it.
 - **EC-4.** The AUC is the exact normalised integral over [b_lo, b_hi] on the
   chosen axis. IOHanalyzer's trapezoid and divisor are reproduced only in the
   golden test that names EC-4.
 - **EC-5.** AOCC uses best-so-far values and bounds fixed per pair before
-  alignment; it equals the AUC of the continuum ECDF, and a test checks the
+  alignment (for BBOB data 10² and 10⁻⁸ on Δf by default, as in EA-3 of
+  [eaf](eaf.md), otherwise the observed range per pair); it equals the AUC of the continuum ECDF, and a test checks the
   equivalence numerically.
 - **EC-6.** The current `get_data_ecdf` stays available under a clear name
   (for example `ecdf_continuous`), with EC-5's fixed bounds.
@@ -252,9 +263,16 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 
 - Q-EC-1: Which data gave 0.67 and 0.90? If it can be found, I12 should add it
   as a second golden case.
-- Q-EC-2: When an algorithm lacks some pairs, should the aggregated ECDF
-  average over its own pairs (proposed, as IOHanalyzer) or only over the pairs
-  every selected algorithm has?
+
+## Questions answered by the D6 review
+
+- Q-EC-2 (algorithms with different pairs): use only the common pairs, with a
+  clear warning, and a parameter that averages everything but still warns. See
+  EC-2.
+
+Remaining points for H1: none. EC-5's bounds follow the EAF answer (Q-EA-1);
+that is a consequence of AOCC and the continuum ECDF being equal, not a
+separate review answer.
 
 ## Test tolerance
 

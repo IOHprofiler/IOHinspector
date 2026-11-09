@@ -1,6 +1,7 @@
 # Glicko-2 tournament ranking
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Glicko-2 ranking" (iohinspector has Elo instead).
 Implemented in: I15.
 Sources: [IOHanalyzer], [PlayerRatings], [Glickman2022], [iohinspector]; see
@@ -34,8 +35,10 @@ PlayerRatings' Glicko-2 [PlayerRatings], which follows [Glickman2022] with
 these settings:
 
 - initial rating 1500, deviation 350, volatility 0.06 (IOHanalyzer's `init`);
-- system constant τ = 1.2 (PlayerRatings' default, which IOHanalyzer does not
-  override);
+- system constant τ, a parameter with default 0.5. Glickman recommends values
+  between 0.3 and 1.2 and uses 0.5 in his worked example [Glickman2022]; the
+  review asked for a value in that range. PlayerRatings' default, and so
+  IOHanalyzer's behaviour, is 1.2, which stays available;
 - scale q = ln(10)/400, i.e. 173.7178 per Glicko-2 unit;
 - deviation capped at rdmax = 350 and volatility at q · 350;
 - no first-move advantage (γ = 0).
@@ -50,6 +53,17 @@ minimiser's tolerance.
 
 Output per algorithm: rating, deviation, volatility, and games, wins, draws
 and losses.
+
+### Elo option
+
+The ranking function has a parameter `method = "glicko2" | "elo"`. The Elo
+option plays the same tournament and rates the games one by one in round
+order, within a round in a seeded random order, with the Elo update of
+[Elo1978]: expected score E = 1/(1 + 10^((R_c − R_a)/400)) and
+R_a' = R_a + K (S − E), initial rating 1500 and K = 20, the defaults of skelo
+0.1.5, which iohinspector 0.0.8 uses. Elo has no deviation; as in 0.0.8, the
+reported spread is the standard deviation of a rating over the last 5 % of
+rounds.
 
 ## Checked against Glickman's worked example
 
@@ -104,32 +118,42 @@ standard deviation of the ratings over the last 5 % of rounds.
 
 | Item | IOHanalyzer | iohinspector 0.0.8 | Proposed |
 |---|---|---|---|
-| Rating system | Glicko-2 (PlayerRatings) | Elo (skelo) | Glicko-2 as PlayerRatings |
+| Rating system | Glicko-2 (PlayerRatings) | Elo (skelo) | `method`: Glicko-2 (default) or Elo |
 | Games per round | each unordered pair once per pair of (f, d) | each ordered pair once | as IOHanalyzer |
 | Draw of runs | shared resample per round | uniform per game | uniform per game |
 | Failed runs (fixed target) | lose | – (values only) | lose; two failures draw |
 | Seed | none | none | required |
 | Rounds | 100 (function), 25 (Shiny) | 25 | parameter, default 25 |
 
-## Proposed decisions
+## Decisions
 
 - **GL-1.** Tournament as defined above: one game per round, (function,
   dimension) pair and unordered algorithm pair, runs drawn independently and
   uniformly, failures lose, ties draw.
 - **GL-2.** Rating update ported from PlayerRatings 1.1-0 with init
-  (1500, 350, 0.06), τ = 1.2, rdmax 350, γ = 0, each round a rating period.
+  (1500, 350, 0.06), rdmax 350, γ = 0, each round a rating period, and τ a
+  modifiable parameter with default 0.5, a value in Glickman's recommended range
+  0.3–1.2. IOHanalyzer's behaviour is τ = 1.2. Decided by the D6 review (dvermetten, 2026-11-06).
   The volatility step ports R's `optimize` (Brent's `fmin`) with its default
   tolerance, so that given the same game list the ratings match PlayerRatings.
 - **GL-3.** The caller supplies a seed; the same seed gives the same ratings.
   Results are not expected to match IOHanalyzer's random games; golden tests
   feed the recorded R game list into the rating update instead.
-- **GL-4.** The Elo-based `get_tournament_ratings` stays available under its
-  own name, marked as not Glicko-2.
+- **GL-4.** The ranking function takes `method`, `"glicko2"` (default) or
+  `"elo"`, so users can switch between Elo and Glicko-2. The Elo option uses
+  the Elo update with K = 20 and the tournament of GL-1 (each unordered pair
+  once, not each ordered pair twice as in 0.0.8), and supersedes 0.0.8's
+  `get_tournament_ratings`. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-GL-1: Keep τ = 1.2 (PlayerRatings' default, and IOHanalyzer's behaviour)
-  or use a value in Glickman's suggested range 0.3–1.2 such as 0.5?
+- Q-GL-1 (τ): a value in the recommended range, and τ is modifiable. See GL-2:
+  default 0.5.
+- Added requirement: a switch between Elo and Glicko-2. See GL-4.
+
+Remaining points for H1: τ = 0.5 (Glickman's example value) is my pick within
+0.3–1.2; the Elo defaults (K = 20, 1500, scale 400) are skelo's, because
+iohinspector 0.0.8 uses them.
 
 ## Test tolerance
 
