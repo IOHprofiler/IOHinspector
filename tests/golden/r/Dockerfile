@@ -3,6 +3,10 @@
 # so every version is fixed by the base image digest.
 FROM rocker/r-ver:4.3.3@sha256:732d15020af326da9e919c07f70ca32bf5d3e409220af32e0a4b6d0a89437309
 
+# Apt packages are left unpinned (hadolint DL3008): they only provide build headers and libgsl/libglpk,
+# and exact apt versions drop out of the Ubuntu archive. The golden outputs depend on R and the CRAN
+# snapshot, which the image digest and the Posit date pin; make golden-check guards the result.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git libgsl-dev libglpk-dev libcurl4-openssl-dev libssl-dev libxml2-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*

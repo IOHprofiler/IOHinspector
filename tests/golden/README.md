@@ -40,7 +40,7 @@ make golden-fixtures # only when the fixtures themselves change
 
 Docker needs the docker group; in a session without it use `sg docker -c 'make golden'`. The
 IOHanalyzer source tree for the image is exported with `git archive caecada^` from
-a clone of https://github.com/IOHprofiler/IOHanalyzer (cached in `r/cache/`; set `IOHANALYZER=<path>` to use a local
+a clone of <https://github.com/IOHprofiler/IOHanalyzer> (cached in `r/cache/`; set `IOHANALYZER=<path>` to use a local
 checkout instead) into `r/ctx/`. Both folders are git ignored. cocopp runs in a uv venv (`.venv`, from `requirements-golden.txt`).
 
 Everything is deterministic: random steps use `set.seed(20240423)`, Parquet is written with zstd,

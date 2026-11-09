@@ -23,7 +23,6 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import scipy
-import six  # noqa: F401  (cocopp needs it)
 from cocopp import pproc
 
 TARGETS_51 = 10 ** (2 - np.arange(51) / 5)
@@ -49,7 +48,10 @@ def main(fix_dir: str, out_dir: str) -> None:
     t_col, r_col, i_col, e_col = [], [], [], []
     for t, arr in zip(TARGETS_51, evals):
         for run, (inst, v) in enumerate(zip(ds.instancenumbers, np.asarray(arr, dtype=float))):
-            t_col.append(float(t)); r_col.append(run); i_col.append(int(inst)); e_col.append(float(v))
+            t_col.append(float(t))
+            r_col.append(run)
+            i_col.append(int(inst))
+            e_col.append(float(v))
     write(os.path.join(out_dir, "runtimes_51targets.parquet"),
           {"target": t_col, "run": r_col, "instance": i_col, "evals": e_col})
 
@@ -62,7 +64,9 @@ def main(fix_dir: str, out_dir: str) -> None:
         ev = [np.asarray(x, dtype=float) for x in ds.detEvals(targets)]
         hits = [a[np.isfinite(a)] for a in ev]
         rows["mean_evals_success"] = [float(h.mean()) if h.size else float("nan") for h in hits]
-        rows["median_evals_success"] = [float(np.median(h)) if h.size else float("nan") for h in hits]
+        rows["median_evals_success"] = [
+            float(np.median(h)) if h.size else float("nan") for h in hits
+        ]
         write(os.path.join(out_dir, name), rows)
 
     art_table(TARGETS_51, "art_51targets.parquet")
@@ -73,7 +77,8 @@ def main(fix_dir: str, out_dir: str) -> None:
     all_ev = np.array([np.asarray(a, dtype=float) for a in evals])  # targets x runs
     ecdf = [float(np.mean(np.isfinite(all_ev) & (all_ev <= b))) for b in budgets]
     write(os.path.join(out_dir, "ecdf_51targets.parquet"),
-          {"budget": [float(b) for b in budgets], "budget_over_dim": [float(b / dim) for b in budgets],
+          {"budget": [float(b) for b in budgets],
+           "budget_over_dim": [float(b / dim) for b in budgets],
            "ecdf": ecdf})
 
     meta = {
@@ -85,12 +90,19 @@ def main(fix_dir: str, out_dir: str) -> None:
         "dataset": str(ds),
         "algId": ds.algId, "funcId": int(ds.funcId), "dim": dim,
         "instances": [int(i) for i in ds.instancenumbers],
-        "targets": "51 targets 10^(2 - k/5), k = 0..50, as Delta f = f - f_opt (cocopp compares with its own 1e-9 relative tolerance)",
+        "targets": (
+            "51 targets 10^(2 - k/5), k = 0..50, as Delta f = f - f_opt "
+            "(cocopp compares with its own 1e-9 relative tolerance)"
+        ),
         "files": {
-            "runtimes_51targets.parquet": "ds.detEvals(targets): runtime per run, NaN when not reached",
-            "art_51targets.parquet": "ds.detERT, ds.detSuccesses; mean/median evaluations of successful runs",
+            "runtimes_51targets.parquet": (
+                "ds.detEvals(targets): runtime per run, NaN when not reached"),
+            "art_51targets.parquet": (
+                "ds.detERT, ds.detSuccesses; mean/median evaluations of successful runs"),
             "art_table_targets.parquet": "same for the table targets 10, 1, 0.1, 1e-3, 1e-5, 1e-7",
-            "ecdf_51targets.parquet": "fraction of (target, run) pairs with runtime <= budget, budgets dim*10^(k/5), k = 0..25",
+            "ecdf_51targets.parquet": (
+                "fraction of (target, run) pairs with runtime <= budget, "
+                "budgets dim*10^(k/5), k = 0..25"),
         },
     }
     with open(os.path.join(out_dir, "versions.json"), "w") as fh:

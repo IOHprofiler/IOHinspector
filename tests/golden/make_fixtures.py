@@ -81,7 +81,10 @@ def run_set(setname, algorithms, problems, runner, budget_of, trigger=None, extr
             algorithm_info=f"golden fixture {setname}", additional_properties=list(extra), **kwargs,
         )
         if alg != "rs":
-            logger.watch(tracked, ["sigma"] + (["x0", "x1", "x2"] if setname == "ioh040_pos" else []))
+            names = ["sigma"]
+            if setname == "ioh040_pos":
+                names += ["x0", "x1", "x2"]
+            logger.watch(tracked, names)
         for pi, make in enumerate(problems):
             for inst in INSTANCES:
                 rng = np.random.default_rng([seed, ai, pi, inst])
@@ -113,8 +116,7 @@ def main() -> None:
     run_set("ioh040_pos", ["es_small"], [lambda i: ioh.get_problem(1, i, 3, bb)], real_algorithm,
             lambda p: 60, seed=4)
     # constrained: sphere with a soft linear constraint, every evaluation logged
-    cons = lambda i: _constrained(i)
-    run_set("ioh040_cons", ["rs", "es_small"], [cons], real_algorithm, lambda p: 200,
+    run_set("ioh040_cons", ["rs", "es_small"], [_constrained], real_algorithm, lambda p: 200,
             trigger=ioh.logger.trigger.ALWAYS,
             extra=[ioh.logger.property.VIOLATION, ioh.logger.property.PENALTY], seed=3)
 
