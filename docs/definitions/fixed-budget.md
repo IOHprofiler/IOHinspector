@@ -1,6 +1,7 @@
 # Fixed-budget summaries and overview tables
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Fixed-budget summary, overviews".
 Implemented in: I11.
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
@@ -38,6 +39,23 @@ Over the defined runs:
 Function values are continuous, so an interpolating quantile is appropriate;
 runtimes are integers and use type 3 instead (see [runtime](runtime.md)).
 Together these answer the plan's question on quantile types.
+
+### Stopped runs: carry forward or simulated restarts
+
+A run **stopped** at b when B_i < b (run metadata, from the final evaluation
+that alignment keeps, AL-9). A run with B_i ≥ b that has not improved since an
+earlier evaluation did not stop: its value at b is its best-so-far, and it
+counts in n_active. For stopped runs the summary has two options,
+`stopped = "carry_forward"` (default) or `"restart"`:
+
+- **carry forward**: V_i(b) is the run's final best value (as AL-4);
+- **simulated restarts**, after the fixed-target restarts of [Hansen2010]: run
+  i is continued by restarts. Each restart draws a run j uniformly with
+  replacement from the same run set (seeded) and appends its trace after B_i
+  evaluations; V_i(b) is the best value over the original run and every
+  restart segment up to evaluation b, the last segment being cut at b. Runs
+  with B_i ≥ b are left as they are. The number of restarted runs is reported
+  next to `n_active`.
 
 ### Overview table per run set
 
@@ -122,7 +140,7 @@ positive value for the log axis. Runs are not instance-balanced in this plot
 | `budget` in overviews | max logged evaluation (JSON data) | – | max_i B_i from run metadata |
 | `max evals used` | largest hitting time | – | renamed `max_runtime`; `budget` holds the evaluations used |
 
-## Proposed decisions
+## Decisions
 
 - **FB-1.** At budget b, statistics are over runs that have started
   (b ≥ e_i1). Runs that stopped before b are included with their carried-
@@ -136,13 +154,21 @@ positive value for the log axis. Runs are not instance-balanced in this plot
   metadata and the IOHanalyzer `succ` column renamed `n_best`.
 - **FB-5.** IOHanalyzer's run-minimum fill is not ported; golden tests name
   FB-1 where it changes a value.
+- **FB-6.** Runs that stopped before b (B_i < b) are handled by one of two
+  options: carry the final value forward (default, FB-1) or perform simulated
+  restarts as defined above. A run that stopped is distinguished from a run
+  that merely did not improve, using the final evaluation that alignment keeps
+  (AL-9). Excluding stopped runs is not offered. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-FB-1: Should the summary exclude runs that stopped before b
-  (statistics over A(b) only) instead of carrying them forward? Carrying
-  forward is the IOHanalyzer, cocopp and iohinspector behaviour and is the
-  proposal.
+- Q-FB-1 (exclude stopped runs, or carry forward): two options, carry forward
+  or simulated restarts, with the run stopping told apart from the run not
+  improving; alignment keeps the last evaluation at all times (AL-9). See FB-6.
+
+Remaining points for H1: the restart procedure is the proposal above (draw
+uniformly with replacement from the run set, one chain per run, seeded); the
+review named the option but not the procedure. The default stays carry forward.
 
 ## Test tolerance
 

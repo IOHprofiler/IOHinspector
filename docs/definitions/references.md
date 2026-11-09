@@ -154,6 +154,10 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
   paired comparison experiments. *Journal of the Royal Statistical Society,
   Series C (Applied Statistics)* 48(3):377–394, 1999.
   doi:10.1111/1467-9876.00159. Checked: Crossref.
+- **[Elo1978]** A. E. Elo. *The Rating of Chessplayers, Past and Present.*
+  Arco, New York, 1978. Checked: book, not in Crossref; the update rule
+  (expected score 1/(1 + 10^((R_c − R_a)/400)), R' = R + K (S − E)) was checked
+  against skelo 0.1.5 (`skelo/model/elo.py`: K = 20, initial rating 1500).
 - **[PlayerRatings]** A. Stephenson, J. Sonas. PlayerRatings: Dynamic updating
   methods for player ratings estimation. R package version 1.1-0 (CRAN,
   2020-03-01). doi:10.32614/CRAN.package.PlayerRatings. Checked: CRAN.

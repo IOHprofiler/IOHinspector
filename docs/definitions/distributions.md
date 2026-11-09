@@ -1,6 +1,7 @@
 # Distributions: histograms, PMF and violin data
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Histograms, violin data".
 Implemented in: I13.
 Sources: [IOHanalyzer], [R], [plotly.js], [iohinspector]; see
@@ -30,9 +31,11 @@ For a sample x of size n ≥ 2 (fewer values: no histogram for that algorithm):
    sides, and R's relative fuzz of 1e-7 on the edges (`hist.default`).
 4. Output per bin: left and right edge, midpoint, count, and the bin width.
 
-By default breaks are computed per algorithm. With "equal bins" they are
-computed once from the pooled sample of all algorithms in the view and used
-for every algorithm.
+When two or more algorithms are compared in one view, the breaks are
+computed once from the pooled sample of all algorithms in the view and used for
+every algorithm ("equal bins", the default). With one algorithm, or when the
+user asks for per-algorithm breaks (`bins = "per_algorithm"`, IOHanalyzer's
+behaviour), the breaks come from that algorithm's own sample.
 
 ### PMF and violin data
 
@@ -79,11 +82,11 @@ There are no histogram, PMF or violin functions in 0.0.8.
 
 | Item | IOHanalyzer | iohinspector 0.0.8 | Proposed |
 |---|---|---|---|
-| Histogram breaks | `nclass.FD` + `pretty`, right-closed | none | same as R, ported |
+| Histogram breaks | `nclass.FD` + `pretty`, right-closed, per algorithm | none | same as R, ported; pooled over algorithms by default |
 | Violin density | plotly.js, Silverman; ggplot: SJ | none | Silverman, as plotly.js |
 | Failed runs | dropped silently | – | dropped, count shown |
 
-## Proposed decisions
+## Decisions
 
 - **DI-1.** Histogram breaks follow R exactly: `nclass.FD` (R 4.3.3), then
   `pretty`, right-closed bins. I13 ports `pretty` (R's C routine) rather than
@@ -93,11 +96,17 @@ There are no histogram, PMF or violin functions in 0.0.8.
   plotly.js does; Sheather–Jones is not offered.
 - **DI-3.** Runtime distributions use successful runs only, and the view
   reports the number of failed runs.
+- **DI-4.** Equal bins are the default whenever two or more algorithms are
+  compared: one set of breaks from the pooled sample of the view, so bins can
+  be compared one by one. One algorithm uses its own breaks; per-algorithm
+  breaks stay available as an option. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-DI-1: Should the website keep IOHanalyzer's per-algorithm breaks as the
-  default, or use equal bins so that algorithms can be compared bin by bin?
+- Q-DI-1 (per-algorithm or equal bins): equal bins by default when two or more
+  algorithms are compared. See DI-4.
+
+Remaining points for H1: none.
 
 ## Test tolerance
 

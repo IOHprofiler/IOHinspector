@@ -1,6 +1,7 @@
 # Alignment: hit rule, best-so-far, runtime and value samples
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "Runtime and value samples"; the alignment part of every
 fixed-target and fixed-budget row.
 Implemented in: I10 (`iohinspector.align`).
@@ -60,6 +61,13 @@ than an easier one.
   replaced by +∞, −∞ or any value of the run. In IOHexperimenter data
   e_i1 = 1, so this only arises for b < 1 or for formats that start logging
   later.
+- **The final evaluation is always kept.** The aligned table keeps, for every
+  run, a row at B_i (from run metadata) even when the last improvement came
+  earlier. Its best-so-far value is the run's final best value, and a flag
+  `is_final` marks it. A run that stopped (B_i < b) and a run that is still
+  running but has not improved since some evaluation (B_i ≥ b) are then
+  distinguishable, which the fixed-budget restart option needs
+  ([fixed-budget](fixed-budget.md), FB-6).
 
 ### Runtime and value samples
 
@@ -152,7 +160,7 @@ apply to Δf; how Δf is stored or derived is decided by the COCO reader (I07).
 | Value before first row | NA (JSON data: worst value) | – | `inf` | null |
 | Best-so-far | from data / `cummin` | from data | `cum_min` (not in `turbo_align`) | always computed |
 
-## Proposed decisions
+## Decisions
 
 - **AL-1.** The hit rule is inclusive, f ≤ t (minimisation) and f ≥ t
   (maximisation), in every metric, the ECDF included. This answers the plan's
@@ -167,12 +175,22 @@ apply to Δf; how Δf is stored or derived is decided by the COCO reader (I07).
 - **AL-6.** Best-so-far is always computed at analysis time from the raw rows;
   no metric assumes monotone input.
 - **AL-7.** For COCO data targets apply to Δf = f − f_opt.
+- **AL-8.** No tolerance is added to the hit rule for COCO-derived data;
+  cocopp's relative 1e-9 is not ported and AL-2 holds for every source. A
+  tolerance can be offered later as an explicit option. Decided by the D6 review (dvermetten, 2026-11-06).
+- **AL-9.** Alignment keeps every run's final evaluation: a row at B_i with the
+  run's final best value and an `is_final` flag, whether or not the run improved
+  there. It is what lets fixed-budget views separate "the run stopped" from
+  "the run did not improve" (FB-6). Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-AL-1: Should COCO-derived data use cocopp's relative tolerance of 1e-9 so
-  that values printed with limited precision still hit decade targets such as
-  1e-8? The default proposed here is no tolerance.
+- Q-AL-1 (cocopp's 1e-9 tolerance for COCO targets): no additional
+  tolerances for now. See AL-8.
+- Added by the same comment thread (fixed-budget Q-FB-1): the last evaluation
+  stays present in the aligned data. See AL-9.
+
+Remaining points for H1: none.
 
 ## Test tolerance
 

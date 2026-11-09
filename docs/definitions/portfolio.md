@@ -1,6 +1,7 @@
 # Shapley values of algorithm portfolios
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Shapley portfolio values".
 Implemented in: I16.
 Sources: [IOHanalyzer], [Shapley1953], [Frechette2016]; see
@@ -28,6 +29,14 @@ averaged over all orders in which the portfolio can be built [Frechette2016]:
     φ_a = Σ_{S ⊆ N∖{a}} |S|! (|N| − |S| − 1)! / |N|! · ( v(S ∪ {a}) − v(S) ).
 
 Values are reported normalised, φ_a / v(N), so they sum to 1 (efficiency).
+
+The computation is generic in the definition of the portfolio value and of the
+marginal contribution (SH-4). The Shapley routine takes a *value function*
+v: subset → number, and optionally a *marginal function* m(S, a), which
+defaults to v(S ∪ {a}) − v(S). The ECDF-envelope value above is the default
+value function; other definitions, for example different anytime
+contributions to portfolio performance, plug in without changing the
+enumeration, the sampling, the normalisation or the caching of v(S).
 
 ### Computation
 
@@ -74,18 +83,24 @@ No Shapley or portfolio function.
 | Budget axis | sum over 50 grid points | exact AUC (EC-4) |
 | Estimator | stratified permutations, truncated above 10 algorithms, no seed | exact up to 15, else stratified over all positions, seeded |
 
-## Proposed decisions
+## Decisions
 
 - **SH-1.** v(S) is the summed AUC of the virtual-best ECDF over pairs and
   targets, with ECDFs over all runs.
-- **SH-2.** Exact Shapley values up to 15 algorithms; seeded stratified
-  sampling over **all** positions above that.
+- **SH-2.** Exact Shapley values up to 15 algorithms (2^15 subsets); seeded
+  stratified sampling over **all** positions above that. Decided by the D6 review (dvermetten, 2026-11-06).
 - **SH-3.** Values are normalised by v(N) and sum to 1.
+- **SH-4.** The Shapley functionality is generic: it takes the portfolio value
+  function and the marginal contribution as arguments, with the ECDF-envelope
+  value (SH-1) and v(S ∪ {a}) − v(S) as defaults, so other definitions of
+  marginal contribution can be added later without rewriting it. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-SH-1: Is 15 algorithms a sensible limit for the exact computation on the
-  server (2^15 = 32768 portfolio values per request)?
+- Q-SH-1 (limit for exact Shapley values): 15 is a good limit. See SH-2.
+- Added requirement: generic marginal contributions. See SH-4.
+
+Remaining points for H1: none.
 
 ## Test tolerance
 

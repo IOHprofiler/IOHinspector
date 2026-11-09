@@ -1,6 +1,7 @@
 # Target and budget grids
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Target and budget grid generation".
 Implemented in: I10 (`iohinspector.targets`).
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
@@ -28,7 +29,11 @@ f_hi = max F, both ends included:
 - `linear`: t_k = f_lo + k (f_hi − f_lo)/(n − 1), k = 0..n−1;
 - `log-linear`: the same in log10, t_k = 10^(log10 f_lo + k (log10 f_hi −
   log10 f_lo)/(n − 1)). It needs f_lo > 0. If min F ≤ 0, f_lo is the
-  smallest positive value in F.
+  smallest positive value in F, so that the range runs from the smallest to
+  the largest value actually observed and has a sensible separation at the
+  scale of the data. A floor of 1e-12 is used only when the data gives no other
+  information (F has no positive value and the user gave no `lower` bound);
+  then the generator also warns. The user can set `lower` and `upper`.
 
 Duplicates are removed, so n can shrink when f_lo = f_hi. Targets are
 generated **per (function, dimension) pair** from that pair's observed range.
@@ -141,21 +146,24 @@ generators only fill it.
 |---|---|---|---|---|
 | Default ECDF targets | 10 log-linear per pair | 51 bbob | 50 log over all data | 10 log-linear per pair |
 | Range | observed per pair | fixed | observed, global | observed per pair |
-| Log scale with min ≤ 0 | floor 1e-12 | – | assertion error | smallest positive observed value |
+| Log scale with min ≤ 0 | floor 1e-12 | – | assertion error | smallest positive observed value; 1e-12 only without information |
 | Budget rounding | round | – | truncate | round (half to even) |
 | bbob grid | `seq_FV` of 1e2..1e-8 | `10 ** arange` | none | 10^(2 − k/5), exact decades |
 | Default target per pair, maximisation | max of 2 % quantiles | – | – | max of 98 % quantiles |
 | `which` naming | inverted in defaults | – | – | explicit `perspective` argument |
 
-## Proposed decisions
+## Decisions
 
 - **TG-1.** Generators: `log-linear` (default, 10 per pair), `linear`,
   `bbob` (51) and custom tables. This answers the plan's question: log-spaced
   by default, per problem, with the COCO 51-target grid available.
 - **TG-2.** Ranges come from the observed values of the current selection,
   per (function, dimension) pair, including both ends.
-- **TG-3.** Under log spacing a minimum ≤ 0 is replaced by the smallest
-  positive observed value, not by 1e-12.
+- **TG-3.** Under log spacing the range is generated from the data so that it
+  separates the smallest from the largest value sensibly: a minimum ≤ 0 is
+  replaced by the smallest positive observed value, and a user-given `lower`
+  takes precedence. 1e-12 is a default only when no other information is
+  available (no positive observed value and no `lower`). Decided by the D6 review (dvermetten, 2026-11-06).
 - **TG-4.** The default single target per pair mirrors under maximisation
   (98 % quantile, max over algorithms).
 - **TG-5.** Budget grids are rounded to the nearest integer, never truncated,
@@ -163,13 +171,21 @@ generators only fill it.
 - **TG-6.** Functions take an explicit `perspective = "fixed_target" |
   "fixed_budget"` argument; IOHanalyzer's inverted `which` default and bug B1
   are not ported.
+- **TG-7.** cocopp's runlength-based targets are an enhancement to look at after
+  launch; they are not part of I10. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-TG-1: TG-3 changes IOHanalyzer's target grid whenever a run reaches
-  f ≤ 0. Is the smallest positive observed value acceptable, or should the
-  1e-12 floor stay for parity?
-- Q-TG-2: Should cocopp's runlength-based targets be offered after launch?
+- Q-TG-1 (floor for log-spaced targets): generate the range so that it has a
+  sensible separation from smallest to largest; 1e-12 is not useful at all
+  scales, so it is the default only if there is no other information. See TG-3.
+- Q-TG-2 (cocopp's runlength-based targets): an enhancement after launch. See
+  TG-7.
+
+Remaining points for H1: the review did not say what "sensible" means beyond
+the data's own range. I use the smallest positive observed value as the lower
+end and give no automatic clipping of the span (for example to 12 decades);
+the 1e-12 fallback then applies only when nothing positive was observed.
 
 ## Test tolerance
 

@@ -1,6 +1,7 @@
 # Statistical comparisons: KS tests, Holm correction, win fractions
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "KS tests with Holm correction", "Win-fraction heatmap"
 (and the dominance graph drawn from the same tests).
 Implemented in: I15.
@@ -26,7 +27,9 @@ For an ordered pair (a, c), with X_a, X_c oriented so that smaller is better:
   CDFs);
 - statistic D⁺ = sup_x (F_a(x) − F_c(x)), with sample sizes n and m;
 - p-value, asymptotic [Smirnov1948]:
-  p = exp(−2 · (n m / (n + m)) · (D⁺)²).
+  p = exp(−2 · (n m / (n + m)) · (D⁺)²), used when the samples are large;
+- p-value, exact: the exact null distribution of D⁺ for sample sizes n and m,
+  used when the samples are small (CM-1).
 
 This is R's `ks.test(x, y, alternative = "greater", exact = FALSE)`
 (`stats:::psmirnov_asymp`, R 4.3.3: `1 − exp(−2 n q²)` with n = nm/(n+m),
@@ -34,6 +37,11 @@ returned as an upper tail). For the fixed-target case, failed runs count as
 +∞, so F_a(x) is the single-target ECDF of [ecdf](ecdf.md) and D⁺ is the
 largest vertical gap between two such curves. Under maximisation of values the
 samples are negated first.
+
+The exact setting is R's `ks.test(x, y, alternative = "greater", exact = TRUE)`
+(`psmirnov`), which also handles ties; the +∞ of failed runs are ties. Checked
+in R 4.3.3: x = (1, 2, 3, ∞, ∞), y = (2, 3, ∞, ∞, ∞) gives p = 0.8333 exact and
+0.8187 asymptotic. "Sufficiently small" is R's own rule: n · m < 10000.
 
 ### Holm correction
 
@@ -57,6 +65,13 @@ when its summary is better: ERT for fixed target ([runtime](runtime.md)),
 the mean value for fixed budget ([fixed-budget](fixed-budget.md)). A win scores
 1, a tie (including ∞ against ∞) 0.5, a loss 0. W_ac is the mean score over
 the targets of a pair, then over the pairs with equal weight (as EC-2).
+
+The performance measure is selectable (CM-5). Fixed target: `ert` (default),
+`mean` (mean hitting time of the successful runs, IOHanalyzer's behaviour),
+`par_k` (k default 10, RT-3) and `median`. Fixed budget: `mean` (default),
+`median`, `best`. A measure that is undefined for a pair (for example the mean
+with no success) counts as +∞, the worst value. The measures come from one
+registry, so a later measure needs no change to the win-fraction code.
 
 ## How IOHanalyzer implements it
 
@@ -122,37 +137,45 @@ offers robust-ranking bootstrap comparisons (`get_robustrank_over_time`,
 
 | Item | IOHanalyzer | Proposed |
 |---|---|---|
-| KS p-value | asymptotic one-sided | same; exact as an option |
+| KS p-value | asymptotic one-sided | exact when n · m < 10000, else asymptotic |
 | Failed runs (fixed target) | dropped (default) or simulated restarts | +∞ |
 | Maximisation (fixed budget) | direction reversed | samples negated |
 | Holm family | all ordered pairs | same |
-| Win fractions, fixed target | mean of successful runs | ERT |
+| Win fractions, fixed target | mean of successful runs | selectable; ERT by default |
 | Win fractions, several dimensions | partly dropped | every pair, equal weight |
-| Seed for bootstrap | none | explicit seed (only if the bootstrap option is kept) |
+| Simulated-restart bootstrap | yes | not in this version; possible later addition |
 
-## Proposed decisions
+## Decisions
 
-- **CM-1.** One-sided two-sample KS with R's asymptotic p-value
-  exp(−2 nm/(n+m) D⁺²), hand-coded; an `exact=True` option gives the exact
-  distribution.
+- **CM-1.** One-sided two-sample KS. The exact p-value is used when the sample
+  sizes are sufficiently small, defined as n · m < 10000 (R's `ks.test` rule);
+  above that, R's asymptotic p-value exp(−2 nm/(n+m) D⁺²). The parameter
+  `exact` (`None` = this rule, `True`, `False`) overrides it, and the output
+  names the method used per test. Decided by the D6 review (dvermetten, 2026-11-06).
 - **CM-2.** Fixed target: failed runs count as +∞. IOHanalyzer's
   drop-failures behaviour is available only as an explicit option for golden
   tests.
 - **CM-3.** Fixed budget: the orientation follows the maximisation flag.
 - **CM-4.** Holm correction over all ordered pairs with a p-value, per (pair,
   target); α default 0.01; heat map S − Sᵀ and dominance graph as above.
-- **CM-5.** Win fractions compare ERT (fixed target) or mean value (fixed
-  budget), ties 0.5, averaged over targets then pairs with equal weight.
-- **CM-6.** Simulated-restart bootstrapping is not ported unless the user asks
-  for it (see Q-CM-2); if kept, it takes a seed.
+- **CM-5.** Win fractions use a selectable performance measure `measure`:
+  fixed target ERT (default), mean hitting time, PAR-k or median; fixed budget
+  mean (default), median or best. Ties score 0.5; averaged over targets, then
+  pairs with equal weight. The website offers the choice. Decided by the D6 review (dvermetten, 2026-11-06).
+- **CM-6.** No bootstrap option for now (simulated restarts are not ported).
+  It is a potential addition for a later version. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-CM-1: Keep the asymptotic p-value as default (parity), or use the exact
-  p-value for small samples as R's own `ks.test` would (n·m < 10000)?
-- Q-CM-2: Is the bootstrap option (simulated restarts) still wanted?
-- Q-CM-3: CM-5 changes IOHanalyzer's win fractions from "mean of successes" to
-  ERT. Accept?
+- Q-CM-1 (asymptotic or exact KS p-value): use the exact setting when the
+  sample sizes are sufficiently small. See CM-1.
+- Q-CM-2 (bootstrap option): not now; a potential later addition. See CM-6.
+- Q-CM-3 (ERT-based win fractions): the heat map takes a variable performance
+  measure, so users choose between ERT, mean hitting time and others. See CM-5.
+
+Remaining points for H1: "sufficiently small" is n · m < 10000 as in R's
+`ks.test`; the measure list in CM-5 is a proposal (the review named ERT and
+mean hitting time).
 
 ## Test tolerance
 

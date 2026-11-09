@@ -1,6 +1,7 @@
 # Runtime metrics (fixed target)
 
-Status: **proposed**, for sign-off at checkpoint H1.
+Status: **proposed**, for sign-off at checkpoint H1; the open questions were
+answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "ERT, PAR-k, runtime summary with quantiles"; the runtime
 half of "Runtime and value samples".
 Implemented in: I10 (hitting times), I11 (summaries).
@@ -55,7 +56,8 @@ performance which estimates the expected runtime ERT" (`cocopp/toolsstats.py`
     PAR-k(t) = (1/n) Σ_i ( T_i(t) if s_i = 1, else k · κ )
 
 Penalised average runtime from algorithm configuration [Hutter2009]: runs that
-miss the cutoff κ count as k times the cutoff, k = 10 being the common choice.
+miss the cutoff κ count as k times the cutoff. k is a parameter and its default
+is 10 everywhere, the common choice (PAR-10).
 The cutoff is one number for the whole run set: κ = C when a cap is set, and
 otherwise κ = max_i B_i. With k = 1 and equal budgets, PAR-1 is cocopp's
 `detAverageEvals` (= ERT · p_s, `cocopp/pproc.py` 1792–1824).
@@ -75,10 +77,13 @@ runs the statistics rest on.
 
 ### Quantiles
 
-Quantiles of the successful runtimes use Hyndman–Fan **type 3** [Hyndman1996]
+Quantiles of the runtimes use Hyndman–Fan **type 3** [Hyndman1996]
 (nearest even order statistic, SAS definition 2) at the probabilities
-2, 5, 10, 25, 50, 75, 90, 95 and 98 %. Type 3 always returns an observed run
-length. numpy's `method="closest_observation"` is the same estimator. This was
+2, 5, 10, 25, 50, 75, 90, 95 and 98 %. By default the unfinished runs are
+included (RT-5): the sample is all n runs, a failed run counting as +∞, so the
+p-quantile is ∞ when p > p_s. The option `include_unfinished = False` gives
+the quantiles of the successful runs only, which is IOHanalyzer's behaviour.
+Type 3 always returns an observed run length (or ∞). numpy's `method="closest_observation"` is the same estimator. This was
 checked against R's `quantile(type = 3)` on random integer samples of size 1 to
 26 at those nine probabilities; numpy `inverted_cdf`, `linear` and
 `median_unbiased` matched R types 1, 7 and 8 in the same check. polars has no
@@ -165,12 +170,12 @@ Hitting times come from `align_data` (`align.py` 8–67); see
 | Charge of a failed run in ERT | max budget in the run set (JSON data: max logged evaluation) | own `maxevals` | max evaluation in the whole frame | own B_i, capped at C |
 | ERT with no success | Inf | inf | inf | +∞ |
 | Instance weighting | runs pooled | instances balanced | runs pooled | runs pooled |
-| PAR-k cutoff | max budget in the run set, k = 1 default | – | 10 × max evaluation in the frame | κ = C or max_i B_i; k a parameter |
+| PAR-k cutoff | max budget in the run set, k = 1 default | – | 10 × max evaluation in the frame | κ = C or max_i B_i; k a parameter, default 10 |
 | mean, median, sd | successful runs | – | all runs (inf) | successful runs |
-| Quantiles | type 3, successful runs | type 5 (other use) | none | type 3, successful runs |
+| Quantiles | type 3, successful runs | type 5 (other use) | none | type 3, all runs with failures as ∞ (default); successful-only option |
 | `runs` column | number of successes | – | – | separate `n_runs` and `n_success` |
 
-## Proposed decisions
+## Decisions
 
 - **RT-1.** A failed run is charged its own evaluations, min(B_i, C), with B_i
   from the run metadata. This is the COCO definition and differs from
@@ -178,22 +183,27 @@ Hitting times come from `align_data` (`align.py` 8–67); see
   IOHexperimenter JSON data that log improvements only.
 - **RT-2.** ERT with no success is +∞, shown as "∞"; with no runs it is null.
 - **RT-3.** PAR-k uses one cutoff κ per run set: C when set, otherwise
-  max_i B_i. k is a parameter. Python default k = 10 (the usual PAR-10); the
-  website shows k with default 1, as IOHanalyzer does. The column is named
-  `par_{k}`.
+  max_i B_i. k is a parameter with default k = 10 (the usual PAR-10) in
+  Python and on the website alike; the website's IOHanalyzer default of 1 is
+  not kept. The column is named `par_{k}`. Decided by the D6 review (dvermetten, 2026-11-06).
 - **RT-4.** mean, median and sd are conditional on success and computed over
   successful runs only, next to `n_runs` and `n_success`.
-- **RT-5.** Runtime quantiles are Hyndman–Fan type 3 over successful runs, at
-  2, 5, 10, 25, 50, 75, 90, 95 and 98 %. The median stays the conventional
-  sample median.
+- **RT-5.** Runtime quantiles are Hyndman–Fan type 3 at 2, 5, 10, 25, 50,
+  75, 90, 95 and 98 %, by default over all runs with unfinished runs counted
+  as +∞ (unconditional, so they match the ECDF); `include_unfinished = False`
+  restricts them to successful runs. The median stays the conventional sample
+  median, over successful runs (RT-4). Decided by the D6 review (dvermetten, 2026-11-06).
 - **RT-6.** Runs are pooled over instances without balancing. With the usual
   design (equal runs per instance) this equals cocopp's balanced value.
 
-## Open questions for the user
+## Questions answered by the D6 review
 
-- Q-RT-1: Should the Python and website defaults for k agree (RT-3)?
-- Q-RT-2: Should the summary also offer unconditional quantiles, which treat
-  failed runs as ∞ and so match the ECDF (the p-quantile is ∞ when p > p_s)?
+- Q-RT-1 (agreeing k defaults): k = 10 is the default. See RT-3.
+- Q-RT-2 (unconditional quantiles): quantiles include unfinished runs by
+  default. See RT-5.
+
+Remaining points for H1: none. Q-DS-2 (one PAR-k convention for DSC and the
+summary) is applied on the DSC page.
 
 ## Test tolerance
 

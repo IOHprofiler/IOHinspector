@@ -411,9 +411,15 @@ IOHanalyzer against this specification:
   sent to the ranking. Only problems that every algorithm has enter the
   analysis, and the dropped problems are reported, because the omnibus tests
   are tests for paired samples ([Eftimov2020] Fig. 1, p. 5).
-- **DS-3. Missing values.** Options PAR-1, PAR-10, ERT and Remove-na, default
-  PAR-10 as in Shiny. PAR-k here uses each run's own budget, unlike the
-  summary's PAR-k (RT-3), because that is what IOHanalyzer sends. When no run
+- **DS-3. Missing values.** Options PAR-k, ERT and Remove-na. PAR-k is the one
+  definition of [runtime](runtime.md) (RT-3): a failed run counts as k · κ, with
+  one cutoff κ per run set (the budget cap C, otherwise max_i B_i from run
+  metadata). k is user-customisable and its default is 10, so the default is
+  PAR-10 as in Shiny and as in the runtime summary. IOHanalyzer's two fixed
+  options PAR-1 and PAR-10 are the cases k = 1 and k = 10; they differ from
+  IOHanalyzer's client only where budgets differ between runs of a set, because
+  the client charges each run its own budget. The two PAR-k conventions are
+  unified. Decided by the D6 review (dvermetten, 2026-11-06). When no run
   succeeds, the ERT option uses the sum of the runs' budgets, as
   IOHanalyzer's documentation states, also for JSON data.
 - **DS-4. Ranking.** Per problem, all pairs of algorithms, the two-sample KS
@@ -493,8 +499,12 @@ Notes for the recording design:
   supplied. The points only they would settle are DQ-2 to DQ-11, left to I18
   step 2. Supplying them would let I18 check its reading against the source
   instead of inferring it from responses alone.
-- Q-DS-2: DS-3 keeps two PAR-k conventions (own budget for DSC, a common
-  cutoff for the summary table). Should they be unified?
+- Q-DS-2 (answered): the two PAR-k conventions are unified, user-customisable
+  with a sensible default. Decided by the D6 review (dvermetten, 2026-11-06).
+  The default is k = 10, matching the answer to Q-RT-1, and the definition is
+  the summary's (RT-3). See DS-3. Remaining point for H1: the shared
+  definition uses one cutoff per run set rather than each run's own budget; the
+  review did not say which of the two to keep.
 - Q-DS-3: May I18 read [dsc-core], the public source of DSCTool's core
   library, to settle the DQ points? It is GPL-3.0-or-later and iohinspector
   is MIT, so its code must not be copied or translated. Reading it to check a
