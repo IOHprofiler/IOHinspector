@@ -84,7 +84,7 @@ class _TooManyErrors(Exception):
     pass
 
 
-class _Checker:
+class _Checker:  # pylint: disable=too-many-instance-attributes  # one field per table checked
     def __init__(self, path: Path, max_errors: int, batch_rows: int):
         self.path = path
         self.report = ValidationReport(path)

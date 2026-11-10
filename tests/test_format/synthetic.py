@@ -46,7 +46,8 @@ def make_dataset(
 
     Values include ties, zeros, inf and nan, so that a lossy writer would be caught.
     """
-    rng = random.Random(seed)
+    # #lizard forgives  (test helper: every option has a default)
+    rng = random.Random(seed)  # nosec B311  # reproducible test data, not security
     runs, sources = _runs_and_sources(
         algorithms, functions, dimensions, runs_per_file, dataset_id
     )
@@ -201,7 +202,8 @@ def big_trace_chunks(
         order = rng.permutation(n_runs)
         runs_per_chunk = max(1, chunk_rows // per_run)
         for start in range(0, n_runs, runs_per_chunk):
-            sel = order[start : start + runs_per_chunk]
+            end = start + runs_per_chunk
+            sel = order[start:end]
             k = len(sel)
             yield pl.DataFrame(
                 {

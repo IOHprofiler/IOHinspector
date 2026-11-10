@@ -75,7 +75,7 @@ _PARQUET_OPTIONS = PARQUET_OPTIONS
 _OBJECTIVE = re.compile(r"y[0-9]+")
 
 
-def write_dataset(
+def write_dataset(  # pylint: disable=too-many-arguments,too-many-locals  # public API, keyword-only options
     path: str | os.PathLike[str],
     manifest: Mapping[str, Any],
     runs: pl.DataFrame | pl.LazyFrame,
@@ -124,6 +124,7 @@ def write_dataset(
     Raises ``FormatError`` when the data breaks the format, and ``ManifestError``
     when the manifest is invalid.
     """
+    # #lizard forgives  (public API: four tables plus keyword-only options)
     path = Path(path)
     manifest = _writable_manifest(manifest)
     _check_target(path, overwrite)
@@ -373,7 +374,7 @@ class _Schemas:
     spill: pa.Schema  # the spill files: output plus the sort key and group
 
 
-class _SortedTableWriter:
+class _SortedTableWriter:  # pylint: disable=too-many-instance-attributes  # sort state kept together
     """Sorts one table's rows by (run order, row) and writes it as Parquet."""
 
     def __init__(
@@ -710,7 +711,7 @@ def _split_at(
     return buf.slice(0, n), buf.slice(n)
 
 
-class _RowGroupWriter:
+class _RowGroupWriter:  # pylint: disable=too-many-instance-attributes  # writer state kept together
     """Writes sorted rows to Parquet, cutting row groups at row-group key changes.
 
     A row group ends at the first change of (suite, function_id, dimension) after it

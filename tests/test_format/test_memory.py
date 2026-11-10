@@ -1,5 +1,5 @@
 import json
-import subprocess
+import subprocess  # nosec B404  # runs the memory test in a child Python process
 import sys
 from pathlib import Path
 
@@ -18,7 +18,7 @@ LIMIT_BYTES = 2 * 2**30
 def test_ten_million_rows_stay_under_two_gigabytes(tmp_path):
     child = Path(__file__).with_name("memory_child.py")
     out = tmp_path / "big"
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603  # fixed command: this Python and a test script
         [sys.executable, str(child), str(out), str(ROWS), str(RUNS)],
         capture_output=True,
         text=True,
@@ -26,7 +26,8 @@ def test_ten_million_rows_stay_under_two_gigabytes(tmp_path):
     )
     report = json.loads(result.stdout.strip().splitlines()[-1])
     print(
-        f"\nwrite of {ROWS} rows: {report['seconds']:.1f} s, peak RSS {report['peak_rss_bytes'] / 2**20:.0f} MiB"
+        f"\nwrite of {ROWS} rows: {report['seconds']:.1f} s, "
+        f"peak RSS {report['peak_rss_bytes'] / 2**20:.0f} MiB"
     )
     assert report["counts"] == {
         "runs": RUNS,
