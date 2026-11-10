@@ -168,3 +168,4 @@ try.ipynb
 tests/golden/r/ctx/
 tests/golden/r/cache/
 tests/golden/__pycache__/
+tests/io/data/downloaded/
