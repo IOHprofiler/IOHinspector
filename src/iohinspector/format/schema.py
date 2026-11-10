@@ -39,8 +39,6 @@ class Column:
 
 RUNS_COLUMNS: tuple[Column, ...] = (
     Column("run_id", pl.Int64(), False),
-    Column("algorithm_name", pl.String(), False),
-    Column("algorithm_info", pl.String(), False),
     Column("suite", pl.String(), False),
     Column("function_id", pl.Int32(), False),
     Column("function_name", pl.String(), True),
@@ -57,9 +55,14 @@ RUNS_COLUMNS: tuple[Column, ...] = (
     Column("source_rows_sha256", pl.String(), True),
 )
 
-#: Columns a writer must be given; the others have defaults (see ``RUNS_DEFAULTS``).
+#: Descriptors that every run has, of type string and origin ``algorithm`` or
+#: ``user``. They are not columns of runs.parquet.
+ALGORITHM_DESCRIPTORS = ("algorithm_name", "algorithm_info")
+ALGORITHM_DESCRIPTOR_ORIGINS = ("algorithm", "user")
+
+#: Runs columns a writer must be given; the others have defaults (see
+#: ``RUNS_DEFAULTS``).
 RUNS_REQUIRED_INPUT = (
-    "algorithm_name",
     "function_id",
     "dimension",
     "maximization",
@@ -69,7 +72,6 @@ RUNS_REQUIRED_INPUT = (
 
 #: Defaults for runs columns the caller leaves out. ``run_id`` is computed.
 RUNS_DEFAULTS: dict[str, str | int | None] = {
-    "algorithm_info": "",
     "suite": "",
     "function_name": None,
     "instance": None,
@@ -143,17 +145,18 @@ DESCRIPTOR_TYPES = ("bool", "float", "int", "string")
 #: The typed column each type uses (``int`` only when the value fits in int64).
 TYPED_VALUE_COLUMN = {"int": "value_int", "float": "value_float", "bool": "value_bool"}
 DESCRIPTORS_SORT_KEYS = ("key", "run_id")
-#: Descriptors that every run has, mirrored by the runs columns of the same name.
-MIRRORED_DESCRIPTORS = ("algorithm_name", "algorithm_info")
 MAX_DESCRIPTOR_KEY_LENGTH = 256
 
 _RESERVED_PATTERN = re.compile(r"[xy][0-9]+")
-RESERVED_TRACE_NAMES = frozenset(TRACE_SCHEMA) | frozenset(RUNS_SCHEMA)
+#: Names an extra trace column may not have. The algorithm descriptors are included
+#: because analysis joins them to the trace.
+RESERVED_TRACE_NAMES = (
+    frozenset(TRACE_SCHEMA) | frozenset(RUNS_SCHEMA) | frozenset(ALGORITHM_DESCRIPTORS)
+)
 
-
-RESERVED_DESCRIPTOR_KEYS = (
-    frozenset(RUNS_SCHEMA) | frozenset(TRACE_SCHEMA)
-) - frozenset(MIRRORED_DESCRIPTORS)
+#: Keys a descriptor may not have: ``by`` resolves names in runs.parquet and the
+#: descriptors, and the result is joined to the trace.
+RESERVED_DESCRIPTOR_KEYS = frozenset(RUNS_SCHEMA) | frozenset(TRACE_SCHEMA)
 _CONTROL = re.compile(r"[\x00-\x1f]")
 
 

@@ -30,7 +30,14 @@ def stored(tmp_path_factory):
         }
     ]
     path = tmp_path_factory.mktemp("stored") / "ds"
-    write_dataset(path, syn.manifest, syn.runs, syn.trace, positions=syn.positions)
+    write_dataset(
+        path,
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        positions=syn.positions,
+        descriptors=syn.descriptors,
+    )
     return path
 
 
@@ -88,7 +95,9 @@ def test_missing_table_is_refused(copy):
 
 def test_dataset_without_positions(tmp_path):
     syn = make_dataset(seed=31)
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     assert scan_dataset(tmp_path / "ds").positions is None
 
 
@@ -109,7 +118,12 @@ def grouped(tmp_path, monkeypatch):
         seed=32,
     )
     write_dataset(
-        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, positions=syn.positions
+        tmp_path / "ds",
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        positions=syn.positions,
+        descriptors=syn.descriptors,
     )
     return tmp_path / "ds"
 
@@ -188,7 +202,7 @@ def test_filter_on_function_alone_skips_row_groups(grouped):
 
 def test_trace_joins_with_runs(stored):
     ds = scan_dataset(stored, warn=False)
-    runs = ds.runs.select("run_id", "algorithm_name", "instance")
+    runs = ds.runs.select("run_id", "instance").join(ds.run_columns(), on="run_id")
     joined = ds.trace.join(runs, on="run_id").collect()
     assert joined.height == ds.trace.collect().height
     assert joined["algorithm_name"].null_count() == 0

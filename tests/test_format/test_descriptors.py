@@ -119,7 +119,6 @@ def parameter_study(tmp_path, *, files=2, runs_per_file=6):
     )
     runs = pl.DataFrame(
         {
-            "algorithm_name": ["DE"] * (files * runs_per_file),
             "function_id": [1] * (files * runs_per_file),
             "dimension": [5] * (files * runs_per_file),
             "instance": [1] * (files * runs_per_file),
@@ -132,6 +131,7 @@ def parameter_study(tmp_path, *, files=2, runs_per_file=6):
     records, trace = [], []
     for n, rid in enumerate(ids):
         records += [
+            (rid, "algorithm_name", "DE", "algorithm"),
             (rid, "popsize", [10, 20, 40][n % 3], "algorithm"),
             (rid, "mutation", [0.5, 0.9][n % 2], "algorithm"),
             (rid, "seed", BIG_INTS[n % len(BIG_INTS)], "run"),
@@ -157,8 +157,8 @@ def test_one_algorithm_with_several_parameter_settings(tmp_path):
     path, ids = parameter_study(tmp_path)
     assert validate_dataset(path).ok
     ds = scan_dataset(path)
-    runs = ds.runs.collect()
     key = ["algorithm_name", "function_id", "dimension", "instance"]
+    runs = ds.run_columns(key).collect()
     assert runs.select(key).unique().height == 1 and runs.height == len(ids)
     groups = ds.run_columns(["popsize", "mutation"]).collect()
     assert (
@@ -219,7 +219,11 @@ def test_mixed_value_types_under_one_key(tmp_path):
     records = [(rid, "budget_note", v, "experiment") for rid, v in zip(ids, values * 2)]
     path = tmp_path / "mixed"
     write_dataset(
-        path, syn.manifest, syn.runs, syn.trace, descriptors=descriptor_frame(records)
+        path,
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        descriptors=syn.with_algorithms(records),
     )
     assert validate_dataset(path).ok
     ds = scan_dataset(path)
@@ -265,7 +269,7 @@ def test_adding_a_user_tag_after_conversion(tmp_path):
     )
     untouched = {
         name: _file_digest(path / name)
-        for name in ("trace.parquet", "positions.parquet")
+        for name in ("runs.parquet", "trace.parquet", "positions.parquet")
     }
     stat = {name: (path / name).stat().st_mtime_ns for name in untouched}
     ids = syn.runs["run_id"].to_list()
@@ -291,9 +295,11 @@ def test_adding_a_user_tag_after_conversion(tmp_path):
     assert col[ids[0]] == "B" and col[ids[1]] == "A" and col[ids[-1]] == "7"
     assert ds.manifest["descriptors"]["batch"]["types"] == ["int", "string"]
 
-    update_descriptors(path, [(ids[0], "algorithm_name", "renamed", "user")])
-    runs = scan_dataset(path).runs.collect()
-    assert runs.filter(pl.col("run_id") == ids[0])["algorithm_name"].item() == "renamed"
+    manifest = update_descriptors(path, [(ids[0], "algorithm_name", "renamed", "user")])
+    assert "renamed" in manifest["descriptors"]["algorithm_name"]["examples"]
+    assert manifest["descriptors"]["algorithm_name"]["origins"] == ["algorithm", "user"]
+    names = dict(scan_dataset(path).run_columns().collect().iter_rows())
+    assert names[ids[0]] == "renamed" and names[ids[1]] != "renamed"
     assert validate_dataset(path).ok
 
     update_descriptors(path, remove_keys=["batch"])
@@ -311,7 +317,8 @@ def test_adding_a_user_tag_after_conversion(tmp_path):
         ({"remove_keys": ["nope"]}, "do not exist"),
         ({"upsert": [(12345, "batch", "A", "user")]}, "not in runs"),
         ({"upsert": [(None, "dimension", 3, "user")]}, "reserved|null"),
-        ({"upsert": [(None, "algorithm_info", 3, "user")]}, "disagree|string"),
+        ({"upsert": [(None, "algorithm_info", 3, "user")]}, "type string"),
+        ({"upsert": [(None, "algorithm_name", True, "user")]}, "type string"),
         ({"upsert": [(None, "x", 1, "user"), (None, "x", 2, "user")]}, "not unique"),
     ],
 )
@@ -336,7 +343,7 @@ def test_writer_refuses_bad_descriptors(tmp_path):
     syn = make_dataset(seed=43)
     rid = syn.runs["run_id"][0]
     cases = [
-        (descriptor_frame([(rid, "algorithm_name", "other", "algorithm")]), "differ"),
+        (descriptor_frame([(rid, "seed", 1, "run")]), "lack a required algorithm_name"),
         (descriptor_frame([(rid, "instance", 3, "run")]), "reserved"),
         (descriptor_frame([(rid, "k", 1, "somewhere")]), "unknown origin"),
         (descriptor_frame([(rid, "k", 1, "run"), (rid, "k", 2, "run")]), "not unique"),
@@ -354,16 +361,47 @@ def test_writer_refuses_bad_descriptors(tmp_path):
         assert not (tmp_path / "ds").exists()
 
 
-def test_given_algorithm_descriptors_must_agree_and_may_be_user_edited(tmp_path):
+def test_algorithm_descriptors_are_not_runs_columns(tmp_path):
     syn = make_dataset(seed=44)
-    rows = syn.runs.select("run_id", "algorithm_name").rows()
-    given = descriptor_frame([(r, "algorithm_name", name, "user") for r, name in rows])
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=given)
-    desc = scan_dataset(tmp_path / "ds").descriptors.collect()
-    origins = (
-        desc.filter(pl.col("key") == "algorithm_name")["origin"].unique().to_list()
+    names = syn.descriptors.filter(pl.col("key") == "algorithm_name")
+    runs = syn.runs.join(
+        names.select("run_id", pl.col("value").alias("algorithm_name")), on="run_id"
     )
-    assert origins == ["user"]
+    with pytest.raises(FormatError, match="algorithm_name and algorithm_info are"):
+        write_dataset(
+            tmp_path / "ds", syn.manifest, runs, syn.trace, descriptors=syn.descriptors
+        )
+    assert not (tmp_path / "ds").exists()
+
+
+def test_algorithm_info_defaults_to_empty_and_given_values_are_kept(tmp_path):
+    syn = make_dataset(seed=44)
+    ids = syn.runs["run_id"].to_list()
+    info = descriptor_frame([(ids[0], "algorithm_info", "v1.2", "algorithm")])
+    edited = syn.descriptors.with_columns(
+        pl.when(pl.col("key") == "algorithm_name")
+        .then(pl.lit("user"))
+        .otherwise("origin")
+        .alias("origin")
+    )
+    path = tmp_path / "ds"
+    write_dataset(
+        path,
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        descriptors=pl.concat([edited, info]),
+    )
+    ds = scan_dataset(path)
+    assert "algorithm_name" not in ds.runs.collect_schema()
+    assert "algorithm_info" not in ds.runs.collect_schema()
+    infos = dict(ds.run_columns(["algorithm_info"]).collect().iter_rows())
+    assert infos[ids[0]] == "v1.2"
+    assert all(infos[r] == "" for r in ids[1:])
+    summary = ds.manifest["descriptors"]
+    assert summary["algorithm_info"]["origins"] == ["algorithm"]
+    assert summary["algorithm_name"]["origins"] == ["user"]
+    assert ds.run_columns().collect().columns == ["run_id", "algorithm_name"]
 
 
 # -- validation of descriptors ----------------------------------------------------
@@ -398,11 +436,15 @@ def first(df, key):
         (
             lambda d: d.with_columns(
                 pl.when(first(d, "algorithm_name"))
-                .then(pl.lit("x"))
-                .otherwise("value")
-                .alias("value")
+                .then(pl.lit("path"))
+                .otherwise("origin")
+                .alias("origin")
             ),
-            "disagree with runs.parquet",
+            "not of type string with origin algorithm or user",
+        ),
+        (
+            lambda d: d.filter(~first(d, "algorithm_name")),
+            "lack a required algorithm_name",
         ),
         (
             lambda d: d.filter(~first(d, "algorithm_info")),
@@ -587,7 +629,11 @@ def test_grouping_with_a_key_missing_in_some_runs(tmp_path):
     records += [(ids[0], "note", None, "run"), (ids[1], "note", "x", "run")]
     path = tmp_path / "missing"
     write_dataset(
-        path, syn.manifest, syn.runs, syn.trace, descriptors=descriptor_frame(records)
+        path,
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        descriptors=syn.with_algorithms(records),
     )
     assert validate_dataset(path).ok
     ds = scan_dataset(path)

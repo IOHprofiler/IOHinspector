@@ -269,13 +269,11 @@ The schema below is normative. iohinspector ships the same schema as `iohinspect
 
 ## runs.parquet
 
-One row per run. "Not null" columns MUST NOT contain nulls. Writers MUST NOT add other columns in version 1.0; every other per-run value is a descriptor.
+One row per run. "Not null" columns MUST NOT contain nulls. Writers MUST NOT add other columns in version 1.0; every other per-run value is a descriptor. That includes the algorithm: `algorithm_name` and `algorithm_info` are descriptors only, and not columns of this table.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `run_id` | int64 | no | See [Run id](#run-id) |
-| `algorithm_name` | string | no | Copy of the run's `algorithm_name` descriptor, kept for filtering and for the website catalog |
-| `algorithm_info` | string | no | Copy of the run's `algorithm_info` descriptor; `""` when the source has none |
 | `suite` | string | no | Problem suite, for example `BBOB`, `PBO` or `bbob`; `""` when the source does not name one |
 | `function_id` | int32 | no | Function id within the suite. Readers of formats that name functions without ids assign ids and keep the name in `function_name` |
 | `function_name` | string | yes | Function name, when known |
@@ -344,14 +342,14 @@ Rules:
 
 - `(run_id, key)` MUST be unique: a run has one value per key.
 - One key MAY have different types in different runs (for example `budget` as an `int` in one run and as the string `unlimited` in another). Nothing is converted.
-- Every run MUST have the descriptors `algorithm_name` and `algorithm_info`, of type `string`, equal to the columns of the same name in `runs.parquet`. Their origin is `algorithm`, or `user` after an edit.
-- Keys have 1 to 256 characters and no control characters (U+0000 to U+001F). Apart from `algorithm_name` and `algorithm_info`, a key MUST NOT be a column name of `runs.parquet` or one of the fixed trace columns, because analysis resolves names in both places. A reader that meets such a source name renames it and records that in `manifest.renamed_columns` with `table` set to `descriptors`.
+- Every run MUST have the descriptors `algorithm_name` and `algorithm_info`, of type `string`, with origin `algorithm`, or `user` after an edit. They are stored only here. `algorithm_info` is `""` when the source has none.
+- Keys have 1 to 256 characters and no control characters (U+0000 to U+001F). A key MUST NOT be a column name of `runs.parquet` or one of the fixed trace columns, because analysis resolves names in both places. A reader that meets such a source name renames it and records that in `manifest.renamed_columns` with `table` set to `descriptors`.
 - Rows are sorted by `key` (byte by byte in UTF-8) and then by `run_id`, so that reading a few keys skips most row groups.
 - The storage rules of the trace apply, and the key-value metadata `iohinspector.table` is `descriptors`.
 
-**Editing after conversion.** Descriptors can be added, changed and removed after conversion, for example to tag runs. An edit rewrites `descriptors.parquet` and the manifest (its `descriptors` summary, `counts.descriptors_rows` and `updated`), and `runs.parquet` when `algorithm_name` or `algorithm_info` changes. It never rewrites `trace.parquet` or `positions.parquet`, and run ids do not change. Edited and added values get the origin `user`. `algorithm_name` and `algorithm_info` can be changed but not removed.
+**Editing after conversion.** Descriptors can be added, changed and removed after conversion, for example to tag runs. An edit rewrites `descriptors.parquet` and the manifest (its `descriptors` summary, `counts.descriptors_rows` and `updated`), and nothing else: not `runs.parquet`, also when `algorithm_name` or `algorithm_info` changes, and never `trace.parquet` or `positions.parquet`. Run ids do not change. Edited and added values get the origin `user`. `algorithm_name` and `algorithm_info` can be changed but not removed.
 
-**Grouping.** An analysis names what it compares with `by`, a list of names (default `["algorithm_name"]`). Each name is a `runs.parquet` column (such as `function_id` or `dimension`) or a descriptor key. A descriptor key becomes one column with one value per run:
+**Grouping.** An analysis names what it compares with `by`, a list of names (default `["algorithm_name"]`). Each name is a `runs.parquet` column (such as `function_id` or `dimension`) or a descriptor key; the default is therefore read from the descriptors. A descriptor key becomes one column with one value per run:
 
 - if every value of the key has one type, the column has that type: string for `string`, int64 for `int` (string with the exact decimal text if any value is outside int64), float64 for `float`, boolean for `bool`;
 - if the key has several types, the column is a string column of the `value` texts, so that values that differ in type stay apart (the caller may ask for an error instead);
@@ -387,7 +385,7 @@ One row per logged evaluation.
 
 **Sort order.** The rows of a run are contiguous and in `row` order, and runs appear in run order (the order of `runs.parquet`). This sorts the trace by suite, function, dimension, source file, run and row. A run MAY have no trace rows.
 
-**Extra columns.** Readers keep every extra logged column. Names MUST be non-empty and MUST NOT be one of the reserved names: the six columns above, every `runs.parquet` column name, and every name matching `y[0-9]+` or `x[0-9]+`. A reader that meets a reserved source name renames the column and records it in `manifest.renamed_columns`. A column that a source file does not have is null for that file's rows.
+**Extra columns.** Readers keep every extra logged column. Names MUST be non-empty and MUST NOT be one of the reserved names: the six columns above, every `runs.parquet` column name, `algorithm_name`, `algorithm_info`, and every name matching `y[0-9]+` or `x[0-9]+`. A reader that meets a reserved source name renames the column and records it in `manifest.renamed_columns`. A column that a source file does not have is null for that file's rows.
 
 **Storage.** These rules make filters on function and dimension fast:
 
@@ -425,7 +423,7 @@ Version 1 only reserves room; the design follows after launch with IOHexperiment
 - the manifest: JSON Schema, the format name, an unknown major version, duplicate source paths, and an `archive` that is not listed;
 - the schemas: missing or unknown columns, wrong types, nulls in not-null columns, reserved names, positions columns that are not `x0` to `x(D-1)`;
 - the runs: duplicate or wrongly computed run ids, duplicate `(source_file, source_run_index)`, sort order, `n_objectives` other than 1, `dimension` below 1, `source_file` not in the manifest, and a malformed `source_rows_sha256`;
-- the descriptors: run ids that are not in `runs.parquet`, duplicate `(run_id, key)`, unknown origins or types, a `value` that is not canonical for its type or disagrees with the typed column, typed columns that should be null, invalid or reserved keys, sort order, runs without `algorithm_name` or `algorithm_info`, algorithm descriptors that differ from the `runs.parquet` columns, and a manifest summary that does not match;
+- the descriptors: run ids that are not in `runs.parquet`, duplicate `(run_id, key)`, unknown origins or types, a `value` that is not canonical for its type or disagrees with the typed column, typed columns that should be null, invalid or reserved keys, sort order, runs without `algorithm_name` or `algorithm_info`, those two with a type other than `string` or an origin other than `algorithm` or `user`, and a manifest summary that does not match;
 - the trace and positions: run ids that are not in `runs.parquet` (referential integrity), `function_id` or `dimension` that differ from the run's, sort order, row numbers with gaps, positions without a trace row, and coordinates whose nulls do not match the run's dimension;
 - the counts: `manifest.counts` against the row counts of the files.
 
@@ -437,12 +435,12 @@ All of it lives in `iohinspector.format`.
 
 | Function | Purpose |
 |---|---|
-| `write_dataset(path, manifest, runs, trace, *, positions=None, descriptors=None)` | Writes a dataset. The `algorithm_name` and `algorithm_info` descriptors are made from the runs columns. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
+| `write_dataset(path, manifest, runs, trace, *, positions=None, descriptors=None)` | Writes a dataset. `runs` has the columns of `RUNS_SCHEMA` only; `algorithm_name` or `algorithm_info` there is refused. `descriptors` MUST give every run an `algorithm_name`, usually as a record `(run_id, "algorithm_name", name, "algorithm")`; a run without `algorithm_info` gets `""` with origin `algorithm`. So the algorithm has one place in the input as on disk, and a dataset opened with `scan_dataset` writes back unchanged. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
 | `scan_dataset(path)` | Returns a `StoredDataset` with the manifest and `runs`, `descriptors`, `trace` and `positions` as polars LazyFrames. Refuses an unknown major version, and issues the manifest's warnings as `DatasetWarning` |
 | `StoredDataset.run_columns(by)` | A LazyFrame of `run_id` and one column per name in `by`, taken from `runs.parquet` or turned from descriptors into columns, ready for `trace.join(..., on="run_id").group_by(by)` |
 | `descriptor_columns(descriptors, keys)` | The same for a descriptors table alone |
 | `descriptor_frame(records)`, `encode_descriptor(value)` | Build a descriptors table from `(run_id, key, value, origin)` records with Python values; types are kept exactly |
-| `update_descriptors(path, upsert=None, remove_keys=())` | Add, change or remove descriptors of a stored dataset without rewriting its trace |
+| `update_descriptors(path, upsert=None, remove_keys=())` | Add, change or remove descriptors of a stored dataset. Rewrites only `descriptors.parquet` and the manifest |
 | `validate_dataset(path)` | Returns a `ValidationReport` with errors and warnings; `raise_for_errors()` raises `DatasetValidationError` |
 | `read_manifest(path)`, `write_manifest(path, manifest)`, `validate_manifest(manifest)` | Manifest input and output, with the JSON Schema check |
 | `new_manifest(dataset_id, reader_name, reader_version, ...)`, `file_entry(local_path, path, ...)` | Build a manifest, and a `sources` entry with the file's sha256 and size |

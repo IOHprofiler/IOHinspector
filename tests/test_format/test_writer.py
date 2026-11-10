@@ -11,6 +11,7 @@ from iohinspector.format import (
     TRACE_SCHEMA,
     FormatError,
     ManifestError,
+    descriptor_frame,
     new_manifest,
     run_ids,
     scan_dataset,
@@ -69,7 +70,7 @@ def test_round_trip(tmp_path):
     assert ds.manifest == manifest
     assert manifest["counts"] == {
         "runs": syn.runs.height,
-        "descriptors_rows": syn.descriptors.height + 2 * syn.runs.height,
+        "descriptors_rows": syn.descriptors.height + syn.runs.height,  # + info
         "trace_rows": syn.trace.height,
     }
     assert sorted(manifest["descriptors"]) == [
@@ -101,7 +102,9 @@ def test_runs_are_sorted_by_suite_function_dimension_and_source(tmp_path):
     syn = make_dataset(
         functions=(3, 1), dimensions=(10, 2), algorithms=("zeta", "alpha"), seed=2
     )
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     runs = scan_dataset(tmp_path / "ds").runs.collect()
     keys = runs.select(
         "function_id", "dimension", "source_file", "source_run_index"
@@ -116,13 +119,16 @@ def test_shuffled_chunks_give_the_same_dataset_as_sorted_input(tmp_path, small_s
         runs_per_file=3,
         rows=lambda r: r.randint(0, 40),
     )
-    write_dataset(tmp_path / "a", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "a", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     write_dataset(
         tmp_path / "b",
         syn.manifest,
         syn.runs,
         shuffled_chunks(syn.trace, 17),
         memory_limit=1,
+        descriptors=syn.descriptors,
     )
     a = scan_dataset(tmp_path / "a").trace.collect()
     b = scan_dataset(tmp_path / "b").trace.collect()
@@ -146,6 +152,7 @@ def test_external_sort_uses_several_spill_files(tmp_path, small_spills, monkeypa
         syn.runs,
         shuffled_chunks(syn.trace, 9),
         memory_limit=1,
+        descriptors=syn.descriptors,
     )
     assert seen and seen[0] > 2
     assert_same_values(
@@ -155,12 +162,19 @@ def test_external_sort_uses_several_spill_files(tmp_path, small_spills, monkeypa
 
 def test_lazy_and_iterable_inputs(tmp_path):
     syn = make_dataset(seed=3)
-    write_dataset(tmp_path / "lazy", syn.manifest, syn.runs.lazy(), syn.trace.lazy())
+    write_dataset(
+        tmp_path / "lazy",
+        syn.manifest,
+        syn.runs.lazy(),
+        syn.trace.lazy(),
+        descriptors=syn.descriptors,
+    )
     write_dataset(
         tmp_path / "iter",
         syn.manifest,
         syn.runs,
         (c.lazy() for c in shuffled_chunks(syn.trace, 4)),
+        descriptors=syn.descriptors,
     )
     for name in ("lazy", "iter"):
         assert_same_values(
@@ -216,7 +230,9 @@ def test_lossless_values(tmp_path):
             "raw_y": values,
         }
     )
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, trace, descriptors=syn.descriptors
+    )
     stored = scan_dataset(tmp_path / "ds").trace.collect()
     got = stored["raw_y"].to_list()
     assert [v.hex() for v in got if not math.isnan(v)] == [
@@ -230,11 +246,23 @@ def test_lossless_values(tmp_path):
 
 def test_runs_without_rows_and_an_empty_trace(tmp_path):
     syn = make_dataset(rows=lambda r: 0, extras=False)
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     ds = scan_dataset(tmp_path / "ds")
     assert ds.runs.collect().height == syn.runs.height
     trace = ds.trace.collect()
     assert trace.height == 0 and list(trace.columns) == list(TRACE_SCHEMA)
+
+
+def test_dataset_without_runs(tmp_path):
+    syn = make_dataset(rows=lambda r: 0, extras=False)
+    write_dataset(tmp_path / "ds", syn.manifest, syn.runs.head(0), syn.trace)
+    ds = scan_dataset(tmp_path / "ds")
+    assert ds.manifest["descriptors"] == {}
+    by = ds.run_columns(["algorithm_name", "algorithm_info", "dimension"]).collect()
+    assert by.height == 0
+    assert by.schema["algorithm_name"] == pl.String
 
 
 def test_positions_round_trip(tmp_path):
@@ -245,6 +273,7 @@ def test_positions_round_trip(tmp_path):
         syn.runs,
         syn.trace,
         positions=shuffled_chunks(syn.positions, 3),
+        descriptors=syn.descriptors,
     )
     ds = scan_dataset(tmp_path / "ds")
     pos = ds.positions.collect()
@@ -272,7 +301,12 @@ def test_positions_chunks_may_leave_out_high_coordinates(tmp_path):
     low = pos.filter(pl.col("dimension") == 2).select("run_id", "row", "x0", "x1")
     high = pos.filter(pl.col("dimension") == 3).drop("dimension")
     write_dataset(
-        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, positions=[low, high]
+        tmp_path / "ds",
+        syn.manifest,
+        syn.runs,
+        syn.trace,
+        positions=[low, high],
+        descriptors=syn.descriptors,
     )
     assert (
         scan_dataset(tmp_path / "ds").positions.collect().height == syn.positions.height
@@ -285,14 +319,25 @@ def test_extra_columns_declared_up_front(tmp_path):
     rest = syn.trace.slice(5)
     extra = {"sigma": pl.Float64, "restart": pl.Int64, "tag": pl.String}
     write_dataset(
-        tmp_path / "ds", syn.manifest, syn.runs, [first, rest], extra_columns=extra
+        tmp_path / "ds",
+        syn.manifest,
+        syn.runs,
+        [first, rest],
+        extra_columns=extra,
+        descriptors=syn.descriptors,
     )
     trace = scan_dataset(tmp_path / "ds").trace.collect()
     assert trace.columns[-3:] == ["sigma", "restart", "tag"]
     assert trace.height == syn.trace.height
 
     with pytest.raises(FormatError, match="extra_columns"):
-        write_dataset(tmp_path / "ds2", syn.manifest, syn.runs, [first, rest])
+        write_dataset(
+            tmp_path / "ds2",
+            syn.manifest,
+            syn.runs,
+            [first, rest],
+            descriptors=syn.descriptors,
+        )
 
 
 def test_integer_and_float32_inputs_are_widened_without_change(tmp_path):
@@ -305,7 +350,9 @@ def test_integer_and_float32_inputs_are_widened_without_change(tmp_path):
     runs = syn.runs.with_columns(
         pl.col("function_id").cast(pl.UInt8), pl.col("dimension").cast(pl.Int64)
     )
-    write_dataset(tmp_path / "ds", syn.manifest, runs, trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, runs, trace, descriptors=syn.descriptors
+    )
     stored = scan_dataset(tmp_path / "ds").trace.collect()
     assert stored.schema["raw_y"] == pl.Float64 and (stored["raw_y"] == 3.0).all()
 
@@ -321,7 +368,9 @@ def test_row_groups_start_at_function_and_dimension_changes(tmp_path, monkeypatc
         rows=lambda r: 30,
         extras=False,
     )
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     meta = pq.ParquetFile(tmp_path / "ds" / "trace.parquet").metadata
     assert meta.num_row_groups > 1
     names = [meta.schema.column(i).name for i in range(meta.num_columns)]
@@ -371,7 +420,13 @@ def test_row_groups_start_at_function_and_dimension_changes(tmp_path, monkeypatc
 def test_bad_trace_is_refused(tmp_path, mutate, message):
     syn = make_dataset(rows=lambda r: r.randint(3, 5), seed=10)
     with pytest.raises(FormatError, match=message):
-        write_dataset(tmp_path / "ds", syn.manifest, syn.runs, mutate(syn))
+        write_dataset(
+            tmp_path / "ds",
+            syn.manifest,
+            syn.runs,
+            mutate(syn),
+            descriptors=syn.descriptors,
+        )
     assert list(tmp_path.iterdir()) == []  # the temporary directory is removed
 
 
@@ -393,45 +448,82 @@ def test_bad_trace_is_refused(tmp_path, mutate, message):
 def test_bad_runs_are_refused(tmp_path, mutate, message):
     syn = make_dataset(seed=11)
     with pytest.raises(FormatError, match=message):
-        write_dataset(tmp_path / "ds", syn.manifest, mutate(syn.runs), syn.trace)
+        write_dataset(
+            tmp_path / "ds",
+            syn.manifest,
+            mutate(syn.runs),
+            syn.trace,
+            descriptors=syn.descriptors,
+        )
 
 
 def test_source_file_must_be_in_the_manifest(tmp_path):
     syn = make_dataset(seed=12)
     syn.manifest["sources"] = syn.manifest["sources"][1:]
     with pytest.raises(FormatError, match="not listed in the manifest"):
-        write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+        write_dataset(
+            tmp_path / "ds",
+            syn.manifest,
+            syn.runs,
+            syn.trace,
+            descriptors=syn.descriptors,
+        )
 
 
 def test_invalid_manifest_is_refused_before_writing(tmp_path):
     syn = make_dataset(seed=13)
     syn.manifest["sources"][0]["sha256"] = "nope"
     with pytest.raises(ManifestError):
-        write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+        write_dataset(
+            tmp_path / "ds",
+            syn.manifest,
+            syn.runs,
+            syn.trace,
+            descriptors=syn.descriptors,
+        )
     assert not (tmp_path / "ds").exists()
 
 
 def test_caller_manifest_is_not_changed(tmp_path):
     syn = make_dataset(seed=14)
     before = repr(syn.manifest)
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     assert repr(syn.manifest) == before
 
 
 def test_existing_dataset_needs_overwrite(tmp_path):
     syn = make_dataset(seed=15)
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     with pytest.raises(FileExistsError):
-        write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+        write_dataset(
+            tmp_path / "ds",
+            syn.manifest,
+            syn.runs,
+            syn.trace,
+            descriptors=syn.descriptors,
+        )
     smaller = syn.trace.filter(pl.col("row") < 2)
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, smaller, overwrite=True)
+    write_dataset(
+        tmp_path / "ds",
+        syn.manifest,
+        syn.runs,
+        smaller,
+        overwrite=True,
+        descriptors=syn.descriptors,
+    )
     assert scan_dataset(tmp_path / "ds").trace.collect().height == smaller.height
     assert sorted(p.name for p in tmp_path.iterdir()) == ["ds"]
 
 
 def test_failed_overwrite_keeps_the_old_dataset(tmp_path):
     syn = make_dataset(seed=16)
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
     with pytest.raises(FormatError):
         write_dataset(
             tmp_path / "ds",
@@ -439,6 +531,7 @@ def test_failed_overwrite_keeps_the_old_dataset(tmp_path):
             syn.runs,
             syn.trace.with_columns(pl.col("row") + 1),
             overwrite=True,
+            descriptors=syn.descriptors,
         )
     assert scan_dataset(tmp_path / "ds").trace.collect().height == syn.trace.height
     assert sorted(p.name for p in tmp_path.iterdir()) == ["ds"]
@@ -450,7 +543,12 @@ def test_overwrite_refuses_a_directory_that_is_not_a_dataset(tmp_path):
     syn = make_dataset(seed=17)
     with pytest.raises(FileExistsError, match="not a dataset"):
         write_dataset(
-            tmp_path / "ds", syn.manifest, syn.runs, syn.trace, overwrite=True
+            tmp_path / "ds",
+            syn.manifest,
+            syn.runs,
+            syn.trace,
+            overwrite=True,
+            descriptors=syn.descriptors,
         )
     assert (tmp_path / "ds" / "notes.txt").read_text() == "keep me"
 
@@ -464,7 +562,6 @@ def test_minimal_runs_get_defaults(tmp_path):
     )
     runs = pl.DataFrame(
         {
-            "algorithm_name": ["A"],
             "function_id": [1],
             "dimension": [2],
             "maximization": [False],
@@ -476,10 +573,16 @@ def test_minimal_runs_get_defaults(tmp_path):
     trace = pl.DataFrame(
         {"run_id": [rid], "row": [0], "evaluations": [1], "raw_y": [1.5]}
     )
-    write_dataset(tmp_path / "ds", manifest, runs, trace)
-    stored = scan_dataset(tmp_path / "ds").runs.collect().row(0, named=True)
-    assert stored["run_id"] == rid and stored["algorithm_info"] == ""
+    with pytest.raises(FormatError, match="lack a required algorithm_name"):
+        write_dataset(tmp_path / "ds", manifest, runs, trace)
+    name = descriptor_frame([(rid, "algorithm_name", "A", "algorithm")])
+    write_dataset(tmp_path / "ds", manifest, runs, trace, descriptors=name)
+    ds = scan_dataset(tmp_path / "ds")
+    stored = ds.runs.collect().row(0, named=True)
+    assert stored["run_id"] == rid
     assert stored["instance"] is None and stored["n_objectives"] == 1
+    algorithm = ds.run_columns(["algorithm_name", "algorithm_info"]).collect()
+    assert algorithm.row(0) == (rid, "A", "")
 
 
 def test_dataset_id_changes_run_ids(tmp_path):
@@ -494,6 +597,9 @@ def test_strings_sort_by_utf8_bytes(tmp_path):
     syn = make_dataset(
         algorithms=names, functions=(1,), dimensions=(2,), runs_per_file=1
     )
-    write_dataset(tmp_path / "ds", syn.manifest, syn.runs, syn.trace)
-    stored = scan_dataset(tmp_path / "ds").runs.collect()["algorithm_name"].to_list()
+    write_dataset(
+        tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
+    )
+    files = scan_dataset(tmp_path / "ds").runs.collect()["source_file"].to_list()
+    stored = [f.split("/")[0] for f in files]
     assert stored == sorted(names, key=lambda s: s.encode("utf-8"))

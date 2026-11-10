@@ -33,6 +33,7 @@ from .manifest import (
     writer_entry,
 )
 from .schema import (
+    ALGORITHM_DESCRIPTORS,
     COPIED_RUN_COLUMNS,
     DESCRIPTOR_COLUMNS,
     DESCRIPTORS_FILE,
@@ -90,13 +91,15 @@ def write_dataset(
 
     ``runs`` has one row per run with the columns of ``RUNS_SCHEMA``. ``run_id`` is
     computed when absent and checked when present; optional columns that are absent
-    get their defaults (``""`` for ``suite`` and ``algorithm_info``, 1 for
-    ``n_objectives``, null otherwise).
+    get their defaults (``""`` for ``suite``, 1 for ``n_objectives``, null
+    otherwise).
 
-    ``descriptors`` holds the runs' other descriptors (D17), with the columns of
-    ``DESCRIPTORS_SCHEMA``; build it with ``descriptor_frame``. The
-    ``algorithm_name`` and ``algorithm_info`` descriptors are made from the runs
-    columns, and must agree with them when given.
+    ``descriptors`` holds the runs' descriptors (D17), with the columns of
+    ``DESCRIPTORS_SCHEMA``; build it with ``descriptor_frame``. Every run needs an
+    ``algorithm_name`` descriptor of type string, usually with origin
+    ``algorithm``. A run without an ``algorithm_info`` descriptor gets one with
+    the value ``""`` and origin ``algorithm``. A dataset read with
+    ``scan_dataset`` can therefore be written back as it is.
 
     ``trace`` holds ``run_id``, ``row``, ``evaluations``, ``raw_y`` and any extra
     logged columns; ``function_id`` and ``dimension`` are copied from the runs.
@@ -192,36 +195,32 @@ def prepare_runs(
         raise TypeError("runs must be a polars DataFrame or LazyFrame")
     unknown = [c for c in runs.columns if c not in RUNS_SCHEMA]
     if unknown:
-        raise fr.FormatError(
-            f"runs: unknown column(s) {unknown}; other run information goes into descriptors"
-        )
+        hint = "other run information goes into descriptors"
+        if any(c in ALGORITHM_DESCRIPTORS for c in unknown):
+            hint = "algorithm_name and algorithm_info are descriptors, not runs columns"
+        raise fr.FormatError(f"runs: unknown column(s) {unknown}; {hint}")
     missing = [c for c in RUNS_REQUIRED_INPUT if c not in runs.columns]
     if missing:
         raise fr.FormatError(f"runs: missing required column(s) {missing}")
 
-    columns = []
-    for col in RUNS_COLUMNS:
-        if col.name in runs.columns:
-            columns.append(
-                fr.conform(
-                    runs[col.name], col.dtype, f"runs column {col.name!r}"
-                ).alias(col.name)
-            )
-        elif col.name == "run_id":
-            columns.append(
-                run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
-            )
-        else:
-            columns.append(
-                pl.repeat(
-                    RUNS_DEFAULTS[col.name], runs.height, dtype=col.dtype, eager=True
-                ).alias(col.name)
-            )
-    df = pl.DataFrame(columns)
+    df = pl.DataFrame([_runs_column(runs, col, dataset_id) for col in RUNS_COLUMNS])
     problems = fr.runs_problems(df, dataset_id, source_paths)
     if problems:
         raise fr.FormatError(fr.first_problem(problems))
     return fr.sort_runs(df)
+
+
+def _runs_column(runs: pl.DataFrame, col: Column, dataset_id: str) -> pl.Series:
+    """One runs column: conformed, computed (``run_id``) or its default."""
+    if col.name in runs.columns:
+        return fr.conform(runs[col.name], col.dtype, f"runs column {col.name!r}").alias(
+            col.name
+        )
+    if col.name == "run_id":
+        return run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
+    return pl.repeat(
+        RUNS_DEFAULTS[col.name], runs.height, dtype=col.dtype, eager=True
+    ).alias(col.name)
 
 
 def _check_target(path: Path, overwrite: bool) -> None:

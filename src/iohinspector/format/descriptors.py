@@ -21,14 +21,14 @@ from . import _frames as fr
 from ._io import replace_table
 from .manifest import read_manifest, utc_now, write_manifest
 from .schema import (
+    ALGORITHM_DESCRIPTOR_ORIGINS,
+    ALGORITHM_DESCRIPTORS,
     DESCRIPTOR_COLUMNS,
     DESCRIPTOR_ORIGINS,
     DESCRIPTOR_TYPES,
     DESCRIPTORS_FILE,
     DESCRIPTORS_SCHEMA,
     DESCRIPTORS_SORT_KEYS,
-    MIRRORED_DESCRIPTORS,
-    RUNS_COLUMNS,
     RUNS_FILE,
     descriptor_key_problem,
 )
@@ -145,52 +145,34 @@ def _conform_frame(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def mirrored_rows(runs: pl.DataFrame) -> pl.DataFrame:
-    """The ``algorithm_name`` and ``algorithm_info`` descriptors made from runs."""
-    parts = [
-        runs.select(
+def _missing_info_rows(given: pl.DataFrame, runs: pl.DataFrame) -> pl.DataFrame:
+    """``algorithm_info`` descriptors with value ``""`` for runs that lack one."""
+    has_info = given.filter(pl.col("key") == "algorithm_info").select("run_id")
+    return (
+        runs.select("run_id")
+        .join(has_info, on="run_id", how="anti")
+        .select(
             "run_id",
-            pl.lit(key).alias("key"),
+            pl.lit("algorithm_info").alias("key"),
             pl.lit("algorithm").alias("origin"),
             pl.lit("string").alias("type"),
-            pl.col(key).alias("value"),
+            pl.lit("").alias("value"),
             pl.lit(None, pl.Int64).alias("value_int"),
             pl.lit(None, pl.Float64).alias("value_float"),
             pl.lit(None, pl.Boolean).alias("value_bool"),
         )
-        for key in MIRRORED_DESCRIPTORS
-    ]
-    return pl.concat(parts, how="vertical")
+    )
 
 
 def prepare_descriptors(data: Any, runs: pl.DataFrame) -> pl.DataFrame:
-    """The full descriptors table for ``runs``: given rows plus the mirrored keys.
+    """The full descriptors table for ``runs``, sorted and checked.
 
-    Given ``algorithm_name`` or ``algorithm_info`` rows must agree with the runs
-    columns; missing ones are made from them. Raises ``FormatError`` on problems.
+    Every run must have an ``algorithm_name`` descriptor; runs without
+    ``algorithm_info`` get ``""`` (origin ``algorithm``). Raises ``FormatError`` on
+    problems.
     """
     given = conform_descriptors(data)
-    mirrored = given.filter(pl.col("key").is_in(list(MIRRORED_DESCRIPTORS)))
-    derived = mirrored_rows(runs)
-    check = derived.join(
-        mirrored.select("run_id", "key", "type", pl.col("value").alias("given")),
-        on=["run_id", "key"],
-        how="inner",
-        suffix="_given",
-    )
-    bad = check.filter(
-        (pl.col("given") != pl.col("value")) | (pl.col("type_given") != "string")
-    )
-    if bad.height:
-        r = bad.row(0, named=True)
-        raise fr.FormatError(
-            f"descriptors: {bad.height} {r['key']} descriptor(s) differ from the runs "
-            f"column, for example run {r['run_id']}: {r['given']!r} against {r['value']!r}"
-        )
-    missing = derived.join(
-        mirrored.select("run_id", "key"), on=["run_id", "key"], how="anti"
-    )
-    df = pl.concat([given, missing], how="vertical")
+    df = pl.concat([given, _missing_info_rows(given, runs)], how="vertical")
     df = sort_descriptors(df)
     problems = descriptor_problems(df, runs)
     if problems:
@@ -205,7 +187,8 @@ def sort_descriptors(df: pl.DataFrame) -> pl.DataFrame:
 def descriptor_problems(df: pl.DataFrame, runs: pl.DataFrame | None) -> list[str]:
     """Problems with a descriptors table that has the format's columns and types.
 
-    With ``runs``, also checks referential integrity and the mirrored keys.
+    With ``runs`` (a table with ``run_id``), also checks referential integrity and
+    that every run has the algorithm descriptors.
     """
     not_null = [c.name for c in DESCRIPTOR_COLUMNS if not c.nullable]
     problems = fr.null_problems(df, not_null, "descriptors")
@@ -245,7 +228,7 @@ def _row_problems(df: pl.DataFrame) -> list[str]:
 
 
 def _run_problems(df: pl.DataFrame, runs: pl.DataFrame) -> list[str]:
-    """Every run id exists; every run has the mirrored keys, equal to its columns."""
+    """Every run id exists; every run has the algorithm descriptors, as strings."""
     problems = []
     unknown = df.join(runs.select("run_id"), on="run_id", how="anti")
     if unknown.height:
@@ -253,30 +236,25 @@ def _run_problems(df: pl.DataFrame, runs: pl.DataFrame) -> list[str]:
             f"descriptors: {unknown.height} row(s) refer to run ids that are not in "
             f"runs, for example {unknown['run_id'][0]}"
         )
-    stored = df.filter(pl.col("key").is_in(list(MIRRORED_DESCRIPTORS)))
-    joined = mirrored_rows(runs).join(
-        stored.select("run_id", "key", "type", pl.col("value").alias("stored")),
-        on=["run_id", "key"],
-        how="left",
-        suffix="_stored",
-    )
-    absent = joined.filter(pl.col("stored").is_null())
-    if absent.height:
-        r = absent.row(0, named=True)
-        problems.append(
-            f"descriptors: {absent.height} run(s) lack a required {r['key']} "
-            f"descriptor, for example run {r['run_id']}"
+    for key in ALGORITHM_DESCRIPTORS:
+        rows = df.filter(pl.col("key") == key)
+        absent = runs.select("run_id").join(rows, on="run_id", how="anti")
+        if absent.height:
+            problems.append(
+                f"descriptors: {absent.height} run(s) lack a required {key} "
+                f"descriptor, for example run {absent['run_id'][0]}"
+            )
+        bad = rows.filter(
+            (pl.col("type") != "string")
+            | ~pl.col("origin").is_in(list(ALGORITHM_DESCRIPTOR_ORIGINS))
         )
-    differ = joined.filter(
-        (pl.col("stored") != pl.col("value")) | (pl.col("type_stored") != "string")
-    )
-    if differ.height:
-        r = differ.row(0, named=True)
-        problems.append(
-            f"descriptors: {differ.height} {r['key']} descriptor(s) disagree with "
-            f"runs.parquet, for example run {r['run_id']}: {r['stored']!r} against "
-            f"{r['value']!r}"
-        )
+        if bad.height:
+            r = bad.row(0, named=True)
+            problems.append(
+                f"descriptors: {bad.height} {key} descriptor(s) are not of type string "
+                f"with origin {' or '.join(ALGORITHM_DESCRIPTOR_ORIGINS)}, for example "
+                f"run {r['run_id']}: type {r['type']!r}, origin {r['origin']!r}"
+            )
     return problems
 
 
@@ -482,15 +460,15 @@ def update_descriptors(
     ``upsert`` is a descriptors table (see ``descriptor_frame``) or records
     ``(run_id, key, value, origin)``; its rows replace those with the same
     ``(run_id, key)`` and are stored with origin ``user``. ``remove_keys`` drops
-    keys from every run; ``algorithm_name`` and ``algorithm_info`` cannot be removed.
-    Changing them also updates ``runs.parquet``. The trace and positions are not
-    touched. Nothing is written when a check fails. Returns the new manifest.
+    keys from every run; ``algorithm_name`` and ``algorithm_info`` can be changed
+    (to strings) but not removed. Only descriptors.parquet and the manifest are
+    rewritten; runs, trace and positions are not touched. Nothing is written when
+    a check fails. Returns the new manifest.
     """
     path = Path(path)
     manifest = read_manifest(path, warn=False)
-    runs = pl.read_parquet(path / RUNS_FILE)
+    runs = pl.read_parquet(path / RUNS_FILE, columns=["run_id"])
     table = _without_keys(pl.read_parquet(path / DESCRIPTORS_FILE), remove_keys)
-    runs_changed = False
     if upsert is not None:
         if not isinstance(upsert, pl.DataFrame):
             upsert = descriptor_frame(upsert)
@@ -499,7 +477,6 @@ def update_descriptors(
         table = pl.concat(
             [table.join(pairs, on=["run_id", "key"], how="anti"), new], how="vertical"
         )
-        runs, runs_changed = _runs_with_mirrored(runs, new)
 
     table = sort_descriptors(table)
     problems = descriptor_problems(table, runs)
@@ -512,16 +489,14 @@ def update_descriptors(
     replace_table(
         table, list(DESCRIPTOR_COLUMNS), "descriptors", path / DESCRIPTORS_FILE
     )
-    if runs_changed:
-        replace_table(runs, list(RUNS_COLUMNS), "runs", path / RUNS_FILE)
     write_manifest(path, manifest)
     return manifest
 
 
 def _without_keys(table: pl.DataFrame, remove_keys: Iterable[str]) -> pl.DataFrame:
-    """``table`` without the keys to remove, which must exist and not be mirrored."""
+    """``table`` without the keys to remove, which must exist and not be required."""
     remove = list(dict.fromkeys(remove_keys))
-    protected = [k for k in remove if k in MIRRORED_DESCRIPTORS]
+    protected = [k for k in remove if k in ALGORITHM_DESCRIPTORS]
     if protected:
         raise fr.FormatError(
             f"descriptors {protected} are required and cannot be removed"
@@ -531,23 +506,3 @@ def _without_keys(table: pl.DataFrame, remove_keys: Iterable[str]) -> pl.DataFra
     if absent:
         raise fr.FormatError(f"descriptors {absent} do not exist")
     return table.filter(~pl.col("key").is_in(remove))
-
-
-def _runs_with_mirrored(
-    runs: pl.DataFrame, new: pl.DataFrame
-) -> tuple[pl.DataFrame, bool]:
-    """The runs with edited ``algorithm_name`` and ``algorithm_info`` copied in."""
-    changed = False
-    for key in MIRRORED_DESCRIPTORS:
-        changes = new.filter(pl.col("key") == key).select(
-            "run_id", pl.col("value").alias("__new")
-        )
-        if changes.height:
-            changed = True
-            runs = (
-                runs.join(changes, on="run_id", how="left")
-                .with_columns(pl.coalesce("__new", key).alias(key))
-                .drop("__new")
-            )
-    # Joins may reorder rows; run order does not depend on descriptors.
-    return fr.sort_runs(runs), changed

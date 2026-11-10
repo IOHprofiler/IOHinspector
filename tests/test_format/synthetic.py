@@ -22,6 +22,11 @@ class Synthetic:
     positions: pl.DataFrame | None
     descriptors: pl.DataFrame
 
+    def with_algorithms(self, records) -> pl.DataFrame:
+        """The runs' ``algorithm_name`` descriptors plus ``descriptor_frame(records)``."""
+        names = self.descriptors.filter(pl.col("key") == "algorithm_name")
+        return pl.concat([names, descriptor_frame(records)])
+
 
 def make_dataset(
     functions=(1, 2),
@@ -35,6 +40,9 @@ def make_dataset(
     dataset_id=DATASET_ID,
 ) -> Synthetic:
     """One source file per (algorithm, function, dimension), with ``runs_per_file`` runs.
+
+    ``descriptors`` holds every run's ``algorithm_name`` (origin ``algorithm``) and
+    the descriptors ``seed``, ``popsize`` and ``folder``; ``runs`` has no algorithm.
 
     Values include ties, zeros, inf and nan, so that a lossy writer would be caught.
     """
@@ -56,7 +64,7 @@ def make_dataset(
                 for i in range(runs_per_file):
                     run_rows.append(
                         {
-                            "algorithm_name": alg,
+                            "algorithm": alg,
                             "function_id": f,
                             "dimension": d,
                             "instance": i + 1,
@@ -71,12 +79,14 @@ def make_dataset(
     )
     records = []
     for run in runs.iter_rows(named=True):
+        records.append((run["run_id"], "algorithm_name", run["algorithm"], "algorithm"))
         records.append((run["run_id"], "seed", run["source_run_index"] * 7 + 1, "run"))
         records.append(
             (run["run_id"], "popsize", 10 * (1 + run["function_id"] % 2), "algorithm")
         )
-        records.append((run["run_id"], "folder", run["algorithm_name"], "path"))
+        records.append((run["run_id"], "folder", run["algorithm"], "path"))
     descriptors = descriptor_frame(records)
+    runs = runs.drop("algorithm")
     special = [0.0, float("inf"), float("-inf"), float("nan"), 1e-300, -0.0]
     trace_rows, pos_rows = [], []
     for run in runs.iter_rows(named=True):
@@ -129,9 +139,17 @@ def shuffled_chunks(
     return [shuffled.slice(i, size) for i in range(0, shuffled.height, size)]
 
 
+def algorithm_descriptors(run_id: pl.Series, names: list[str]) -> pl.DataFrame:
+    """The ``algorithm_name`` descriptors of the runs ``run_id``."""
+    return descriptor_frame(
+        (rid, "algorithm_name", name, "algorithm")
+        for rid, name in zip(run_id.to_list(), names, strict=True)
+    )
+
+
 def big_trace_chunks(
     n_rows: int, n_runs: int, chunk_rows: int, dataset_id: str, seed: int = 0
-) -> tuple[dict, pl.DataFrame, Iterator[pl.DataFrame]]:
+) -> tuple[dict, pl.DataFrame, pl.DataFrame, Iterator[pl.DataFrame]]:
     """A large dataset generated chunk by chunk, with runs in a scrambled order.
 
     Runs are spread over 24 functions and 6 dimensions. Each chunk holds consecutive
@@ -145,7 +163,6 @@ def big_trace_chunks(
     path = [f"alg{i % 7}/f{funcs[i % 24]}_d{dims[(i // 24) % 6]}.dat" for i in idx]
     runs = pl.DataFrame(
         {
-            "algorithm_name": [f"alg{i % 7}" for i in idx],
             "function_id": funcs[idx % 24],
             "dimension": dims[(idx // 24) % 6],
             "maximization": np.zeros(n_runs, dtype=bool),
@@ -156,6 +173,7 @@ def big_trace_chunks(
     runs = runs.with_columns(
         run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
     )
+    descriptors = algorithm_descriptors(runs["run_id"], [f"alg{i % 7}" for i in idx])
     sources = [{"path": p, "sha256": None, "bytes": None} for p in sorted(set(path))]
     manifest = new_manifest(dataset_id, "synthetic", "0.0", sources=sources)
     per_run = n_rows // n_runs
@@ -178,4 +196,4 @@ def big_trace_chunks(
                 }
             )
 
-    return manifest, runs, chunks()
+    return manifest, runs, descriptors, chunks()

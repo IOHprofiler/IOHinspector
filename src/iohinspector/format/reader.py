@@ -13,7 +13,14 @@ import polars as pl
 
 from .descriptors import _key_column
 from .manifest import DatasetWarning, read_manifest
-from .schema import DESCRIPTORS_FILE, POSITIONS_FILE, RUNS_FILE, RUNS_SCHEMA, TRACE_FILE
+from .schema import (
+    ALGORITHM_DESCRIPTORS,
+    DESCRIPTORS_FILE,
+    POSITIONS_FILE,
+    RUNS_FILE,
+    RUNS_SCHEMA,
+    TRACE_FILE,
+)
 
 
 @dataclass(frozen=True)
@@ -55,23 +62,30 @@ class StoredDataset:
 
         Each name is a ``runs.parquet`` column (such as ``function_id``) or a
         descriptor key, turned into a column as ``descriptor_columns`` does; runs
-        without the key get null. Join it to the trace on ``run_id`` and group by
-        ``by``. Raises ``ValueError`` for an unknown name.
+        without the key get null. ``algorithm_name`` and ``algorithm_info`` are
+        descriptors, so the default reads descriptors.parquet. Join the result to the
+        trace on ``run_id`` and group by ``by``. Raises ``ValueError`` for an unknown
+        name.
         """
         by = [b for b in dict.fromkeys(by) if b != "run_id"]
+        keys = self.manifest["descriptors"]
         unknown = [
             b
             for b in by
-            if b not in RUNS_SCHEMA and b not in self.manifest["descriptors"]
+            if b not in RUNS_SCHEMA and b not in keys and b not in ALGORITHM_DESCRIPTORS
         ]
         if unknown:
             raise ValueError(f"no runs column or descriptor is named {unknown}")
         lf = self.runs.select("run_id", *[b for b in by if b in RUNS_SCHEMA])
         for key in by:
-            if key not in RUNS_SCHEMA:
+            if key in RUNS_SCHEMA:
+                continue
+            if key in keys:
                 lf = lf.join(
                     _key_column(self.descriptors, key, mixed), on="run_id", how="left"
                 )
+            else:  # a required descriptor of a dataset without runs
+                lf = lf.with_columns(pl.lit(None, pl.String).alias(key))
         return lf.select("run_id", *by)
 
 
