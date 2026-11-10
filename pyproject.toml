@@ -48,6 +48,9 @@ dev = [
 ]
 
 
+[project.scripts]
+iohinspector = "iohinspector.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/IOHprofiler/iohinspector"
 Issues = "https://github.com/IOHprofiler/iohinspector/issues"
