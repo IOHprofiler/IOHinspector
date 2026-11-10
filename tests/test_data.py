@@ -72,10 +72,13 @@ class TestManager(unittest.TestCase):
         selection = manager.select(instances=[1], function_ids=[1])
         df = selection.load(monotonic=False)
         assert_shape(df, 84)
+        # The logs hold only improvements plus each run's final evaluation, so the
+        # best-so-far rows are all 84. iohinspector 0.0.8 gave 69: it dropped the
+        # final row of each of the 15 runs (defect fixed in WP I05).
         df = selection.load(monotonic=True)
-        assert_shape(df, 69)
+        assert_shape(df, 84)
         df = selection.load(monotonic=True, include_meta_data=True)
-        assert_shape(df, 69, 13)
+        assert_shape(df, 84, 13)
 
         selection = manager.select(function_ids=[0])
         self.assertFalse(selection.any)
@@ -86,7 +89,7 @@ class TestManager(unittest.TestCase):
         selection2 = manager.select(instances=[1], function_ids=[2])
         selection = selection1 + selection2
         df = selection.load()
-        assert_shape(df, 125)
+        assert_shape(df, 150)  # 0.0.8: 125, without the final rows of the 25 runs
 
     def test_align(self):
         manager = DataManager()
@@ -112,7 +115,8 @@ class TestManager(unittest.TestCase):
         df = selection.load(monotonic=True, include_meta_data=True)
 
         ax, dt = plot_ecdf(df)
-        self.assertEqual(dt.shape, (66, 14))
+        # 0.0.8: (66, 14); the final rows extend the budget range (WP I05)
+        self.assertEqual(dt.shape, (68, 14))
 
     def test_select_on_data_id(self):
         manager = DataManager()

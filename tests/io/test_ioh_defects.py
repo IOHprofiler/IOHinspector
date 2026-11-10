@@ -71,7 +71,6 @@ def test_reader_splits_runs_on_header_lines(ioh040):
     assert [len(r) for r in expected_by_run(dat)] == [4, 3, 3]
 
 
-@pytest.mark.xfail(strict=True, reason="defect: runs split on evaluations == 1")
 def test_manager_splits_runs_on_header_lines(ioh040):
     folder = ioh040 / "every_third"
     df = load(folder, monotonic=False)
@@ -90,9 +89,6 @@ def test_reader_keeps_rows_that_repeat_across_runs(ioh040):
     assert trace_by_run(result) == expected_by_run(dat)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="defect: improvement filter compares across runs"
-)
 def test_manager_improvement_filter_is_per_run(ioh040):
     df = load(ioh040 / "cross_run", monotonic=True)
     firsts = df.group_by("run_id").agg(pl.col("evaluations").min())
@@ -111,9 +107,6 @@ def test_reader_keeps_final_rows(ioh040):
         assert [r[-1] for r in got] == [r[-1] for r in expected_by_run(dat)]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="defect: final row dropped by the monotonic filter"
-)
 def test_manager_monotonic_load_keeps_final_rows(ioh040):
     df = load(ioh040 / "cross_run", monotonic=True)
     lasts = df.group_by("run_id").agg(pl.col("evaluations").max()).sort("run_id")
@@ -133,7 +126,9 @@ def test_reader_keeps_f_zero(ioh040):
 
 def test_manager_loads_f_zero(ioh040):
     df = load(ioh040 / "f_zero", monotonic=True)
-    assert df.filter(pl.col("raw_y") == 0.0).height == 2
+    zeros = df.filter(pl.col("raw_y") == 0.0)
+    # f = 0 at evaluation 2, kept as best-so-far until the final evaluation 4
+    assert zeros["evaluations"].to_list() == [2, 4, 2, 4]
 
 
 @pytest.mark.xfail(
@@ -171,7 +166,6 @@ def test_reader_reads_attributes_and_maximization(ioh040):
     assert set(info["value"]) == {'C:\\runs\\ea "v2"'}
 
 
-@pytest.mark.xfail(strict=True, reason="defect: run attributes are never read")
 def test_manager_reads_run_attributes(ioh040):
     manager = DataManager()
     with warnings.catch_warnings():

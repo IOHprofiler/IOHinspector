@@ -454,3 +454,23 @@ def _trace(runs):
 def test_infer_triggers(runs, maximization, kind):
     got = infer_triggers(_trace(runs), maximization)
     assert (got[0]["kind"] if got else None) == kind
+
+
+# --- DataManager on the new reader ---------------------------------------------------
+
+
+def test_manager_columns_with_positions():
+    from iohinspector import DataManager
+
+    manager = DataManager()
+    with pytest.warns(UserWarning, match="metadata schema"):
+        manager.add_folder(str(ROOT / "io" / "data" / "ioh040" / "attributes"))
+    df = manager.load(monotonic=False)
+    assert df.height == 12
+    assert df.columns[:3] == ["evaluations", "raw_y", "sigma"]
+    assert {"x0", "position_x0", "position_x1", "position_x5"} <= set(df.columns)
+    assert df.group_by("data_id").len()["len"].sort().to_list() == [2, 3, 3, 4]
+    assert df.schema["evaluations"] == pl.UInt64
+    overview = manager.overview
+    assert overview["instance_exp_attr"].to_list() == ["seven"] * 4
+    assert overview["unset"].is_nan().all()

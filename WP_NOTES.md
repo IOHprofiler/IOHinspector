@@ -8,11 +8,16 @@ Status: in progress
   `read`, `ReadResult`, `ReaderError`) and `iohinspector.io.ioh` (`read_ioh`,
   `parse_dat`, `load_ioh_json`, `infer_triggers`), with the quirks recorded in the
   manifest; tests in `tests/io/test_ioh.py`
+- step 4: `DataManager` reads IOHexperimenter data through the new reader:
+  `Dataset.from_json` uses `load_ioh_json` (quirk repairs; run attributes in the
+  overview as Float64 columns), `Scenario.load` uses `parse_dat` (split on headers,
+  no dedup, file:line errors) and `monotone_per_run` (best-so-far per run, final
+  row kept). COCO and the `.parquet` sidecar path are unchanged (I07).
 
 ## Next step
-Step 4: back `DataManager` (``data.py`` ``Dataset.from_json`` and
-``Scenario.load`` for IOH sources) with `load_ioh_json` and `parse_dat`; remove the
-manager-level `xfail` markers in `tests/io/test_ioh_defects.py`.
+Step 5: hypothesis tests in `tests/io/test_ioh_hypothesis.py`: generate logs with
+a writer that mimics IOHexperimenter (ties, f = 0, maximisation, inf/nan, runs
+without improvement, missing final rows), write them, read them back, compare.
 
 ## Decisions
 - Workers commit locally only (CLAUDE.md); the controller pushes and opens the PR.
@@ -41,6 +46,12 @@ manager-level `xfail` markers in `tests/io/test_ioh_defects.py`.
   message naming the bug instead of guessing.
 - Triggers are not in the JSON; `all` / `improvement` are inferred from the data
   and marked `params.inferred`.
+- Existing tests changed numbers because they encoded the final-row defect:
+  `tests/test_data.py` monotonic loads 69 -> 84 and 125 -> 150 rows (one final row
+  per run: 15 and 25 runs), ECDF frame (66, 14) -> (68, 14).
+- `try_eval` uses `ast.literal_eval` instead of `eval` on experiment attributes.
+- `tests/io/conftest.py` restores the legacy process-global `data_id` counter after
+  each test, because older tests select by `data_id` (General defect, not I05).
 - `trace` is held in memory as one DataFrame; streaming is I09's convert command.
 
 ## Open questions / Blocked
