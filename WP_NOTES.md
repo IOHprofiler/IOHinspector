@@ -12,8 +12,14 @@ Status: in progress
   (identical-row rule, same `logged_in`/`merge_conflict` columns as I06's
   `_legacy_merge.py`); `READERS["coco"]`; `tests/io/test_coco.py`.
 
+- step 3: `docs/readers-coco.md` (inventory, mapping, merge, archives,
+  differences); `tests/io/test_coco_cocopp.py` (runtimes + aRT vs cocopp on
+  `coco` and the new `coco_old` fixture); `tests/io/test_coco_archive.py`
+  (opt-in, `COCO_ARCHIVE_TESTS=1`: all 24 sampled archives lossless, 87 s);
+  `tests/golden/cocopp/generate.py` takes a fixture name, `make golden-cocopp`
+  also writes `cocopp/coco_old/` (the `coco` outputs are byte-identical).
+
 ## Next step
-Step 3: cocopp comparison test, archive-sample test, `docs/readers-coco.md`.
 Step 4: back `DataManager`'s COCO path with the reader; defect tests.
 
 ## Decisions
@@ -30,6 +36,14 @@ Step 4: back `DataManager`'s COCO path with the reader; defect tests.
 - `raw_y` is column 3, "best noise-free fitness - Fopt" (Δf), as cocopp and
   IOHanalyzer use; `optimum` is the Fopt from each run's header line, so raw f is
   `raw_y + optimum`. Other columns are kept as extra trace columns.
+
+- New golden fixture `tests/golden/fixtures/coco_old` (DIRECT f6, 2-D and 3-D,
+  bbob 2009: old header, Windows paths, CRLF, unsuccessful runs), cocopp only;
+  not in `load.FIXTURES` (IOHanalyzer's list). `versions.json` records Python
+  3.11.16 (this machine; `coco` was made with 3.11.17).
+- Finding for I10/I12: cocopp's `detEvals` looks 17 of the 51 standard targets
+  up one grid level stricter (its level `10**(i/5)` is one ulp above the
+  target). The cocopp goldens carry that; the comparison test reproduces it.
 
 ## Open questions / Blocked
 - none

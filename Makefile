@@ -44,6 +44,7 @@ golden-venv:
 
 golden-cocopp: golden-venv
 	$(GOLDEN_PY) $(GOLDEN)/cocopp/generate.py $(GOLDEN)/fixtures $(GOLDEN)/cocopp/coco
+	$(GOLDEN_PY) $(GOLDEN)/cocopp/generate.py $(GOLDEN)/fixtures $(GOLDEN)/cocopp/coco_old coco_old
 
 golden-fixtures: golden-venv
 	$(GOLDEN_PY) $(GOLDEN)/make_fixtures.py

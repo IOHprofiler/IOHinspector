@@ -14,9 +14,9 @@ the difference. The goldens record what IOHanalyzer actually returns, defects in
 | `fixtures/` | the input logs, 0.9 MB in total (below) |
 | `iohanalyzer/<fixture>/<metric>.parquet` | one file per metric and fixture, zstd, written by `generate.R` |
 | `iohanalyzer/versions.json` | package versions, seed, the R call behind every file, and the calls that failed |
-| `cocopp/generate.py`, `cocopp/coco/` | cocopp 2.9.1 references for the COCO fixture and their `versions.json` |
+| `cocopp/generate.py`, `cocopp/coco/`, `cocopp/coco_old/` | cocopp 2.9.1 references for the COCO fixtures and their `versions.json` |
 | `make_fixtures.py` | regenerates the ioh 0.4.0 fixtures (fixed seeds) |
-| `load.py` | `golden(fixture, metric)`, `golden_cocopp(name)`, `versions()`, `fixture_path(name)` |
+| `load.py` | `golden(fixture, metric)`, `golden_cocopp(name, fixture)`, `versions()`, `fixture_path(name)` |
 | `test_golden_files.py` | self-consistency checks of the committed files |
 
 ## Fixtures
@@ -29,6 +29,7 @@ the difference. The goldens record what IOHanalyzer actually returns, defects in
 | `ioh040_pos` | `ioh==0.4.0` | positions logged as parameters `x0..x2` |
 | `extdata` | IOHanalyzer `inst/extdata` | legacy IOHprofiler `.info` + `.dat`, three data sets with 10 runs each |
 | `coco` | `tests/test_coco_data` | COCO BFGS on f1, 2-D, 15 instances |
+| `coco_old` | COCO data archive, `bbob/2009/DIRECT_posik_noiseless.tgz` (WP I07) | DIRECT on f6, 2-D and 3-D, instances 1-5: the 2009 logger's format (old header, Windows paths, CRLF), unsuccessful runs. The `.info` file is cut to its 2-D and 3-D blocks; data files unchanged. cocopp references only |
 
 ## Regenerate
 
@@ -72,7 +73,7 @@ multi-algorithm metrics need at least two algorithms); `versions.json` names eve
 | EAF and EAF differences | `EAF`, `EAF_logx`, `ECDF_From_EAF`, `EAF_Difference`, `EAF_diff_Approximate` | `generate_data.EAF`, `generate_data.ECDF_From_EAF`, `generate_data.EAF_Difference`, `generate_data.EAF_diff_Approximate` (eaf 2.5) |
 | DSC (partial) | none | see below |
 | AOCC | none from IOHanalyzer | see below |
-| cocopp (COCO fixture) | `cocopp/coco/{runtimes_51targets,art_51targets,art_table_targets,ecdf_51targets}` | `DataSet.detEvals`, `detERT`, `detSuccesses` |
+| cocopp (COCO fixtures) | `cocopp/coco/{runtimes_51targets,art_51targets,art_table_targets,ecdf_51targets}`, the same with `_2D` and `_3D` in `cocopp/coco_old/` | `DataSet.detEvals`, `detERT`, `detSuccesses` |
 
 Not produced, and why:
 

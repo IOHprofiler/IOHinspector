@@ -56,8 +56,11 @@ def file_runs(path: Path) -> list[list[list[str]]]:
 
 
 def as_values(tokens: list[str]) -> tuple:
-    return (int(tokens[0]), int(tokens[1]) if "." not in tokens[1] else float(tokens[1]),
-            *(float(t) for t in tokens[2:]))
+    return (
+        int(tokens[0]),
+        int(tokens[1]) if "." not in tokens[1] else float(tokens[1]),
+        *(float(t) for t in tokens[2:]),
+    )
 
 
 def trace_rows(result, kind: str | None = None) -> list[list[tuple]]:
@@ -68,12 +71,19 @@ def trace_rows(result, kind: str | None = None) -> list[list[tuple]]:
     if kind is not None and "logged_in" in trace.columns:
         trace = trace.filter(pl.col("logged_in").str.split("+").list.contains(kind))
     second = "g_evaluations" if "g_evaluations" in trace.columns else "current_delta_f"
-    xs = sorted((c for c in trace.columns if re.fullmatch(r"x\d+", c)), key=lambda c: int(c[1:]))
+    xs = sorted(
+        (c for c in trace.columns if re.fullmatch(r"x\d+", c)), key=lambda c: int(c[1:])
+    )
     out = []
     for rid in result.runs.sort("source_file", "source_run_index")["run_id"]:
         rows = trace.filter(pl.col("run_id") == rid).sort("row")
         cols = ["evaluations", second, "raw_y", "measured_f", "best_measured_f", *xs]
-        out.append([tuple(v for v in r if v is not None) for r in rows.select(cols).iter_rows()])
+        out.append(
+            [
+                tuple(v for v in r if v is not None)
+                for r in rows.select(cols).iter_rows()
+            ]
+        )
     return out
 
 
@@ -100,14 +110,27 @@ def run_text(fopt: float, rows: list[str], style: str = NEW) -> str:
     return "\n".join([style.format(fopt=f"{fopt:.12e}"), *rows]) + "\n"
 
 
-DAT = run_text(10.0, ["1 0 +1.0e+00 +1.1e+01 +1.1e+01 +1.0e-01 +2.0e-01",
-                      "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01"]) + run_text(
-    -5.0, ["1 0 +5.0e-01 -4.5e+00 -4.5e+00 +5.0e-01 +6.0e-01"])
-TDAT = run_text(10.0, ["1 0 +1.0e+00 +1.1e+01 +1.1e+01 +1.0e-01 +2.0e-01",
-                       "2 0 +1.0e+00 +1.2e+01 +1.1e+01 +7.0e-01 +8.0e-01",
-                       "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01"]) + run_text(
-    -5.0, ["1 0 +5.0e-01 -4.5e+00 -4.5e+00 +5.0e-01 +6.0e-01",
-           "2 0 +5.0e-01 -4.4e+00 -4.5e+00 +9.0e-01 +1.0e+00"])
+DAT = run_text(
+    10.0,
+    [
+        "1 0 +1.0e+00 +1.1e+01 +1.1e+01 +1.0e-01 +2.0e-01",
+        "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01",
+    ],
+) + run_text(-5.0, ["1 0 +5.0e-01 -4.5e+00 -4.5e+00 +5.0e-01 +6.0e-01"])
+TDAT = run_text(
+    10.0,
+    [
+        "1 0 +1.0e+00 +1.1e+01 +1.1e+01 +1.0e-01 +2.0e-01",
+        "2 0 +1.0e+00 +1.2e+01 +1.1e+01 +7.0e-01 +8.0e-01",
+        "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01",
+    ],
+) + run_text(
+    -5.0,
+    [
+        "1 0 +5.0e-01 -4.5e+00 -4.5e+00 +5.0e-01 +6.0e-01",
+        "2 0 +5.0e-01 -4.4e+00 -4.5e+00 +9.0e-01 +1.0e+00",
+    ],
+)
 
 
 def codes(result) -> list[str]:
@@ -143,9 +166,7 @@ def test_fixture_runs():
     assert set(runs["dimension"]) == {2}
     assert not any(runs["maximization"])
     assert runs["best_y"].is_null().all()
-    assert set(runs["source_file"]) == {
-        dat.relative_to(FIXTURE).as_posix()
-    }
+    assert set(runs["source_file"]) == {dat.relative_to(FIXTURE).as_posix()}
 
 
 def test_fixture_descriptors():
@@ -183,7 +204,9 @@ def test_fixture_source_rows_sha256():
         hashlib.sha256("".join(" ".join(t) + "\n" for t in run).encode()).hexdigest()
         for run in file_runs(dat)
     ]
-    assert result.runs.sort("source_run_index")["source_rows_sha256"].to_list() == hashes
+    assert (
+        result.runs.sort("source_run_index")["source_rows_sha256"].to_list() == hashes
+    )
 
 
 def test_fixture_round_trip(tmp_path):
@@ -203,7 +226,9 @@ def test_fixture_round_trip(tmp_path):
 
 def test_identical_rows_merged_and_others_kept(tmp_path):
     result = read_coco(write_coco(tmp_path, {"dat": DAT, "tdat": TDAT}), "m")
-    trace = result.trace.join(result.runs.select("run_id", "source_run_index"), on="run_id")
+    trace = result.trace.join(
+        result.runs.select("run_id", "source_run_index"), on="run_id"
+    )
     first = trace.filter(pl.col("source_run_index") == 0).sort("row")
     assert first["evaluations"].to_list() == [1, 2, 3]
     assert first["logged_in"].to_list() == ["dat+tdat", "tdat", "dat+tdat"]
@@ -212,19 +237,25 @@ def test_identical_rows_merged_and_others_kept(tmp_path):
 
 
 def test_conflicting_rows_kept_and_flagged(tmp_path):
-    tdat = TDAT.replace("3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01",
-                        "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.5e-01 +4.0e-01")
+    tdat = TDAT.replace(
+        "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01",
+        "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.5e-01 +4.0e-01",
+    )
     result = read_coco(write_coco(tmp_path, {"dat": DAT, "tdat": tdat}), "m")
     rows = result.trace.filter(pl.col("evaluations") == 3)
     assert rows["logged_in"].to_list() == ["dat", "tdat"]
     assert rows["merge_conflict"].to_list() == [True, True]
     assert "merge_conflict" in codes(result)
-    positions = result.positions.join(rows.select("run_id", "row"), on=["run_id", "row"])
+    positions = result.positions.join(
+        rows.select("run_id", "row"), on=["run_id", "row"]
+    )
     assert sorted(positions["x0"].to_list()) == [0.3, 0.35]
 
 
 def test_rows_repeated_in_one_file_stay(tmp_path):
-    dat = run_text(1.0, ["1 0 +1.0e+00 +2.0e+00 +2.0e+00", "1 0 +1.0e+00 +2.0e+00 +2.0e+00"])
+    dat = run_text(
+        1.0, ["1 0 +1.0e+00 +2.0e+00 +2.0e+00", "1 0 +1.0e+00 +2.0e+00 +2.0e+00"]
+    )
     result = read_coco(write_coco(tmp_path, {"dat": dat}, entries="1:1|1.0e+00"), "m")
     assert result.trace.height == 2
     assert result.positions is None
@@ -236,10 +267,17 @@ def test_different_run_counts_fail(tmp_path):
 
 
 def test_restart_lines_do_not_split_runs(tmp_path):
-    rdat = run_text(10.0, ["% restart: independent restart",
-                           "2 0 +1.0e+00 +1.2e+01 +1.1e+01 +7.0e-01 +8.0e-01",
-                           "% restart: independent restart"]) + run_text(-5.0, [])
-    result = read_coco(write_coco(tmp_path, {"dat": DAT, "tdat": TDAT, "rdat": rdat}), "m")
+    rdat = run_text(
+        10.0,
+        [
+            "% restart: independent restart",
+            "2 0 +1.0e+00 +1.2e+01 +1.1e+01 +7.0e-01 +8.0e-01",
+            "% restart: independent restart",
+        ],
+    ) + run_text(-5.0, [])
+    result = read_coco(
+        write_coco(tmp_path, {"dat": DAT, "tdat": TDAT, "rdat": rdat}), "m"
+    )
     assert result.runs.height == 2
     row = result.trace.filter(pl.col("evaluations") == 2).sort("row")
     assert row["logged_in"].to_list() == ["tdat+rdat", "tdat"]
@@ -256,10 +294,18 @@ def test_dat_missing_tdat_is_source_file(tmp_path):
 
 
 def test_old_header_style(tmp_path):
-    dat = run_text(79.48, ["1 +5.8e-01 +5.8e-01 +8.0e+01 +8.0e+01 -3.2e-01 -6.6e-01",
-                           "4 +2.7e-13 +2.7e-13 +7.9e+01 +7.9e+01"], style=OLD)
-    info = ("funcId = 1, DIM = 2, Precision = 1.000e-08, algId = 'ALPS'\n"
-            "% 0001 ALPS\ndata_f1/bbobexp_f1_DIM2.dat, 1:4|-1.0e-08\n")
+    dat = run_text(
+        79.48,
+        [
+            "1 +5.8e-01 +5.8e-01 +8.0e+01 +8.0e+01 -3.2e-01 -6.6e-01",
+            "4 +2.7e-13 +2.7e-13 +7.9e+01 +7.9e+01",
+        ],
+        style=OLD,
+    )
+    info = (
+        "funcId = 1, DIM = 2, Precision = 1.000e-08, algId = 'ALPS'\n"
+        "% 0001 ALPS\ndata_f1/bbobexp_f1_DIM2.dat, 1:4|-1.0e-08\n"
+    )
     result = read_coco(write_coco(tmp_path, {"dat": dat}, info), "o")
     assert result.trace["current_delta_f"].to_list() == [0.58, 2.7e-13]
     assert result.positions.height == 1  # only the first row wrote x
@@ -280,9 +326,11 @@ def test_noisy_suite_inferred(tmp_path):
 
 
 def test_unfinalized_runs_and_messy_info(tmp_path):
-    info = (f"\n{HEADER}\r\n% alg\r\n"
-            "data_f1/bbobexp_f1_DIM2.dat, 1:3|1.0e-01, 2\r\n"
-            ":2001991|1.4e-03, 5\n\n")
+    info = (
+        f"\n{HEADER}\r\n% alg\r\n"
+        "data_f1/bbobexp_f1_DIM2.dat, 1:3|1.0e-01, 2\r\n"
+        ":2001991|1.4e-03, 5\n\n"
+    )
     result = read_coco(write_coco(tmp_path, {"dat": DAT}, info), "u")
     runs = result.runs.sort("source_run_index")
     assert runs["instance"].to_list() == [1, 2]
@@ -318,14 +366,20 @@ def test_reserved_header_key_renamed(tmp_path):
 
 def test_folder_header_and_unreferenced_files(tmp_path):
     write_coco(tmp_path / "sub", {"dat": DAT, "mdat": run_text(1.0, [])})
-    info = HEADER + ", folder = 'sub'\n% alg\ndata_f1/bbobexp_f1_DIM2.dat, 1:3|1.0e-01, 2:1|5.0e-01\n"
+    info = (
+        HEADER
+        + ", folder = 'sub'\n% alg\ndata_f1/bbobexp_f1_DIM2.dat, 1:3|1.0e-01, 2:1|5.0e-01\n"
+    )
     (tmp_path / "x.info").write_text(info)
     (tmp_path / "sub" / "bbobexp_f1.info").unlink()
     (tmp_path / "sub" / "data_f1" / "other.dat").write_text(DAT)
     result = read_coco(tmp_path, "f")
     assert set(result.runs["source_file"]) == {"sub/data_f1/bbobexp_f1_DIM2.dat"}
-    unreferenced = [w["source"] for w in result.manifest["warnings"]
-                    if w["code"] == "unreferenced_data_file"]
+    unreferenced = [
+        w["source"]
+        for w in result.manifest["warnings"]
+        if w["code"] == "unreferenced_data_file"
+    ]
     assert unreferenced == ["sub/data_f1/bbobexp_f1_DIM2.mdat", "sub/data_f1/other.dat"]
 
 
@@ -352,7 +406,11 @@ def test_other_info_files_are_skipped(tmp_path):
         (run_text(1.0, ["1 0 +1.0e+00 +2.0e+00"]), 2, "4 fields"),
         (run_text(1.0, ["1.5 0 +1.0e+00 +2.0e+00 +2.0e+00"]), 2, "not an integer"),
         (run_text(1.0, ["1 0 +1.0e+00 abc +2.0e+00"]), 2, "not a number"),
-        (run_text(1.0, ["1 0 1 2 2"]) + run_text(1.0, [], style=OLD), 3, "header style"),
+        (
+            run_text(1.0, ["1 0 1 2 2"]) + run_text(1.0, [], style=OLD),
+            3,
+            "header style",
+        ),
     ],
 )
 def test_malformed_data_file(tmp_path, dat, line, message):
@@ -368,7 +426,10 @@ def test_malformed_data_file(tmp_path, dat, line, message):
     [
         ("funcId = 1, Precision = 1e-8, algId = 'a'\n%\nd.dat, 1:1|1\n", "no DIM"),
         (f"{HEADER}\n%\ndata_f1/bbobexp_f1_DIM2.dat, 1:x|1\n", "run entry"),
-        (f"{HEADER}\n%\ndata_f1/a.dat, 1:1|1, data_f1/b.dat, 2:1|1\n", "one is supported"),
+        (
+            f"{HEADER}\n%\ndata_f1/a.dat, 1:1|1, data_f1/b.dat, 2:1|1\n",
+            "one is supported",
+        ),
     ],
 )
 def test_malformed_info_file(tmp_path, info, message):
@@ -434,7 +495,9 @@ def test_nested_archives(tmp_path):
     assert archives == {"outer.zip": None, "outer.zip/inner.tgz": "outer.zip"}
     sources = {s["path"]: s.get("archive") for s in result.manifest["sources"]}
     assert sources["outer.zip/inner.tgz/alg/bbobexp_f1.info"] == "outer.zip/inner.tgz"
-    skipped = [w for w in result.manifest["warnings"] if w["code"] == "skipped_archive_member"]
+    skipped = [
+        w for w in result.manifest["warnings"] if w["code"] == "skipped_archive_member"
+    ]
     assert len(skipped) == 2
     archive = result.descriptors.filter(pl.col("key") == "archive")["value"].unique()
     assert archive.to_list() == ["outer.zip"]
@@ -448,10 +511,13 @@ def test_archive_as_input(tmp_path):
     path.write_bytes(_tgz(_folder_files(src, "alg/")))
     assert detect_format(path) == "coco"
     result = read_coco(path, "a")
-    assert set(result.runs["source_file"]) == {"alg.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"}
-    assert result.manifest["archives"][0]["sha256"] == hashlib.sha256(
-        path.read_bytes()
-    ).hexdigest()
+    assert set(result.runs["source_file"]) == {
+        "alg.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"
+    }
+    assert (
+        result.manifest["archives"][0]["sha256"]
+        == hashlib.sha256(path.read_bytes()).hexdigest()
+    )
 
 
 def test_broken_archive_is_skipped(tmp_path):
