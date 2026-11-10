@@ -7,8 +7,14 @@ Status: in progress
   (smallest archive per suite and year folder, 24 archives, ~190 MB) into
   `.cache/coco-archive` (git-ignored), checking sha256.
 
+- step 2: reader `io/coco.py` (+ `_coco_info.py`, `_coco_dat.py`), generic
+  `io/archive.py` (folders, archives, nested archives) and `io/merge.py`
+  (identical-row rule, same `logged_in`/`merge_conflict` columns as I06's
+  `_legacy_merge.py`); `READERS["coco"]`; `tests/io/test_coco.py`.
+
 ## Next step
-Step 2: write `src/iohinspector/io/coco.py` (+ `archive.py`, `merge.py`).
+Step 3: cocopp comparison test, archive-sample test, `docs/readers-coco.md`.
+Step 4: back `DataManager`'s COCO path with the reader; defect tests.
 
 ## Decisions
 - `data-archive.json` does not exist at the archive's URL; the archive's index is

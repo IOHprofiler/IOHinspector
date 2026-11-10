@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from .base import Reader, ReaderError, ReadResult
+from .coco import detect_coco, read_coco
 from .ioh import detect_ioh, read_ioh
 
 #: One line per reader, in the order ``detect_format`` tries them.
@@ -18,6 +19,7 @@ READERS: dict[str, Reader] = {
     "ioh": Reader(
         "ioh", "IOHexperimenter JSON + .dat (0.3, 0.4)", detect_ioh, read_ioh
     ),
+    "coco": Reader("coco", "COCO single-objective .info + .dat", detect_coco, read_coco),
 }
 
 
@@ -50,5 +52,6 @@ __all__ = [
     "ReaderError",
     "detect_format",
     "read",
+    "read_coco",
     "read_ioh",
 ]
