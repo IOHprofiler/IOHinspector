@@ -1,0 +1,7 @@
+cocopp==2.9.1
+ioh==0.4.0
+matplotlib==3.11.2
+numpy==2.4.6
+pyarrow==26.0.1
+scipy==1.17.1
+six==1.17.0
