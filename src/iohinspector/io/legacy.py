@@ -8,8 +8,8 @@ page ``docs/readers-legacy.md`` describes the mapping to format v1.
 
 The reader is lossless: every data line of every data file of a run set becomes
 a trace row, except that a row two files log identically for the same evaluation
-is stored once (``iohinspector.io.merge``, shared with the COCO reader). Nothing is deduplicated within a file or made
-monotone. Malformed input raises ``ReaderError`` with the file name and line.
+is stored once (``iohinspector.io.merge``, shared with the COCO reader). Nothing
+is deduplicated within a file or made monotone. Malformed input raises ``ReaderError`` with the file name and line.
 """
 
 from __future__ import annotations
