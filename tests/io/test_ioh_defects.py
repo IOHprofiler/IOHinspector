@@ -63,7 +63,6 @@ def expected_by_run(dat: Path) -> list[list[tuple[int, float]]]:
 # --- Runs are split on evaluations == 1 instead of on header lines ---------------
 
 
-@pytest.mark.xfail(strict=True, reason="defect: reader not written yet")
 def test_reader_splits_runs_on_header_lines(ioh040):
     folder = ioh040 / "every_third"
     dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
@@ -84,7 +83,6 @@ def test_manager_splits_runs_on_header_lines(ioh040):
 # --- A global raw_y.diff() != 0 filter removes rows across run boundaries --------
 
 
-@pytest.mark.xfail(strict=True, reason="defect: reader not written yet")
 def test_reader_keeps_rows_that_repeat_across_runs(ioh040):
     folder = ioh040 / "cross_run"
     dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
@@ -105,7 +103,6 @@ def test_manager_improvement_filter_is_per_run(ioh040):
 # --- The final row of a run can be dropped ---------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="defect: reader not written yet")
 def test_reader_keeps_final_rows(ioh040):
     for name in ("cross_run", "every_third", "f_zero"):
         folder = ioh040 / name
@@ -126,7 +123,6 @@ def test_manager_monotonic_load_keeps_final_rows(ioh040):
 # --- An assert fails when f = 0 --------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="defect: reader not written yet")
 def test_reader_keeps_f_zero(ioh040):
     folder = ioh040 / "f_zero"
     dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
@@ -156,7 +152,6 @@ def test_runtime_summary_on_f_zero(ioh040):
 # --- Run attributes and maximisation are not fully read --------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="defect: reader not written yet")
 def test_reader_reads_attributes_and_maximization(ioh040):
     result = read(ioh040 / "attributes")
     assert result.runs["maximization"].to_list() == [True] * 4
@@ -165,9 +160,13 @@ def test_reader_reads_attributes_and_maximization(ioh040):
     assert set(seeds["origin"]) == {"run"}
     assert set(seeds["type"]) == {"float"}
     assert sorted(seeds["value_float"]) == [2.0**40, 2.0**40, 2.0**40 + 1, 2.0**40 + 1]
-    budget = d.filter(pl.col("key") == "budget")
+    # "budget" and "instance" are runs columns, so the experiment attributes are renamed
+    budget = d.filter(pl.col("key") == "budget_experiment")
     assert set(budget["origin"]) == {"experiment"}
     assert set(budget["value"]) == {"8"}
+    renamed = {(r["from"], r["to"]) for r in result.manifest["renamed_columns"]}
+    assert ("budget", "budget_experiment") in renamed
+    assert ("instance", "instance_experiment") in renamed
     info = d.filter(pl.col("key") == "algorithm_info")
     assert set(info["value"]) == {'C:\\runs\\ea "v2"'}
 
