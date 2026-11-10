@@ -137,9 +137,8 @@ def _source(name: str, kind: str, value: Any) -> Source:
     )
 
 
-# #lizard forgives  (one check per mapping key)
-def parse_mapping(obj: Mapping[str, Any]) -> CsvMapping:
-    """A ``CsvMapping`` from the JSON object; ``MappingError`` says what is wrong."""
+def _check_keys(obj: Mapping[str, Any]) -> None:
+    """Refuse unknown keys, a wrong version and missing required keys."""
     if not isinstance(obj, Mapping):
         raise MappingError("the mapping must be a JSON object")
     for key in obj:
@@ -153,10 +152,10 @@ def parse_mapping(obj: Mapping[str, Any]) -> CsvMapping:
     for key in ("evaluations", "value", "fields"):
         if key not in obj:
             raise MappingError(f"{key!r} is required")
-    delimiter = obj.get("delimiter", ",")
-    if not isinstance(delimiter, str) or len(delimiter) != 1 or delimiter in '\r\n"':
-        raise MappingError("delimiter must be a single character")
-    raw_fields = obj["fields"]
+
+
+def _parse_fields(raw_fields: Any) -> dict[str, Source]:
+    """The ``fields`` object: every name known, every required field present."""
     if not isinstance(raw_fields, dict):
         raise MappingError("fields: expected an object")
     fields: dict[str, Source] = {}
@@ -170,6 +169,16 @@ def parse_mapping(obj: Mapping[str, Any]) -> CsvMapping:
     for name, (_kind, required) in FIELDS.items():
         if required and name not in fields:
             raise MappingError(f"fields.{name} is required")
+    return fields
+
+
+def parse_mapping(obj: Mapping[str, Any]) -> CsvMapping:
+    """A ``CsvMapping`` from the JSON object; ``MappingError`` says what is wrong."""
+    _check_keys(obj)
+    delimiter = obj.get("delimiter", ",")
+    if not isinstance(delimiter, str) or len(delimiter) != 1 or delimiter in '\r\n"':
+        raise MappingError("delimiter must be a single character")
+    fields = _parse_fields(obj["fields"])
     descriptors: Sequence[str] | str = ()
     if "descriptors" in obj:
         descriptors = (
@@ -216,8 +225,7 @@ def validate_mapping(
     return parsed
 
 
-# #lizard forgives  (public API with keyword-only options)
-def convert_custom_csv(
+def convert_custom_csv(  # pylint: disable=too-many-arguments
     source: str | Path,
     output: str | Path,
     mapping: CsvMapping | Mapping[str, Any] | str | Path,
@@ -233,6 +241,7 @@ def convert_custom_csv(
     not fit the file's columns, and ``FormatError`` for data that breaks the
     format, with the file name and line. Returns the manifest.
     """
+    # #lizard forgives  (public API with keyword-only options)
     parsed = load_mapping(mapping)
     return convert(
         source,

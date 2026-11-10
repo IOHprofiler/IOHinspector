@@ -203,9 +203,9 @@ def _unknown(name: str, known: Sequence[str]) -> str:
     return f"column {name!r} is not in the file{hint} (columns: {shown})"
 
 
-# #lizard forgives  (one check per kind of mapping error)
 def check_mapping(mapping: CsvMapping, header: Sequence[str]) -> None:
     """Raise ``MappingError`` when the mapping names a column the file lacks."""
+    # #lizard forgives  (one check per kind of mapping error)
     if len(set(header)) != len(header):
         dup = sorted({h for h in header if list(header).count(h) > 1})
         raise MappingError(f"the file has duplicate column names: {dup}")
@@ -253,7 +253,6 @@ class _Scan:
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-# #lizard forgives  (helper with its own bookkeeping lists)
 def _rename(
     names: Sequence[str],
     table: str,
@@ -263,6 +262,7 @@ def _rename(
     renamed: list[dict[str, str]],
 ) -> dict[str, str]:
     """A map from column names to the names they are stored under."""
+    # #lizard forgives  (helper with its own bookkeeping lists)
     out: dict[str, str] = {}
     for name in names:
         new = name
@@ -301,8 +301,8 @@ class CsvConverter:
         self.function_ids: dict[str, int] | None = None
         self._plan_columns()
 
-    # #lizard forgives  (plans the descriptor, trace and position columns)
     def _plan_columns(self) -> None:
+        # #lizard forgives  (plans the descriptor, trace and position columns)
         m = self.mapping
         consumed = {m.evaluations, m.value}
         consumed |= {s.column for s in m.fields.values() if s.column}
@@ -503,7 +503,7 @@ class CsvConverter:
     def run_id_list(self, dataset_id: str, n: int) -> list[int]:
         return run_ids(dataset_id, [self.name] * n, range(n)).to_list()
 
-    def _run_rows(self, ids: list[int]) -> Iterator[tuple[str, list[str], int, bool]]:
+    def _run_rows(self) -> Iterator[tuple[str, list[str], int, bool]]:
         """``(where, tokens, run index, first row of the run)`` per data row."""
         index: dict[tuple[str, ...], int] = {}
         next_run = 0
@@ -519,7 +519,7 @@ class CsvConverter:
         """Chunks of the descriptors table; a run's come with its first row."""
         kinds = [scan.descriptor_types[c].kind() for c in self.descriptor_cols]
         records: list[tuple[int, str, Any, str]] = []
-        for where, row, r, is_new in self._run_rows(ids):
+        for where, row, r, is_new in self._run_rows():
             if is_new:
                 records.extend(self._records(ids[r], row, kinds, where, scan.runs[r]))
             if len(records) >= CHUNK_ROWS:
@@ -527,7 +527,7 @@ class CsvConverter:
                 records = []
         yield descriptor_frame(records)
 
-    def table_chunks(
+    def table_chunks(  # pylint: disable=too-many-locals
         self, scan: _Scan, ids: list[int], part: str
     ) -> Iterator[pl.DataFrame]:
         """Chunks of the ``trace`` or ``positions`` table, in file order.
@@ -550,7 +550,7 @@ class CsvConverter:
         run_col: list[int] = []
         row_col: list[int] = []
         values: list[list[Any]] = [[] for _ in idx]
-        for _where, row, r, _new in self._run_rows(ids):
+        for _where, row, r, _new in self._run_rows():
             run_col.append(ids[r])
             row_col.append(counter[r])
             counter[r] += 1
@@ -628,7 +628,6 @@ def _dataset_id_from(name: str) -> str:
 
 
 # pylint: disable=too-many-arguments,too-many-locals
-# #lizard forgives  (entry point shared by two readers; keyword-only options)
 def convert(
     source: str | Path,
     output: str | Path,
@@ -649,6 +648,7 @@ def convert(
     column names. ``source_name`` is the source path stored in the dataset (default:
     the file name).
     """
+    # #lizard forgives  (entry point shared by two readers; keyword-only options)
     path = Path(source)
     name = check_source_path(source_name or path.name)
     dataset_id = check_dataset_id(dataset_id) if dataset_id else _dataset_id_from(name)
