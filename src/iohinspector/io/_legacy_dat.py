@@ -28,7 +28,7 @@ from typing import Any
 import polars as pl
 
 from ..format import is_reserved_trace_name
-from ._compat import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
+from .base import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
 
 _NAME_TOKEN = r"\"([^\"]*)\"|(\S+)"
 _IS_NUMBER = f"^(?:{NUMBER_PATTERN})$"

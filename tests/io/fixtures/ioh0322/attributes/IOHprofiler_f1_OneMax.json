@@ -1,0 +1,25 @@
+{
+	"version": "0.3.22", 
+	"suite": "unknown_suite", 
+	"function_id": 1, 
+	"function_name": "OneMax", 
+	"maximization": true, 
+	"algorithm": {"name": "ea", "info": "C:\runs\ea "v2""},
+	"experiment_attributes": [{"budget": "8"}, {"instance": "seven"}],
+	"run_attributes": ["big", "seed", "unset"],
+	"attributes": ["evaluations", "raw_y", "sigma", "x0"],
+	"scenarios": [
+		{"dimension": 4,
+		"path": "data_f1_OneMax/IOHprofiler_f1_DIM4.dat",
+		"runs": [
+			{"instance": 1, "evals": 8, "best": {"evals": 1, "y": 4, "x": [1, 1, 1, 1]}, "big": inf, "seed": 1099511627776, "unset": nan},
+			{"instance": 1, "evals": 8, "best": {"evals": 3, "y": 3, "x": [0, 1, 1, 1]}, "big": inf, "seed": 1099511627777, "unset": nan}
+		]},
+		{"dimension": 6,
+		"path": "data_f1_OneMax/IOHprofiler_f1_DIM6.dat",
+		"runs": [
+			{"instance": 1, "evals": 8, "best": {"evals": 4, "y": 4, "x": [1, 0, 0, 1, 1, 1]}, "big": inf, "seed": 1099511627776, "unset": nan},
+			{"instance": 1, "evals": 8, "best": {"evals": 2, "y": 5, "x": [1, 0, 1, 1, 1, 1]}, "big": inf, "seed": 1099511627777, "unset": nan}
+		]}
+	]
+}

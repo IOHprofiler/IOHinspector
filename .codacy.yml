@@ -1,0 +1,5 @@
+---
+# Reader fixtures reproduce logger output as written, including its malformed JSON
+# (unescaped strings, bare nan/inf), so static analysis of them is meaningless.
+exclude_paths:
+  - "tests/io/fixtures/**"

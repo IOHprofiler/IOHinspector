@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ._compat import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
+from .base import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
 
 _PAIR = re.compile(
     r"\s*(?P<key>[^=,]+?)\s*=\s*"

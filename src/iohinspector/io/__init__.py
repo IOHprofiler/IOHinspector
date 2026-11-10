@@ -1,7 +1,8 @@
 """Readers that turn benchmark logs into dataset format v1 (``docs/format.md``).
 
-Every reader is registered in ``READERS``; ``detect_format`` picks the reader for
-a path, and ``read`` runs it.
+Every reader is registered in ``READERS``. ``detect_format`` picks the reader for
+a path, and ``read`` runs it; the ``ReadResult`` it returns is written with
+``ReadResult.write``.
 """
 
 from __future__ import annotations
@@ -9,11 +10,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ._compat import Reader, ReaderError, ReadResult
+from .base import Reader, ReaderError, ReadResult
+from .ioh import detect_ioh, read_ioh
 from .legacy import detect_legacy, read_legacy
 
 #: One line per reader, in the order ``detect_format`` tries them.
 READERS: dict[str, Reader] = {
+    "ioh": Reader(
+        "ioh", "IOHexperimenter JSON + .dat (0.3, 0.4)", detect_ioh, read_ioh
+    ),
     "ioh-legacy": Reader(
         "ioh-legacy",
         "legacy IOHprofiler .info + .dat/.cdat/.idat/.tdat",
@@ -32,9 +37,12 @@ def detect_format(path: str | os.PathLike[str]) -> str:
     raise ReaderError("no reader recognises this input", path)
 
 
-def read(
-    path: str | os.PathLike[str], dataset_id: str, *, format: str | None = None
-) -> ReadResult:  # pylint: disable=redefined-builtin
+def read(  # pylint: disable=redefined-builtin
+    path: str | os.PathLike[str],
+    dataset_id: str,
+    *,
+    format: str | None = None,  # public name, as in the reader table
+) -> ReadResult:
     """Read ``path`` with the reader named ``format``, or the detected one."""
     name = format or detect_format(path)
     if name not in READERS:
@@ -49,5 +57,6 @@ __all__ = [
     "ReaderError",
     "detect_format",
     "read",
+    "read_ioh",
     "read_legacy",
 ]

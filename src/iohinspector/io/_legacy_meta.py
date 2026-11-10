@@ -24,8 +24,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._compat import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
 from ._legacy_info import HeaderValue, InfoBlock, InfoRun
+from .base import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
 
 _INTEGER = re.compile(INTEGER_PATTERN)
 _NUMBER = re.compile(f"(?:{NUMBER_PATTERN})")

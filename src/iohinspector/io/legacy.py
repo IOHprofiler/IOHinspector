@@ -25,11 +25,11 @@ import polars as pl
 from ..format import check_source_path, descriptor_frame, file_entry, new_manifest
 from ..format import run_id as make_run_id
 from ..format.schema import descriptor_key_problem
-from ._compat import ReaderError, ReadResult
 from ._legacy_dat import DataFile, parse_data_file
 from ._legacy_info import InfoBlock, InfoRun, parse_info
 from ._legacy_merge import MERGE_ORDER, Merged, merge_files
 from ._legacy_meta import BlockMeta, FunctionIds, block_meta, run_value
+from .base import ReaderError, ReadResult
 
 READER_NAME = "ioh-legacy"
 INFO_KIND = "ioh-legacy-info"
