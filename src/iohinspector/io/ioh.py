@@ -176,9 +176,12 @@ def _repair_line(line: str) -> str:
         return m["pre"] + _escape(m["value"]) + m["post"]
     m = _EXPERIMENT_LINE.match(line)
     if m:
+        body = m["items"]
+        if not (len(body) >= 2 and body[0] == '"' and body[-1] == '"'):
+            return line
         items = []
-        for item in m["items"].split('"}, {"'):
-            key, sep, value = item.strip('"').partition('": "')
+        for item in body[1:-1].split('"}, {"'):
+            key, sep, value = item.partition('": "')
             if not sep:
                 return line
             items.append(f'"{_escape(key)}": "{_escape(value)}"')
