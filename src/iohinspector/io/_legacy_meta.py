@@ -5,8 +5,8 @@ Header keys and where they go:
 | Key | Stored as |
 |---|---|
 | ``suite`` | ``runs.suite`` (``""`` when absent) |
-| ``funcId`` | ``runs.function_id``; a value that is not an integer gets an assigned id |
-| ``funcName`` | ``runs.function_name``; without it, a non-integer ``funcId`` is the name |
+| ``funcId`` | ``runs.function_id``; a non-integer value gets an assigned id |
+| ``funcName`` | ``runs.function_name``; else a non-integer ``funcId`` is the name |
 | ``DIM`` | ``runs.dimension`` |
 | ``maximization`` or ``Maximization`` | ``runs.maximization`` |
 | ``algId``, ``algInfo`` | descriptors ``algorithm_name``, ``algorithm_info`` |
