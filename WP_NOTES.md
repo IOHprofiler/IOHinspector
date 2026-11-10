@@ -19,8 +19,14 @@ Status: in progress
   `tests/golden/cocopp/generate.py` takes a fixture name, `make golden-cocopp`
   also writes `cocopp/coco_old/` (the `coco` outputs are byte-identical).
 
+- step 4: `DataManager` reads COCO with the new parser and merge
+  (`Dataset.from_coco_text` via `parse_info`, `Scenario.load_coco`); the
+  manager's own `.dat`/`.tdat` unique-merge is gone; `tests/io/test_coco_defects.py`
+  (3 manager tests failed before the change: instances 0, conflicting `.tdat`
+  row dropped, runs split on evaluations == 1).
+
 ## Next step
-Step 4: back `DataManager`'s COCO path with the reader; defect tests.
+Final: PR body from these notes, delete WP_NOTES.md.
 
 ## Decisions
 - `data-archive.json` does not exist at the archive's URL; the archive's index is
@@ -44,6 +50,12 @@ Step 4: back `DataManager`'s COCO path with the reader; defect tests.
 - Finding for I10/I12: cocopp's `detEvals` looks 17 of the 51 standard targets
   up one grid level stricter (its level `10**(i/5)` is one ulp above the
   target). The cocopp goldens carry that; the comparison test reproduces it.
+
+- `DataManager` COCO columns are now the reader's names (`g_evaluations`,
+  `measured_f`, `best_measured_f`, `logged_in`, `merge_conflict`) instead of the
+  header text (`g evaluations`, `measured fitness`, ...).
+- `io/merge.py` implements the same rule and columns as I06's
+  `io/_legacy_merge.py` (not merged yet); one can replace the other at merge.
 
 ## Open questions / Blocked
 - none

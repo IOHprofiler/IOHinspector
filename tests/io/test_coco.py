@@ -368,7 +368,8 @@ def test_folder_header_and_unreferenced_files(tmp_path):
     write_coco(tmp_path / "sub", {"dat": DAT, "mdat": run_text(1.0, [])})
     info = (
         HEADER
-        + ", folder = 'sub'\n% alg\ndata_f1/bbobexp_f1_DIM2.dat, 1:3|1.0e-01, 2:1|5.0e-01\n"
+        + ", folder = 'sub'\n% alg\n"
+        + "data_f1/bbobexp_f1_DIM2.dat, 1:3|1.0e-01, 2:1|5.0e-01\n"
     )
     (tmp_path / "x.info").write_text(info)
     (tmp_path / "sub" / "bbobexp_f1.info").unlink()

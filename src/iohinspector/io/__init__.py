@@ -19,7 +19,9 @@ READERS: dict[str, Reader] = {
     "ioh": Reader(
         "ioh", "IOHexperimenter JSON + .dat (0.3, 0.4)", detect_ioh, read_ioh
     ),
-    "coco": Reader("coco", "COCO single-objective .info + .dat", detect_coco, read_coco),
+    "coco": Reader(
+        "coco", "COCO single-objective .info + .dat", detect_coco, read_coco
+    ),
 }
 
 

@@ -2,16 +2,16 @@
 
 Usage: python generate.py <fixtures dir> <output dir> [<fixture name>]
 
-Reads a COCO fixture (default ``coco``) with ``cocopp.pproc.DataSetList`` and writes
-Parquet files with
+Reads a COCO fixture (default ``coco``) with ``cocopp.pproc.DataSetList`` and
+writes Parquet files with
   * runtimes per run for the 51 COCO targets 10^(2 - k/5), k = 0..50  (``detEvals``),
   * aRT per target (``detERT``), success counts, mean and median evaluations of successes,
   * aRT for the targets of interest of cocopp's ERT tables (10, 1, 0.1, 1e-3, 1e-5, 1e-7),
   * ECDF values: the fraction of (target, run) pairs whose runtime is <= a budget, the quantity
     cocopp plots in its runtime-distribution figures, without simulated restarts.
-plus versions.json. Output is deterministic. A fixture with one data set (``coco``) gets
-the file names above; a fixture with several (``coco_old``: f6 in 2-D and 3-D) gets one
-set of files per data set, named with the suffix ``_<dim>D``.
+plus versions.json. Output is deterministic. A fixture with one data set
+(``coco``) gets the file names above; a fixture with several (``coco_old``: f6
+in 2-D and 3-D) gets one set of files per data set, with the suffix ``_<dim>D``.
 """
 
 from __future__ import annotations
@@ -40,7 +40,8 @@ def write(path: str, columns: dict) -> None:
 
 def main(fix_dir: str, out_dir: str, fixture: str = "coco") -> None:
     os.makedirs(out_dir, exist_ok=True)
-    info = sorted(glob.glob(os.path.join(fix_dir, fixture, "**", "*.info"), recursive=True))
+    pattern = os.path.join(fix_dir, fixture, "**", "*.info")
+    info = sorted(glob.glob(pattern, recursive=True))
     dsl = sorted(pproc.DataSetList(info), key=lambda d: int(d.dim))
     if fixture == "coco":
         assert len(dsl) == 1, len(dsl)

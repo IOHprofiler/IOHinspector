@@ -133,7 +133,8 @@ def _archive_is_coco(path: Path) -> bool:
 
 
 def detect_coco(path: str | Path) -> bool:
-    """True for a COCO ``.info`` file, an archive holding one, or a folder with either."""
+    """True for a COCO ``.info`` file, an archive holding one, or a folder with
+    either."""
     path = Path(path)
     if path.is_dir():
         if any(is_coco_info(p) for p in sorted(path.rglob("*.info"))):

@@ -5,12 +5,18 @@ Each run starts with a header line; then come data lines of five columns, plus
 the position ``x1 ... xD`` when the logger wrote it (not above 20-D with recent
 loggers, and never for some files)::
 
-    % f evaluations | g evaluations | best noise-free fitness - Fopt (7.948000000000e+01) + sum g_i+ | measured fitness | best measured fitness or single-digit g-values | x1 | x2...
+    % f evaluations | g evaluations | best noise-free fitness - Fopt (7.948e+01)
+      + sum g_i+ | measured fitness | best measured fitness or single-digit
+      g-values | x1 | x2...
     1 0 +5.826987706e-01 +8.006269877e+01 +8.006269877e+01 -3.2755e-01 -6.6092e-01
+
+(one line each; the header is wrapped here).
 
 Loggers before COCO 2 (the ``bbob`` code of 2009 to 2018) write::
 
-    % function evaluation | noise-free fitness - Fopt (7.948000000000e+01) | best noise-free fitness - Fopt | measured fitness | best measured fitness | x1 | x2...
+    % function evaluation | noise-free fitness - Fopt (7.948e+01) | best
+      noise-free fitness - Fopt | measured fitness | best measured fitness |
+      x1 | x2...
 
 The Fopt in the header is the run's optimal value. Other lines starting with
 ``%`` are comments, such as ``% restart: independent restart`` in ``.rdat``
@@ -131,7 +137,8 @@ def _split(  # pylint: disable=too-many-locals
             raise ReaderError("data line before the first header line", display, number)
         if len(tokens) not in widths:
             raise ReaderError(
-                f"{len(tokens)} fields; a {dimension}-D data line has 5 or {5 + dimension}",
+                f"{len(tokens)} fields; a {dimension}-D data line has 5 or "
+                f"{5 + dimension}",
                 display,
                 number,
             )
@@ -186,7 +193,7 @@ def _columns(
 
 
 def _empty(names: tuple[str, ...]) -> pl.DataFrame:
-    schema = {"run_index": pl.Int64, "file_row": pl.Int64}
+    schema: dict[str, type[pl.DataType]] = {"run_index": pl.Int64, "file_row": pl.Int64}
     for name in names:
         schema[name] = pl.Int64 if name in INTEGER_COLUMNS else pl.Float64
     return pl.DataFrame(schema=schema)
