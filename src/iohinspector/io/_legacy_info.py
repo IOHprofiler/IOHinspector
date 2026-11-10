@@ -97,7 +97,7 @@ def parse_header(text: str, path: str, line: int) -> list[HeaderValue]:
         m = _PAIR.match(text, pos)
         if m is None or m.end() == pos:
             raise ReaderError(
-                f"cannot read the header near {text[pos : pos + 40]!r}: expected "
+                f"cannot read the header near {text[pos:][:40]!r}: expected "
                 "key = value pairs separated by commas",
                 path,
                 line,

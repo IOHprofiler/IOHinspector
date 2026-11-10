@@ -30,7 +30,7 @@ import polars as pl
 from ..format import is_reserved_trace_name
 from .base import INTEGER_PATTERN, NUMBER_PATTERN, ReaderError
 
-_NAME_TOKEN = r"\"([^\"]*)\"|(\S+)"
+_NAME_TOKEN = r"\"([^\"]*)\"|(\S+)"  # nosec B105  # a regex, not a credential
 _IS_NUMBER = f"^(?:{NUMBER_PATTERN})$"
 _IS_INTEGER = f"^(?:{INTEGER_PATTERN})$"
 
@@ -201,7 +201,9 @@ def precision_of(tokens: pl.Series) -> dict[str, Any]:
     return {"notation": "unknown"}
 
 
-def parse_data_file(local: Path, path: str, kind: str, dimension: int) -> DataFile:
+def parse_data_file(  # pylint: disable=too-many-locals
+    local: Path, path: str, kind: str, dimension: int
+) -> DataFile:
     """Parse one data file; ``path`` is its source path, used in errors."""
     df = _read_lines(local, path)
     headers = _headers(df, path)

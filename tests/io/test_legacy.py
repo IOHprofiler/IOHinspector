@@ -82,7 +82,8 @@ def test_extdata_values_and_hashes():
     text = path.read_text().splitlines()
     starts = [i for i, s in enumerate(text) if s.startswith('"')] + [len(text)]
     for k, run in enumerate(result.runs.iter_rows(named=True)):
-        part = [" ".join(s.split()) for s in text[starts[k] + 1 : starts[k + 1]]]
+        first, end = starts[k] + 1, starts[k + 1]
+        part = [" ".join(s.split()) for s in text[first:end]]
         digest = hashlib.sha256(("\n".join(part) + "\n").encode()).hexdigest()
         assert run["source_rows_sha256"] == digest
         assert run["source_run_index"] == k and run["instance"] == 1

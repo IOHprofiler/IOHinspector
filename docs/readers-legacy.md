@@ -77,7 +77,7 @@ The variants IOHanalyzer accepts, from `R/readFiles.R`, and how this reader trea
 | Values in `'` or `"` | `read.csv(quote = …)`, then removes every `'` (151–167) | unquoted; the quotes decide the descriptor type |
 | `maximization` / `Maximization` / absent | both spellings; absent: guess from the suite (`R/DataSet.R` 56–79) | the same, with a warning |
 | `constrained` | `as.logical` (170) | `bool` descriptor |
-| `dynamicAttribute` | one name; takes the value after the first `;` (186, 200–206) | names split on `|`, one value per name; a count mismatch fails |
+| `dynamicAttribute` | one name; takes the value after the first `;` (186, 200–206) | names split on `\|`, one value per name; a count mismatch fails |
 | Backslashes in the data file path | replaced by `/` (215) | the same |
 | Record with only the data file | block skipped (182) | data runs kept, without instance (`run_count_mismatch`) |
 | Empty run entries (cut-off file) | warns, drops the block's run information (190) | empty entries skipped, the others kept (`incomplete_info_record`) |
