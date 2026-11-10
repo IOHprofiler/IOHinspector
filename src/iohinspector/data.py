@@ -276,7 +276,6 @@ class Scenario:
 
         return dt
 
-
     def load_dat(self) -> pl.DataFrame:
         """Every row of the IOHexperimenter ``.dat`` file of the selected runs.
 

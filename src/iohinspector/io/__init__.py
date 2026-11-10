@@ -30,9 +30,12 @@ def detect_format(path: str | os.PathLike[str]) -> str:
     raise ReaderError("no reader recognises this input", path)
 
 
-def read(
-    path: str | os.PathLike[str], dataset_id: str, *, format: str | None = None
-) -> ReadResult:  # pylint: disable=redefined-builtin
+def read(  # pylint: disable=redefined-builtin
+    path: str | os.PathLike[str],
+    dataset_id: str,
+    *,
+    format: str | None = None,  # public name, as in the reader table
+) -> ReadResult:
     """Read ``path`` with the reader named ``format``, or the detected one."""
     name = format or detect_format(path)
     if name not in READERS:

@@ -181,7 +181,7 @@ class Renamer:
             name, set(taken), "logged", source, "trace", is_reserved_trace_name
         )
 
-    def _rename(
+    def _rename(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         name: str,
         taken: set[str],

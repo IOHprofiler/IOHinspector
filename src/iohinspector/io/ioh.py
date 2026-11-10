@@ -42,6 +42,7 @@ Quirks of the logger, each handled and recorded in the manifest:
 - Missing values of logged properties are written as ``None``; they are stored as
   null in extra trace columns. ``evaluations`` and ``raw_y`` must have values.
 """
+# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
@@ -404,7 +405,8 @@ def _layout(
     xs = [f"x{i}" for i in range(dimension)]
     mismatch = False
     if attributes is not None and header[: len(attributes)] == attributes:
-        props, rest = header[: len(attributes)], header[len(attributes) :]
+        n_attr = len(attributes)
+        props, rest = header[:n_attr], header[n_attr:]
         if rest and rest != xs:
             raise ReaderError(
                 f"header columns {rest} are neither logged properties nor x0..x{dimension - 1}",
@@ -436,7 +438,7 @@ class _Lines:
     row: list[int] = field(default_factory=list)
 
 
-def _split_lines(
+def _split_lines(  # pylint: disable=too-many-locals
     path: Path, display: str, attributes: list[str] | None, dimension: int
 ):
     try:
@@ -452,15 +454,7 @@ def _split_lines(
         if not tokens:
             continue
         if NUMBER.fullmatch(tokens[0]) is None:
-            if layout is None:
-                layout = _layout(tokens, attributes, dimension, display, number)
-            elif tokens != layout.header:
-                raise ReaderError(
-                    f"header {' '.join(tokens)!r} differs from the first header "
-                    f"{' '.join(layout.header)!r}",
-                    display,
-                    number,
-                )
+            layout = _header(tokens, layout, attributes, dimension, (display, number))
             runs.append(DatRun(number, 0, ""))
             hashes.append(hashlib.sha256())
             continue
@@ -482,6 +476,25 @@ def _split_lines(
     return layout, runs, lines
 
 
+def _header(
+    tokens: list[str],
+    layout: _Layout | None,
+    attributes: list[str] | None,
+    dimension: int,
+    where: tuple[str, int],
+) -> _Layout:
+    """The layout from the first header line; later headers must repeat it."""
+    if layout is None:
+        return _layout(tokens, attributes, dimension, *where)
+    if tokens != layout.header:
+        raise ReaderError(
+            f"header {' '.join(tokens)!r} differs from the first header "
+            f"{' '.join(layout.header)!r}",
+            *where,
+        )
+    return layout
+
+
 def _width_message(got: int, want: int) -> str:
     message = f"{got} fields, but the header has {want}"
     if got == want - 1:
@@ -493,7 +506,7 @@ def _width_message(got: int, want: int) -> str:
     return message
 
 
-def parse_dat(
+def parse_dat(  # pylint: disable=too-many-locals
     path: str | Path,
     *,
     display: str | None = None,
@@ -792,6 +805,7 @@ def _read_dats(metas: list[IohJson], builder: _Builder) -> dict[str, DatFile | N
 def _add_json(
     meta: IohJson, dats: dict[str, DatFile | None], builder: _Builder
 ) -> None:
+    # #lizard forgives  (one pass over the JSON scenarios; splitting adds no clarity)
     json_path = source_path(meta.path, builder.root)
     logger = {"name": LOGGER_NAME, "version": meta.version}
     builder.sources.append(
@@ -878,7 +892,7 @@ def _all_runs(meta: IohJson) -> Iterable[IohRun]:
         yield from scen.runs
 
 
-def _add_runs(  # pylint: disable=too-many-arguments
+def _add_runs(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     meta: IohJson,
     scen: IohScenario,
     dat: DatFile | None,
