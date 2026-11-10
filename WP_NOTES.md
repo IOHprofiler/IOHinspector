@@ -5,8 +5,12 @@ Status: in progress
 ## Done
 - step 1: `iohinspector.convert` + `iohinspector convert` CLI (`iohinspector.cli`, `[project.scripts]`), tags, archives via `io/archive.py`
 
+- step 2: `iohinspector.verify` + `iohinspector verify`, docs/convert-verify.md, tests/test_verify.py
+- step 3: scripts/verify_corpus.py (tested in tests/test_verify.py)
+- step 4: mutation tests in tests/test_verify.py (drop row, change digit, swap runs x 9 corpus inputs; changed trace value; changed stored hash)
+
 ## Next step
-Step 2: tests for `iohinspector.verify` (tests/cli/test_verify.py), then step 3 `scripts/verify_corpus.py`, step 4 mutation tests.
+Run the downloaded corpus (COCO archive sample via scripts/coco_archive.py, Nevergrad yatinybbob) through scripts/verify_corpus.py; record results; final notes.
 
 ## Decisions
 - `convert` joins `READERS` (detect/read -> ReadResult) and `CONVERTERS` (CSV, write themselves). Detection: READERS in order, then Nevergrad by its columns. Custom CSV only with `mapping`. New readers plug in by their READERS line alone.

@@ -86,7 +86,8 @@ def _convert(args: argparse.Namespace) -> int:
     counts = manifest["counts"]
     print(
         f"{args.dataset}: {manifest['reader']['name']}, {counts['runs']} run(s), "
-        f"{counts['trace_rows']} trace row(s), {len(manifest['sources'])} source file(s)"
+        f"{counts['trace_rows']} trace row(s), "
+        f"{len(manifest['sources'])} source file(s)"
     )
     for item in manifest.get("warnings", []):
         print(f"  warning {item['code']}: {item.get('source', '')} {item['message']}")

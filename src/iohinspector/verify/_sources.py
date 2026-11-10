@@ -1,4 +1,5 @@
-"""Walk the files of a verify input: a file, a folder or an archive, nested archives included.
+"""Walk the files of a verify input: a file, a folder or an archive, with nested
+archives.
 
 Written for ``verify`` alone: it shares no code with the readers or with
 ``iohinspector.convert``. Source paths follow ``docs/format.md``: relative to the
@@ -79,7 +80,8 @@ def _members(handle: IO[bytes], display: str, depth: int) -> Iterator[SourceFile
         return
     handle.seek(0)
     try:
-        archive = tarfile.open(fileobj=handle, mode="r:*")
+        # closed by the with block below
+        archive = tarfile.open(fileobj=handle, mode="r:*")  # noqa: SIM115
     except tarfile.TarError:
         return
     with archive:

@@ -26,7 +26,7 @@ import json
 import math
 import os
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -133,7 +133,7 @@ def _stem(path: str) -> str:
     return path[: m.start()] if m else path
 
 
-# --------------------------------------------------------------------------- fingerprints
+# ------------------------------------------------------------------- fingerprints
 
 
 def _aggregate(frame: pl.LazyFrame) -> pl.LazyFrame:
@@ -419,7 +419,7 @@ def _missing(state: _State) -> None:
         state.report.add("source_missing", "the input has no such file", source=path)
 
 
-def _state(source: Path, dataset: Path, report: VerifyReport) -> _State:
+def _state(dataset: Path, report: VerifyReport) -> _State:
     manifest = read_manifest(dataset, warn=False)
     runs = pl.read_parquet(
         dataset / "runs.parquet",
@@ -434,7 +434,6 @@ def _state(source: Path, dataset: Path, report: VerifyReport) -> _State:
     primaries: dict[str, set[str]] = {}
     for path in runs["source_file"].unique().to_list():
         primaries.setdefault(_stem(path), set()).add(path)
-    del source
     return _State(
         report,
         manifest,
@@ -461,17 +460,12 @@ def verify(
     if validate:
         for problem in validate_dataset(dataset).errors:
             report.add("dataset", str(problem))
-    state = _state(source, dataset, report)
+    state = _state(dataset, report)
     for file in walk(source):
         _visit(file, state)
     _missing(state)
     _compare(state, dataset)
     return report
-
-
-def verify_many(pairs: Iterable[tuple[str, str]]) -> list[VerifyReport]:
-    """``verify`` for each ``(source, dataset)`` pair."""
-    return [verify(s, d) for s, d in pairs]
 
 
 __all__ = ["Mismatch", "VerifyReport", "verify"]

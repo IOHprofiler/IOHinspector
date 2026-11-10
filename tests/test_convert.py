@@ -133,9 +133,9 @@ def test_typed_path_tags_and_algorithm_name(tmp_path):
     name = _descriptors(tmp_path / "ds", "algorithm_name")
     assert name["value"].unique().to_list() == ["myalg"]
     assert name["origin"].unique().to_list() == ["user"]
-    assert _descriptors(tmp_path / "ds", "maxevals")["value_int"].unique().to_list() == [
-        100
-    ]
+    assert _descriptors(tmp_path / "ds", "maxevals")[
+        "value_int"
+    ].unique().to_list() == [100]
 
 
 def test_path_pattern_matching():

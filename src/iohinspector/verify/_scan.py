@@ -18,7 +18,7 @@ import io
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 import polars as pl
 
@@ -61,7 +61,7 @@ class CsvLayout:
     family: bool = False
 
 
-Layout = Union[TextLayout, CsvLayout]
+Layout = TextLayout | CsvLayout
 
 _LEGACY = TextLayout(0, 1, family=True)
 _COCO = TextLayout(0, 2, coco=True, family=True)

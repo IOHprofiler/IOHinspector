@@ -11,9 +11,9 @@
 
 The input is a file, a folder, or an archive (zip, tar and compressed tar), and
 archives inside folders and archives are opened too (``iohinspector.io.archive``).
-Archives are extracted into a temporary folder; the originals are never changed. A file inside an archive
-gets the source path ``<archive path>/<member path>`` (``docs/format.md``), and
-the manifest lists the archives.
+Archives are extracted into a temporary folder; the originals are never changed.
+A file inside an archive gets the source path ``<archive path>/<member path>``
+(``docs/format.md``), and the manifest lists the archives.
 
 Descriptors (D17) can be added to every run: ``tags`` (``key=value``, origin
 ``user``) and ``tags_from_path``, a pattern matched against each run's source
@@ -236,7 +236,8 @@ def default_dataset_id(source: str | os.PathLike[str]) -> str:
 
 
 def detect(path: str | os.PathLike[str]) -> str:
-    """The format of ``path``: the first matching ``READERS`` entry, then Nevergrad CSV."""
+    """The format of ``path``: the first ``READERS`` entry that matches, then
+    Nevergrad CSV."""
     path = Path(path)
     for name, reader in READERS.items():
         if reader.detect(path):
