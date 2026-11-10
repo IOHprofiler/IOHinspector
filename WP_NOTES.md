@@ -1,6 +1,6 @@
 # WP I05: Reader: IOHexperimenter JSON + .dat
 Branch: wp/I05-ioh-reader
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1: defect tests and ioh 0.4.0 reader fixtures
@@ -13,11 +13,25 @@ Status: in progress
   overview as Float64 columns), `Scenario.load` uses `parse_dat` (split on headers,
   no dedup, file:line errors) and `monotone_per_run` (best-so-far per run, final
   row kept). COCO and the `.parquet` sidecar path are unchanged (I07).
+- step 5: `tests/io/test_ioh_hypothesis.py`: logs written like the Analyzer
+  (unescaped strings, bare nan/inf, `%.10f` or `%.17g`, ties, f = 0,
+  maximisation, `None` values, JSON/.dat run-count mismatches) read back and
+  stored exactly
+
+## Done when
+- Every defect test in `tests/io/test_ioh_defects.py` passes, on ioh 0.4.0 and
+  0.3.22 logs, except `test_runtime_summary_on_f_zero`, which stays
+  `xfail(strict=True)`: the assert is in `metrics.utils.get_sequence`, target-grid
+  code that I10 replaces under TG-3 (`docs/definitions/targets.md`).
+- Rows read equal the data lines of every `.dat` file for the whole IOH corpus
+  in the repository (`tests/test_data`, `tests/io/fixtures/ioh040`,
+  `tests/io/fixtures/ioh0322`, `tests/golden/fixtures/ioh040_*`), and the
+  values equal the source tokens: `tests/io/test_ioh.py::test_rows_read_equal_data_lines`
+  and `test_values_equal_source_tokens`. The legacy `.info` and COCO parts of the
+  corpus are I06 and I07.
 
 ## Next step
-Step 5: hypothesis tests in `tests/io/test_ioh_hypothesis.py`: generate logs with
-a writer that mimics IOHexperimenter (ties, f = 0, maximisation, inf/nan, runs
-without improvement, missing final rows), write them, read them back, compare.
+None. The controller pushes the branch and opens the pull request.
 
 ## Decisions
 - Workers commit locally only (CLAUDE.md); the controller pushes and opens the PR.
@@ -32,7 +46,6 @@ without improvement, missing final rows), write them, read them back, compare.
   is target-grid code, decided by TG-3 in `docs/definitions/targets.md` and owned
   by I10. This WP makes the reader keep f = 0 rows exactly; the metric-level
   test stays `xfail(strict=True)` with a pointer to I10.
-
 - Descriptors per run: `algorithm_name`, `algorithm_info` (origin algorithm);
   experiment attributes as strings (origin experiment, the source type);
   run attributes as floats (origin run: IOHexperimenter run attributes are
@@ -57,4 +70,8 @@ without improvement, missing final rows), write them, read them back, compare.
 - `trace` is held in memory as one DataFrame; streaming is I09's convert command.
 
 ## Open questions / Blocked
-- none
+- For the controller / I08: `src/iohinspector/io/__init__.py` holds the reader
+  table `READERS` with one line for `ioh`; I08 adds its lines there.
+  Shared helpers are in `io/base.py` (`ReaderError`, `ReadResult`, `Reader`,
+  number parsing, `source_path`, `Renamer`).
+- Metric code is not changed, so no D6 review is needed for this PR.
