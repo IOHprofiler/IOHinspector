@@ -21,9 +21,11 @@ without improvement, missing final rows), write them, read them back, compare.
 
 ## Decisions
 - Workers commit locally only (CLAUDE.md); the controller pushes and opens the PR.
-- Fixtures: `python tests/generate_test_data.py --reader-fixtures` (ioh 0.4.0,
-  seeded) writes `tests/io/data/ioh040/` (36 KB). The existing random
-  `tests/test_data` logs are unchanged.
+- Fixtures: `python tests/generate_test_data.py --reader-fixtures` (seeded)
+  writes `tests/io/fixtures/ioh040/` with ioh 0.4.0 installed and
+  `tests/io/fixtures/ioh0322/` with ioh 0.3.22 (72 KB together). Not under
+  `tests/io/data/`, which `.gitignore` (`data/`) hides. The defect tests run on
+  both versions. The existing random `tests/test_data` logs are unchanged.
 - Defect tests start as `xfail(strict=True)`; each fix removes its marker.
 - "An assert fails when f = 0": the assert is `metrics.utils.get_sequence`
   (`assert min > 0` under log scale), reached from `aggregate_running_time`. That

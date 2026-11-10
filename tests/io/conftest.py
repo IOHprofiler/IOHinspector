@@ -2,14 +2,13 @@ from pathlib import Path
 
 import pytest
 
-DATA = Path(__file__).resolve().parent / "data"
-IOH040 = DATA / "ioh040"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
-@pytest.fixture
-def ioh040() -> Path:
-    """The seeded ioh 0.4.0 reader fixtures (``tests/generate_test_data.py``)."""
-    return IOH040
+@pytest.fixture(params=["ioh040", "ioh0322"])
+def ioh_logs(request) -> Path:
+    """The seeded reader fixtures of ioh 0.4.0 and 0.3.22 (``tests/generate_test_data.py``)."""
+    return FIXTURES / request.param
 
 
 @pytest.fixture(autouse=True)

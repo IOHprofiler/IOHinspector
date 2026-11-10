@@ -2,7 +2,7 @@
 
 The defects are listed in the plan (iohinspector.md, "Known defects to fix"). Each
 test reads a fixture made by ``tests/generate_test_data.py --reader-fixtures``
-(ioh 0.4.0) and checks the corrected behaviour, both in the new reader
+(ioh 0.4.0 and 0.3.22) and checks the corrected behaviour, both in the new reader
 (``iohinspector.io.ioh``) and through ``DataManager``.
 """
 
@@ -63,16 +63,16 @@ def expected_by_run(dat: Path) -> list[list[tuple[int, float]]]:
 # --- Runs are split on evaluations == 1 instead of on header lines ---------------
 
 
-def test_reader_splits_runs_on_header_lines(ioh040):
-    folder = ioh040 / "every_third"
+def test_reader_splits_runs_on_header_lines(ioh_logs):
+    folder = ioh_logs / "every_third"
     dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
     result = read(folder)
     assert trace_by_run(result) == expected_by_run(dat)
     assert [len(r) for r in expected_by_run(dat)] == [4, 3, 3]
 
 
-def test_manager_splits_runs_on_header_lines(ioh040):
-    folder = ioh040 / "every_third"
+def test_manager_splits_runs_on_header_lines(ioh_logs):
+    folder = ioh_logs / "every_third"
     df = load(folder, monotonic=False)
     # evaluation 1 is never logged: 0.0.8 loads zero rows
     assert len(df) == 10
@@ -82,15 +82,15 @@ def test_manager_splits_runs_on_header_lines(ioh040):
 # --- A global raw_y.diff() != 0 filter removes rows across run boundaries --------
 
 
-def test_reader_keeps_rows_that_repeat_across_runs(ioh040):
-    folder = ioh040 / "cross_run"
+def test_reader_keeps_rows_that_repeat_across_runs(ioh_logs):
+    folder = ioh_logs / "cross_run"
     dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
     result = read(folder)
     assert trace_by_run(result) == expected_by_run(dat)
 
 
-def test_manager_improvement_filter_is_per_run(ioh040):
-    df = load(ioh040 / "cross_run", monotonic=True)
+def test_manager_improvement_filter_is_per_run(ioh_logs):
+    df = load(ioh_logs / "cross_run", monotonic=True)
     firsts = df.group_by("run_id").agg(pl.col("evaluations").min())
     # run 2 starts at the best value of run 1; 0.0.8 drops its first row
     assert firsts["evaluations"].to_list() == [1, 1]
@@ -99,16 +99,16 @@ def test_manager_improvement_filter_is_per_run(ioh040):
 # --- The final row of a run can be dropped ---------------------------------------
 
 
-def test_reader_keeps_final_rows(ioh040):
+def test_reader_keeps_final_rows(ioh_logs):
     for name in ("cross_run", "every_third", "f_zero"):
-        folder = ioh040 / name
+        folder = ioh_logs / name
         dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
         got = trace_by_run(read(folder))
         assert [r[-1] for r in got] == [r[-1] for r in expected_by_run(dat)]
 
 
-def test_manager_monotonic_load_keeps_final_rows(ioh040):
-    df = load(ioh040 / "cross_run", monotonic=True)
+def test_manager_monotonic_load_keeps_final_rows(ioh_logs):
+    df = load(ioh_logs / "cross_run", monotonic=True)
     lasts = df.group_by("run_id").agg(pl.col("evaluations").max()).sort("run_id")
     assert lasts["evaluations"].to_list() == [9, 6]
 
@@ -116,16 +116,16 @@ def test_manager_monotonic_load_keeps_final_rows(ioh040):
 # --- An assert fails when f = 0 --------------------------------------------------
 
 
-def test_reader_keeps_f_zero(ioh040):
-    folder = ioh040 / "f_zero"
+def test_reader_keeps_f_zero(ioh_logs):
+    folder = ioh_logs / "f_zero"
     dat = folder / "data_f1_Sphere" / "IOHprofiler_f1_DIM2.dat"
     result = read(folder)
     assert trace_by_run(result) == expected_by_run(dat)
     assert result.trace.filter(pl.col("raw_y") == 0.0).height == 2
 
 
-def test_manager_loads_f_zero(ioh040):
-    df = load(ioh040 / "f_zero", monotonic=True)
+def test_manager_loads_f_zero(ioh_logs):
+    df = load(ioh_logs / "f_zero", monotonic=True)
     zeros = df.filter(pl.col("raw_y") == 0.0)
     # f = 0 at evaluation 2, kept as best-so-far until the final evaluation 4
     assert zeros["evaluations"].to_list() == [2, 4, 2, 4]
@@ -137,18 +137,18 @@ def test_manager_loads_f_zero(ioh040):
     reason="metrics.utils.get_sequence asserts min > 0 under log scale; "
     "target grids are I10 (docs/definitions/targets.md, TG-3)",
 )
-def test_runtime_summary_on_f_zero(ioh040):
+def test_runtime_summary_on_f_zero(ioh_logs):
     from iohinspector.metrics import aggregate_running_time
 
-    df = load(ioh040 / "f_zero", monotonic=True, include_meta_data=True)
+    df = load(ioh_logs / "f_zero", monotonic=True, include_meta_data=True)
     aggregate_running_time(df)
 
 
 # --- Run attributes and maximisation are not fully read --------------------------
 
 
-def test_reader_reads_attributes_and_maximization(ioh040):
-    result = read(ioh040 / "attributes")
+def test_reader_reads_attributes_and_maximization(ioh_logs):
+    result = read(ioh_logs / "attributes")
     assert result.runs["maximization"].to_list() == [True] * 4
     d = result.descriptors
     seeds = d.filter(pl.col("key") == "seed").sort("run_id")
@@ -166,11 +166,11 @@ def test_reader_reads_attributes_and_maximization(ioh040):
     assert set(info["value"]) == {'C:\\runs\\ea "v2"'}
 
 
-def test_manager_reads_run_attributes(ioh040):
+def test_manager_reads_run_attributes(ioh_logs):
     manager = DataManager()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        manager.add_folder(str(ioh040 / "attributes"))
+        manager.add_folder(str(ioh_logs / "attributes"))
     overview = manager.overview
     assert overview.height == 4
     assert sorted(overview["seed"].to_list()) == [

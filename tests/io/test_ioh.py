@@ -17,7 +17,8 @@ from iohinspector.io.ioh import infer_triggers, load_ioh_json, parse_dat, read_i
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = [
     ROOT / "test_data",
-    ROOT / "io" / "data" / "ioh040",
+    ROOT / "io" / "fixtures" / "ioh040",
+    ROOT / "io" / "fixtures" / "ioh0322",
     *sorted((ROOT / "golden" / "fixtures").glob("ioh040_*")),
 ]
 
@@ -145,7 +146,7 @@ def test_reader_table_and_detection(tmp_path):
 
 
 def test_round_trip_through_storage(tmp_path):
-    folder = ROOT / "io" / "data" / "ioh040" / "attributes"
+    folder = ROOT / "io" / "fixtures" / "ioh040" / "attributes"
     result = read_ioh(folder, "rt")
     result.write(tmp_path / "ds")
     stored = scan_dataset(tmp_path / "ds")
@@ -464,7 +465,7 @@ def test_manager_columns_with_positions():
 
     manager = DataManager()
     with pytest.warns(UserWarning, match="metadata schema"):
-        manager.add_folder(str(ROOT / "io" / "data" / "ioh040" / "attributes"))
+        manager.add_folder(str(ROOT / "io" / "fixtures" / "ioh040" / "attributes"))
     df = manager.load(monotonic=False)
     assert df.height == 12
     assert df.columns[:3] == ["evaluations", "raw_y", "sigma"]

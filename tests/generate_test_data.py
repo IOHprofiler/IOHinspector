@@ -2,9 +2,10 @@
 
 ``python tests/generate_test_data.py`` writes the random logs in ``tests/test_data``
 (not seeded). ``python tests/generate_test_data.py --reader-fixtures`` writes the
-seeded logs in ``tests/io/data/ioh040``, which the reader tests (WP I05) use. Each
+seeded logs in ``tests/io/fixtures/ioh040``, which the reader tests (WP I05) use. Each
 reader fixture reproduces one defect of the iohinspector 0.0.8 loader or one quirk
-of the logger.
+of the logger. Run with ``ioh==0.3.22`` installed, it writes the same logs in
+``tests/io/fixtures/ioh0322``.
 """
 
 import os
@@ -16,7 +17,18 @@ import numpy as np
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_data"))
-READER_DIR = os.path.realpath(os.path.join(BASE_DIR, "io", "data", "ioh040"))
+
+
+def _ioh_version() -> str:
+    from importlib.metadata import version
+
+    return version("ioh")
+
+
+#: ``ioh040`` for ioh 0.4.0, ``ioh0322`` for ioh 0.3.22.
+READER_DIR = os.path.realpath(
+    os.path.join(BASE_DIR, "io", "fixtures", "ioh" + _ioh_version().replace(".", ""))
+)
 
 
 def run(problem, algorithm_name):
