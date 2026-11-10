@@ -8,6 +8,9 @@ Status: in progress
   identical-row rule (`io/_legacy_merge.py`), reader `read_legacy` / `detect_legacy`
   (`io/legacy.py`), `READERS` line `ioh-legacy`; tests `tests/io/test_legacy.py` with a
   writer that mimics the IOHexperimenter 0.2 Default logger (`tests/io/legacy_writer.py`)
+- step 3: variants from `readFiles.R` listed in `docs/readers-legacy.md` (section
+  "Variants"), tests in `tests/io/test_legacy_variants.py`; new warnings
+  `incomplete_info_record`, `info_run_without_evaluations`; empty `.info` files skipped
 
 ## Next step
 Step 3: list the old variants from `readFiles.R` in `docs/readers/legacy.md`, one test per variant.

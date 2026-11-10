@@ -202,6 +202,24 @@ def _function(block: InfoBlock, ids: FunctionIds) -> tuple[int, str | None, list
     return ids.assigned[text], name, [("funcId", text, "experiment")]
 
 
+def _record_warnings(block: InfoBlock) -> list[tuple[str, str]]:
+    line = block.line + 2
+    out = []
+    if block.incomplete:
+        message = (
+            f"line {line}: the run list has empty entries (a cut-off file); "
+            "they are skipped"
+        )
+        out.append(("incomplete_info_record", message))
+    if block.empty_runs:
+        message = (
+            f"line {line}: entries with 0 evaluations are not matched to data "
+            f"runs, as in IOHanalyzer: {', '.join(block.empty_runs)}"
+        )
+        out.append(("info_run_without_evaluations", message))
+    return out
+
+
 def block_meta(block: InfoBlock, ids: FunctionIds) -> BlockMeta:
     """Runs columns and descriptors of ``block``."""
     suite_item = block.get("suite")
@@ -211,6 +229,7 @@ def block_meta(block: InfoBlock, ids: FunctionIds) -> BlockMeta:
     alg = block.get("algId")
     if alg is None:
         warnings.append(("missing_algorithm", "the header has no algId; stored as ''"))
+    warnings += _record_warnings(block)
     info = block.get("algInfo")
     experiment = extra + [
         (item.key, header_value(item), "experiment")

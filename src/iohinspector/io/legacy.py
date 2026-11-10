@@ -4,7 +4,7 @@ This is the format of the IOHprofiler loggers before the JSON metadata of
 IOHexperimenter 0.3.3: the original IOHprofiler, IOHexperimenter 0.2 (``Default``
 logger) and the ``.info`` Analyzer of IOHexperimenter 0.3.0 to 0.3.2. IOHanalyzer
 reads it with ``read_index_file__IOH`` and ``read_dat`` (``R/readFiles.R``). The
-page ``docs/readers/legacy.md`` describes the mapping to format v1.
+page ``docs/readers-legacy.md`` describes the mapping to format v1.
 
 The reader is lossless: every data line of every data file of a run set becomes
 a trace row, except that a row two files log identically for the same evaluation
@@ -184,6 +184,9 @@ def _collect(source: Path, builder: _Builder) -> tuple[list[_RunSet], set[Path]]
     skipped: set[Path] = set()
     for path in _info_files(source):
         display = builder.display(path)
+        if source.is_dir() and not path.read_bytes().strip():
+            builder.warn("skipped_file", "an empty .info file; not read", display)
+            continue
         if source.is_dir() and info_flavour(path) == "coco":
             builder.warn("skipped_file", "a COCO .info file; not read", display)
             skipped.update(
