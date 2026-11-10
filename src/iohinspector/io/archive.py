@@ -155,8 +155,13 @@ class _Opener:
         self.count += 1
         dest = self.tmp / f"a{self.count}"
         dest.mkdir()
+
+        def keep(name: str) -> bool:
+            member = _member_path(display, name)
+            return member is not None and (is_archive(member) or self.wanted(member))
+
         try:
-            members = _extract(local, dest)
+            members = _extract(local, dest, keep)
         except (tarfile.TarError, zipfile.BadZipFile, OSError, EOFError) as exc:
             self.tree.warn(
                 "skipped_archive", f"cannot open the archive: {exc}", display
@@ -197,14 +202,22 @@ def _safe_target(dest: Path, name: str) -> Path | None:
     return dest.joinpath(*parts)
 
 
-def _extract(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
-    """Extract the regular files of an archive; ``(name, path or None)`` per member."""
+def _extract(
+    local: Path, dest: Path, keep: Callable[[str], bool]
+) -> list[tuple[str, Path | None]]:
+    """Extract the regular files of an archive for which ``keep(name)`` holds.
+
+    Returns ``(name, path)`` per extracted member, and ``(name, None)`` per member
+    that is not a regular file or whose name leaves the archive.
+    """
     if zipfile.is_zipfile(local):
-        return _extract_zip(local, dest)
-    return _extract_tar(local, dest)
+        return _extract_zip(local, dest, keep)
+    return _extract_tar(local, dest, keep)
 
 
-def _extract_zip(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
+def _extract_zip(
+    local: Path, dest: Path, keep: Callable[[str], bool]
+) -> list[tuple[str, Path | None]]:
     out: list[tuple[str, Path | None]] = []
     with zipfile.ZipFile(local) as archive:
         for info in archive.infolist():
@@ -215,6 +228,8 @@ def _extract_zip(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
             if target is None or mode not in (0, 0o100000):
                 out.append((info.filename, None))
                 continue
+            if not keep(info.filename):
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst)
@@ -222,7 +237,9 @@ def _extract_zip(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
     return out
 
 
-def _extract_tar(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
+def _extract_tar(
+    local: Path, dest: Path, keep: Callable[[str], bool]
+) -> list[tuple[str, Path | None]]:
     out: list[tuple[str, Path | None]] = []
     with tarfile.open(local, mode="r:*") as archive:
         for member in archive:
@@ -231,6 +248,8 @@ def _extract_tar(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
             target = _safe_target(dest, member.name)
             if target is None or not member.isfile():
                 out.append((member.name, None))
+                continue
+            if not keep(member.name):
                 continue
             src = archive.extractfile(member)
             if src is None:

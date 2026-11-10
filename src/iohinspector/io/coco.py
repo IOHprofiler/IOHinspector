@@ -390,7 +390,7 @@ def _add_runs(
         builder.runs.append(
             _run_row(rid, primary, index, ref.block, entry, dat_run, builder)
         )
-        builder.descriptors.extend(_descriptors(rid, primary, ref, entry, builder))
+        builder.descriptors.extend(_descriptors(rid, ref, entry, builder))
     if files:
         _add_trace(files, ids, primary, builder)
 
@@ -435,7 +435,6 @@ def _run_row(  # pylint: disable=too-many-arguments,too-many-positional-argument
 
 def _descriptors(
     rid: int,
-    primary: str,
     ref: _Ref,
     entry: InfoEntry | None,
     builder: _Builder,
@@ -461,7 +460,7 @@ def _descriptors(
         out.append((rid, name, value, "experiment"))
     if entry is not None and entry.value is not None:
         out.append((rid, FINAL_KEY, entry.value, "run"))
-    archive = builder.tree.outer_archive_of.get(primary)
+    archive = builder.tree.outer_archive_of.get(ref.info)
     if archive is not None:
         out.append((rid, ARCHIVE_KEY, archive, "path"))
     return out
