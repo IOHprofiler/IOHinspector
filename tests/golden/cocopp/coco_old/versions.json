@@ -1,0 +1,39 @@
+{
+  "cocopp": "2.9.1",
+  "datasets": [
+    {
+      "algId": "DIRECT",
+      "dataset": "DataSet(DIRECT on f6 2-D)",
+      "dim": 2,
+      "funcId": 6,
+      "instances": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "suffix": "_2D"
+    },
+    {
+      "algId": "DIRECT",
+      "dataset": "DataSet(DIRECT on f6 3-D)",
+      "dim": 3,
+      "funcId": 6,
+      "instances": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "suffix": "_3D"
+    }
+  ],
+  "files": "as for the coco fixture, one set per data set with its suffix",
+  "numpy": "2.4.6",
+  "pyarrow": "26.0.1",
+  "python": "3.11.16",
+  "scipy": "1.17.1",
+  "targets": "51 targets 10^(2 - k/5), k = 0..50, as Delta f = f - f_opt (cocopp compares with its own 1e-9 relative tolerance)"
+}

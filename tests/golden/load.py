@@ -20,6 +20,8 @@ import polars as pl
 GOLDEN_DIR = Path(__file__).resolve().parent
 IOHANALYZER_DIR = GOLDEN_DIR / "iohanalyzer"
 COCOPP_DIR = GOLDEN_DIR / "cocopp" / "coco"
+#: COCO fixtures with cocopp references; ``coco_old`` is not an IOHanalyzer fixture.
+COCO_FIXTURES = ("coco", "coco_old")
 FIXTURES_DIR = GOLDEN_DIR / "fixtures"
 
 FIXTURES = ("ioh040_min", "ioh040_max", "ioh040_cons", "ioh040_pos", "extdata", "coco")
@@ -65,6 +67,7 @@ def golden(fixture: str, metric: str) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
-def golden_cocopp(name: str) -> pl.DataFrame:
-    """cocopp reference output for the COCO fixture."""
-    return pl.read_parquet(COCOPP_DIR / f"{name}.parquet")
+def golden_cocopp(name: str, fixture: str = "coco") -> pl.DataFrame:
+    """cocopp reference output ``name`` for a COCO fixture (``coco`` or ``coco_old``;
+    the names of ``coco_old`` end in ``_2D`` or ``_3D``)."""
+    return pl.read_parquet(GOLDEN_DIR / "cocopp" / fixture / f"{name}.parquet")

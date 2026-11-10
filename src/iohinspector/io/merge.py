@@ -1,23 +1,23 @@
-"""Merging the data files of one legacy run set: ``.dat``, ``.tdat``, ``.cdat`` etc.
+"""The identical-row rule: merging files that log the same runs.
 
-The legacy logger writes the same run to up to four files, each with its own
-trigger. A row that two files log for the same evaluation is stored once when
-every column is identical (the identical-row rule of ``docs/format.md``);
-otherwise both rows are kept and flagged. Within one file nothing is merged:
-repeated rows stay.
+Some loggers write one run to several files, each with its own trigger (COCO's
+``.dat``, ``.tdat`` and ``.rdat``). Format v1 keeps every row of every file, and
+merges two rows only when they describe the same evaluation with identical
+values in every column (``docs/format.md``, plan principle 1). Within one file
+nothing is merged: rows a file repeats stay.
 
-Two columns describe the merge when a run set has more than one file:
+Two columns describe the merge:
 
-- ``logged_in``: the file kinds that hold the row, joined by ``+`` in the order
-  ``dat``, ``tdat``, ``cdat``, ``idat`` (for example ``dat+cdat``);
+- ``logged_in``: the kinds of the files that hold the row, joined by ``+`` in the
+  given kind order, for example ``dat+tdat``;
 - ``merge_conflict``: true for every row of an evaluation that the files log
   with different values (more than one distinct row for the evaluation, from
   more than one file). Rows a file repeats are not conflicts.
 
-Rows are ordered by evaluation count, then by file kind, then by position in the
+Rows are ordered by evaluation count, then by kind, then by position in the
 file. When a file's evaluation counts decrease within a run, that order would
-change the file's own order, so nothing is merged for the run set: the files'
-rows follow each other per run, and an ``unsorted_evaluations`` warning is added.
+change the file's own order, so the files' rows follow each other per run
+instead, nothing is merged, and ``Merged.unsorted`` is set.
 """
 
 from __future__ import annotations
@@ -26,33 +26,32 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from ._legacy_dat import DataFile
-
-#: File kinds in their merge order.
-MERGE_ORDER = ("dat", "tdat", "cdat", "idat")
-_HELPERS = ("run_index", "file_row", "line", "_kind")
+#: Helper columns of the input frames; every other column is a value column.
+KEYS = ("run_index", "file_row")
 
 
 @dataclass
 class Merged:
-    """The merged rows of a run set, with ``run_index`` and ``row``."""
+    """The merged rows, with ``run_index``, ``row``, the value columns,
+    ``logged_in`` and ``merge_conflict``."""
 
     trace: pl.DataFrame
     conflicts: int = 0
     unsorted: bool = False
 
 
-def _value_columns(frames: list[pl.DataFrame]) -> list[str]:
-    out: list[str] = []
-    for frame in frames:
-        out += [c for c in frame.columns if c not in _HELPERS and c not in out]
-    return out
-
-
 def _with_rows(trace: pl.DataFrame) -> pl.DataFrame:
     return trace.with_columns(
         row=pl.int_range(pl.len(), dtype=pl.Int64).over("run_index")
-    )
+    ).select("run_index", "row", pl.exclude("run_index", "row"))
+
+
+def _labels(kinds: list[str]) -> dict[int, str]:
+    """``logged_in`` text of every bit mask over ``kinds``."""
+    return {
+        mask: "+".join(k for i, k in enumerate(kinds) if mask >> i & 1)
+        for mask in range(1, 1 << len(kinds))
+    }
 
 
 def _is_sorted(stacked: pl.DataFrame) -> bool:
@@ -66,32 +65,29 @@ def _is_sorted(stacked: pl.DataFrame) -> bool:
     return bool(steps["ok"].all())
 
 
-def _labels(kinds: list[str]) -> dict[int, str]:
-    """``logged_in`` text of every bit mask over ``kinds``."""
-    out = {}
-    for mask in range(1, 1 << len(kinds)):
-        out[mask] = "+".join(k for i, k in enumerate(kinds) if mask >> i & 1)
-    return out
+def merge_files(files: list[tuple[str, pl.DataFrame]]) -> Merged:
+    """Merge frames of the same runs, given as ``(kind, frame)`` in kind order.
 
-
-def merge_files(files: list[DataFile]) -> Merged:
-    """Merge the parsed files of one run set; they must have the same number of runs."""
+    Each frame has ``run_index``, ``file_row`` (the row's position in its file),
+    ``evaluations`` and further value columns. A single frame comes back with
+    ``row`` numbers and without the two merge columns.
+    """
     if len(files) == 1:
-        trace = files[0].trace.drop("file_row", "line")
-        return Merged(_with_rows(trace))
-    files = sorted(files, key=lambda f: MERGE_ORDER.index(f.kind))
-    kinds = [f.kind for f in files]
+        return Merged(_with_rows(files[0][1].sort("file_row").drop("file_row")))
+    kinds = [kind for kind, _ in files]
     stacked = pl.concat(
         [
-            f.trace.drop("line").with_columns(_kind=pl.lit(i, dtype=pl.Int64))
-            for i, f in enumerate(files)
+            frame.with_columns(_kind=pl.lit(i, dtype=pl.Int64))
+            for i, (_, frame) in enumerate(files)
         ],
         how="diagonal",
     )
-    values = _value_columns([f.trace for f in files])
+    values = [c for c in stacked.columns if c not in (*KEYS, "_kind")]
     if not _is_sorted(stacked):
         trace = stacked.sort("run_index", "_kind", "file_row").with_columns(
-            logged_in=pl.col("_kind").replace_strict(dict(enumerate(kinds))),
+            logged_in=pl.col("_kind").replace_strict(
+                dict(enumerate(kinds)), return_dtype=pl.String
+            ),
             merge_conflict=pl.lit(False),
         )
         return Merged(_with_rows(trace.drop("_kind", "file_row")), unsorted=True)

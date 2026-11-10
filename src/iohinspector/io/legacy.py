@@ -8,8 +8,8 @@ page ``docs/readers-legacy.md`` describes the mapping to format v1.
 
 The reader is lossless: every data line of every data file of a run set becomes
 a trace row, except that a row two files log identically for the same evaluation
-is stored once (``_legacy_merge``). Nothing is deduplicated within a file or made
-monotone. Malformed input raises ``ReaderError`` with the file name and line.
+is stored once (``iohinspector.io.merge``, shared with the COCO reader). Nothing
+is deduplicated within a file or made monotone. Malformed input raises ``ReaderError`` with the file name and line.
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ from ..format import run_id as make_run_id
 from ..format.schema import descriptor_key_problem
 from ._legacy_dat import DataFile, parse_data_file
 from ._legacy_info import InfoBlock, InfoRun, parse_info
-from ._legacy_merge import MERGE_ORDER, Merged, merge_files
 from ._legacy_meta import BlockMeta, FunctionIds, block_meta, run_value
 from .base import ReaderError, ReadResult
+from .merge import Merged, merge_files
 
 READER_NAME = "ioh-legacy"
 INFO_KIND = "ioh-legacy-info"
@@ -47,6 +47,10 @@ TRIGGERS: dict[str, list[dict[str, Any]]] = {
 
 
 # --------------------------------------------------------------------------- detection
+
+
+#: File kinds in their merge order.
+MERGE_ORDER = ("dat", "tdat", "cdat", "idat")
 
 
 def _stem(path: Path) -> Path:
@@ -240,7 +244,8 @@ def _add_run_set(run_set: _RunSet, ids: FunctionIds, builder: _Builder) -> None:
                 "of the files cannot be matched",
                 f.path,
             )
-    merged = merge_files(files)
+    ordered = sorted(files, key=lambda f: MERGE_ORDER.index(f.kind))
+    merged = merge_files([(f.kind, f.trace.drop("line")) for f in ordered])
     _file_sources(files, metas[0].maximization, builder)
     _merge_warnings(merged, files, primary, builder)
     if primary.n_runs != len(entries):

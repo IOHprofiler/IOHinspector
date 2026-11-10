@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from .base import Reader, ReaderError, ReadResult
+from .coco import detect_coco, read_coco
 from .custom_csv import convert_custom_csv
 from .ioh import detect_ioh, read_ioh
 from .legacy import detect_legacy, read_legacy
@@ -26,6 +27,9 @@ READERS: dict[str, Reader] = {
         "legacy IOHprofiler .info + .dat/.cdat/.idat/.tdat",
         detect_legacy,
         read_legacy,
+    ),
+    "coco": Reader(
+        "coco", "COCO single-objective .info + .dat", detect_coco, read_coco
     ),
 }
 
@@ -71,6 +75,7 @@ __all__ = [
     "convert_nevergrad",
     "detect_format",
     "read",
+    "read_coco",
     "read_ioh",
     "read_legacy",
 ]

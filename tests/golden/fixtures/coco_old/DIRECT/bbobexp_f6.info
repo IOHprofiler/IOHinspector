@@ -1,0 +1,6 @@
+funcId = 6, DIM = 2, Precision = 1.000e-008, algId = 'DIRECT'
+% 0010 DIRECT: DIviding RECTangles algorithm from 2009 paper by Posik, Original DIRECT, No restarts, outermaxfevals 1e5, inner maxfunevals 1e5
+data_f6\bbobexp_f6_DIM2.dat, 1:99493|-8.6e-010, 2:33752|-1.3e-009, 3:100057|1.5e-004, 4:100003|1.1e-003, 5:30183|-4.1e-009
+funcId = 6, DIM = 3, Precision = 1.000e-008, algId = 'DIRECT'
+% 0010 DIRECT: DIviding RECTangles algorithm from 2009 paper by Posik, Original DIRECT, No restarts, outermaxfevals 1e5, inner maxfunevals 1e5
+data_f6\bbobexp_f6_DIM3.dat, 1:100026|4.7e-003, 2:100060|1.1e-004, 3:100029|2.3e-002, 4:100067|3.4e-002, 5:100031|1.4e-001

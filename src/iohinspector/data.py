@@ -6,7 +6,11 @@ from dataclasses import dataclass, field
 import numpy as np
 import polars as pl
 from .align import turbo_align
+from .io._coco_dat import header_style, parse_coco_dat
+from .io._coco_info import parse_info
+from .io.coco import KINDS as COCO_KINDS
 from .io.ioh import IohJson, IohScenario, load_ioh_json, parse_dat
+from .io.merge import merge_files
 import re
 
 METADATA_SCHEMA = [
@@ -198,18 +202,6 @@ class Scenario:
         )
 
 
-    def scan_coco(self, header: list[str]):
-        return pl.scan_csv(
-            self.data_file,
-            has_header=False,
-            comment_prefix="%",
-            separator=" ",
-            decimal_comma=True,
-            schema={header[0]: pl.Float64, **dict.fromkeys(header[1:], pl.Float64)},
-            ignore_errors=True,
-            truncate_ragged_lines=True,
-        )
-
     def extract_header(self, is_coco: bool = True) -> list[str]:
         if not is_coco:
             parquet_file = self.data_file.replace(".dat", ".parquet")
@@ -230,13 +222,13 @@ class Scenario:
     ) -> pl.DataFrame:
         """Loads the data file stored at self.data_file to a pd.DataFrame
 
-        An IOHexperimenter ``.dat`` file is read with ``iohinspector.io.ioh``:
-        runs are split on header lines and every row is kept. ``monotonic`` then
-        keeps, per run, the rows where the best-so-far value changes plus the
-        run's final row.
+        IOHexperimenter and COCO data are read with ``iohinspector.io``: runs
+        are split on header lines and every row is kept (COCO's files merged
+        under the identical-row rule). ``monotonic`` then keeps, per run, the
+        rows where the best-so-far value changes plus the run's final row.
         """
-        if not is_coco and not os.path.isfile(self.data_file.replace(".dat", ".parquet")):
-            dt = self.load_dat()
+        if is_coco or not os.path.isfile(self.data_file.replace(".dat", ".parquet")):
+            dt = self.load_coco() if is_coco else self.load_dat()
             if monotonic or x_values is not None:
                 dt = monotone_per_run(dt, maximize)
             if x_values is not None:
@@ -247,7 +239,7 @@ class Scenario:
         header = self.extract_header(is_coco)
 
         dt = (
-            (self.scan_coco(header) if is_coco else self.scan_ioh(header))
+            self.scan_ioh(header)
             .with_columns(
                 pl.col("evaluations").cast(pl.UInt64),
                 run_id=(pl.col("evaluations") == 1).cum_sum(),
@@ -295,6 +287,32 @@ class Scenario:
             if taken.intersection(xs):
                 pos = pos.rename({c: f"position_{c}" for c in xs})
             df = df.join(pos, on=["run_index", "row"], how="left")
+        df = df.with_columns(
+            pl.col("evaluations").cast(pl.UInt64),
+            run_id=(pl.col("run_index") + 1).cast(pl.UInt32),
+        ).filter(pl.col("run_id").is_in(list(lookup)))
+        return df.with_columns(
+            data_id=pl.col("run_id").replace_strict(lookup, return_dtype=pl.UInt64)
+        ).drop("run_index", "row")
+
+    def load_coco(self) -> pl.DataFrame:
+        """Every row of the COCO data files of the selected runs, merged.
+
+        Columns: ``evaluations``, ``raw_y`` (best Δf), the other logged columns,
+        ``logged_in`` and ``merge_conflict`` when there are several files, the
+        positions ``x0`` ... when logged, ``run_id`` (1-based, in file order) and
+        ``data_id``.
+        """
+        stem = os.path.splitext(self.data_file)[0]
+        files = [
+            parse_coco_dat(f"{stem}.{kind}", dimension=self.dimension, kind=kind)
+            for kind in COCO_KINDS
+            if os.path.isfile(f"{stem}.{kind}")
+        ]
+        if not files:
+            raise FileNotFoundError(f"{self.data_file} is not found")
+        lookup = {r.id: r.data_id for r in self.runs}
+        df = merge_files([(f.kind, f.frame) for f in files]).trace
         df = df.with_columns(
             pl.col("evaluations").cast(pl.UInt64),
             run_id=(pl.col("run_index") + 1).cast(pl.UInt32),
@@ -492,96 +510,77 @@ class Dataset:
 
     @staticmethod
     def from_coco_text(coco_text: str, filepath: str):
-        pattern_block = re.compile(
-            r"^(?:suite\s*=\s*'(?P<suite>[^']+)',\s*)?"
-            r"funcId\s*=\s*(?P<funcId>\d+),\s*"
-            r"DIM\s*=\s*(?P<DIM>\d+),\s*"
-            r"Precision\s*=\s*(?P<precision>[0-9.eE+-]+),\s*"
-            r"algId\s*=\s*'(?P<algId>[^']+)'"
-            r"(?:,\s*coco_version\s*=\s*'(?P<coco_version>[^']*)')?"
-            r"(?:,\s*logger\s*=\s*'(?P<logger>[^']*)')?"
-            r"(?:,\s*data_format\s*=\s*'(?P<data_format>[^']*)')?"
-            r"(?:\n%[^\n]*)?"
-            r"(?:\n(?P<filename>[^\s]+),\s*(?P<runs>.+?)(?=suite\s*=|funcId\s*=|\Z))?",
-            re.DOTALL | re.MULTILINE,
-        )
+        """A dataset from the text of a COCO ``.info`` file (``iohinspector.io.coco``).
 
-        pattern_run = re.compile(r"(\d+):(\d+)\|([-+eE0-9.]+)")
-
-        scenarios = []
-        algorithms = set()
-        function_ids = set()
-        suites = set()
-        for match in pattern_block.finditer(coco_text):
-            metadata = match.groupdict()
-            dim = int(metadata["DIM"])
-            metadata["filename"] = metadata["filename"].replace("\\", "/")
-            if metadata["suite"]:
-                suites.add(metadata["suite"])
-            runs_data = pattern_run.findall(metadata.pop("runs"))
-            runs = []
-            for run_id, run in enumerate(runs_data):
-                _, evals, y = run
-                solution = Solution(
-                    evals=int(evals), x=np.array([None] * dim), y=float(y)
-                )
-                run = Run(
-                    data_id=Run.hash(
-                        f"{os.path.join(os.path.dirname(filepath), metadata['filename'])}_{run_id+1}"
-                    ),
-                    id=run_id + 1,
-                    instance=0,  # Instance is not provided in the COCO text format
-                    evals=int(evals),
-                    best=solution,
-                )
-                runs.append(run)
-
-            scenario = Scenario(
-                dimension=int(metadata["DIM"]),
-                data_file=os.path.join(os.path.dirname(filepath), metadata["filename"]),
-                runs=runs,
-            )
-            scenarios.append(scenario)
-
-            algorithms.add(metadata["algId"])
-            function_ids.add(int(metadata["funcId"]))
-        if len(algorithms) != 1:
+        Instances and evaluation counts come from the run entries. The runs of a
+        data file are matched in order with the entries of the blocks naming it;
+        runs only the data file has get no instance.
+        """
+        info = parse_info(coco_text, filepath)
+        algorithms = {str(b.get("algId")) for b in info.blocks}
+        function_ids = {b.function_id for b in info.blocks}
+        if len(algorithms) > 1:
             raise ValueError("Multiple algorithms found in COCO text, expected one.")
-        if len(function_ids) != 1:
+        if len(function_ids) > 1:
             raise ValueError("Multiple function ids found in COCO text, expected one.")
-        algorithm = Algorithm(
-            name=algorithms.pop(),
-            info="algorithm_info",  # Assuming no additional info in COCO text
-        )
-        function = Function(
-            id=function_ids.pop(),
-            name=None,
-            maximization=False,  # Assuming minimization, adjust as needed
-        )
-
-        # Assuming no experiment attributes and data attributes in COCO text
-        experiment_attributes = []
-
-        # Read header from the first scenario's data file, if available
-        if scenarios and os.path.isfile(scenarios[0].data_file):
-            with open(scenarios[0].data_file, "r") as f:
-                first_line = next(f)
-            data_attributes = process_header(first_line)
-
-        else:
-            data_attributes = []
-
+        if not info.blocks:
+            raise ValueError("No COCO block found in the text.")
+        first = info.blocks[0]
+        suites = {b.get("suite") for b in info.blocks if b.get("suite") is not None}
         return Dataset(
             source="coco",
             file=filepath,
-            version="0.0.1",
-            suite="unknown_suite" if not suites else suites.pop(),
-            function=function,
-            algorithm=algorithm,
-            experiment_attributes=experiment_attributes,
-            data_attributes=data_attributes,
-            scenarios=scenarios,
+            version=str(first.get("coco_version", "0.0.1")),
+            suite=suites.pop() if len(suites) == 1 else "unknown_suite",
+            function=Function(id=first.function_id, name=None, maximization=False),
+            algorithm=Algorithm(
+                name=algorithms.pop(), info=first.comment.lstrip("%").strip()
+            ),
+            experiment_attributes=[],
+            data_attributes=[],
+            scenarios=_coco_scenarios(info, os.path.dirname(filepath)),
         )
+
+
+def _coco_scenarios(info, dirname: str) -> list["Scenario"]:
+    """One scenario per data file; its runs in data file order."""
+    blocks: dict[str, list] = {}
+    for block in info.blocks:
+        path = os.path.join(dirname, *block.data_file.split("/"))
+        blocks.setdefault(path, []).append(block)
+    scenarios = []
+    for path, named in blocks.items():
+        entries = [e for b in named for e in b.entries]
+        n_dat = count_coco_runs(path)
+        runs = []
+        for index in range(max(n_dat, len(entries))):
+            entry = entries[index] if index < len(entries) else None
+            evals = None if entry is None else entry.evals
+            runs.append(
+                Run(
+                    Run.hash(f"{path}_{index + 1}"),
+                    index + 1,
+                    None if entry is None else entry.instance,
+                    evals,
+                    best=Solution(
+                        evals,
+                        x=np.array([None] * named[0].dimension),
+                        y=None if entry is None else entry.value,
+                    ),
+                )
+            )
+        scenarios.append(Scenario(named[0].dimension, path, runs))
+    return scenarios
+
+
+def count_coco_runs(path: str) -> int:
+    """The number of runs in a COCO data file (its header lines); 0 when missing."""
+    stem = os.path.splitext(path)[0]
+    for kind in COCO_KINDS:
+        if os.path.isfile(f"{stem}.{kind}"):
+            with open(f"{stem}.{kind}", encoding="utf-8", errors="replace") as fh:
+                return sum(header_style(line) is not None for line in fh)
+    return 0
 
 
 def process_header(line: str):
