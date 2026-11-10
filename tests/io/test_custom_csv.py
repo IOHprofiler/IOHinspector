@@ -5,7 +5,7 @@ import polars as pl
 import pytest
 
 from iohinspector.format import FormatError, scan_dataset, validate_dataset
-from iohinspector.io import READERS, convert_custom_csv
+from iohinspector.io import CONVERTERS, convert_custom_csv
 from iohinspector.io._csv import MappingError
 from iohinspector.io.custom_csv import load_mapping, validate_mapping
 
@@ -69,7 +69,7 @@ def source(tmp_path):
 
 
 def test_registered():
-    assert READERS["custom-csv"] is convert_custom_csv
+    assert CONVERTERS["custom-csv"] is convert_custom_csv
 
 
 def test_long_format_values_and_counts(tmp_path, source):

@@ -1,11 +1,12 @@
+import ast
 import os
-import json
 import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
 import polars as pl
 from .align import turbo_align
+from .io.ioh import IohJson, IohScenario, load_ioh_json, parse_dat
 import re
 
 METADATA_SCHEMA = [
@@ -32,9 +33,10 @@ def check_keys(data: dict, required_keys: list[str]):
 
 
 def try_eval(value: str):
+    """The Python literal ``value`` spells, or ``value`` itself."""
     try:
-        return eval(value)
-    except:
+        return ast.literal_eval(value)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
         return value
 
 
@@ -79,6 +81,8 @@ class Run:
     instance: int
     evals: int
     best: Solution
+    #: Run attributes from the JSON (IOHexperimenter writes them as doubles).
+    attributes: dict = field(default_factory=dict)
 
     __lookup__ = {}
     __current_id__ = 1
@@ -97,6 +101,40 @@ class Scenario:
     dimension: int
     data_file: str
     runs: list[Run]
+    #: The JSON's logged properties; ``.dat`` columns after them are positions.
+    attributes: list[str] | None = None
+
+    @staticmethod
+    def from_ioh(scen: IohScenario, meta: IohJson) -> "Scenario":
+        """A scenario of a parsed JSON file (``iohinspector.io.ioh``).
+
+        Runs are matched to the ``.dat`` file's runs in order; runs that only the
+        ``.dat`` file has get no instance and no evaluation count.
+        """
+        path = os.path.join(os.path.dirname(meta.path), scen.path)
+        if not os.path.isfile(path) and not os.path.isfile(
+            path.replace(".dat", ".parquet")
+        ):
+            raise FileNotFoundError(f"{path} is not found")
+        n_dat = count_dat_runs(path) if os.path.isfile(path) else 0
+        runs = []
+        for index in range(max(n_dat, len(scen.runs))):
+            info = scen.runs[index] if index < len(scen.runs) else None
+            runs.append(
+                Run(
+                    Run.hash(f"{path}_{index + 1}"),
+                    index + 1,
+                    None if info is None else info.instance,
+                    None if info is None else info.evals,
+                    best=Solution(
+                        None if info is None else info.best_evals,
+                        None if info is None else np.array(info.best_x),
+                        None if info is None else info.best_y,
+                    ),
+                    attributes={} if info is None else dict(info.attributes),
+                )
+            )
+        return Scenario(scen.dimension, path, runs, meta.attributes)
 
     @staticmethod
     def from_dict(data: dict, dirname: str):
@@ -190,7 +228,20 @@ class Scenario:
     def load(
         self, monotonic=False, maximize=True, x_values=None, is_coco: bool = False
     ) -> pl.DataFrame:
-        """Loads the data file stored at self.data_file to a pd.DataFrame"""
+        """Loads the data file stored at self.data_file to a pd.DataFrame
+
+        An IOHexperimenter ``.dat`` file is read with ``iohinspector.io.ioh``:
+        runs are split on header lines and every row is kept. ``monotonic`` then
+        keeps, per run, the rows where the best-so-far value changes plus the
+        run's final row.
+        """
+        if not is_coco and not os.path.isfile(self.data_file.replace(".dat", ".parquet")):
+            dt = self.load_dat()
+            if monotonic or x_values is not None:
+                dt = monotone_per_run(dt, maximize)
+            if x_values is not None:
+                dt = turbo_align(dt, x_values)
+            return dt
 
         key_lookup = dict([(r.id, r.data_id) for r in self.runs])
         header = self.extract_header(is_coco)
@@ -225,6 +276,53 @@ class Scenario:
 
         return dt
 
+    def load_dat(self) -> pl.DataFrame:
+        """Every row of the IOHexperimenter ``.dat`` file of the selected runs.
+
+        Columns: ``evaluations``, ``raw_y``, the other logged properties, the
+        positions ``x0`` ... when logged (``position_x0`` ... when a property is
+        named like one of them), ``run_id`` (1-based, in file order) and ``data_id``.
+        """
+        dat = parse_dat(
+            self.data_file, dimension=self.dimension, attributes=self.attributes
+        )
+        lookup = {r.id: r.data_id for r in self.runs}
+        df = dat.trace
+        if dat.positions is not None:
+            taken = set(df.columns)
+            xs = [c for c in dat.positions.columns if c not in ("run_index", "row")]
+            pos = dat.positions
+            if taken.intersection(xs):
+                pos = pos.rename({c: f"position_{c}" for c in xs})
+            df = df.join(pos, on=["run_index", "row"], how="left")
+        df = df.with_columns(
+            pl.col("evaluations").cast(pl.UInt64),
+            run_id=(pl.col("run_index") + 1).cast(pl.UInt32),
+        ).filter(pl.col("run_id").is_in(list(lookup)))
+        return df.with_columns(
+            data_id=pl.col("run_id").replace_strict(lookup, return_dtype=pl.UInt64)
+        ).drop("run_index", "row")
+
+
+def count_dat_runs(path: str) -> int:
+    """The number of runs in an IOHexperimenter ``.dat`` file: its header lines."""
+    count = 0
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            first = line.lstrip()[:1]
+            if first and not (first.isdigit() or first in "+-."):
+                count += 1
+    return count
+
+
+def monotone_per_run(dt: pl.DataFrame, maximize: bool) -> pl.DataFrame:
+    """Best-so-far ``raw_y`` per run; keeps the rows where it changes and the final row."""
+    best = pl.col("raw_y").cum_max() if maximize else pl.col("raw_y").cum_min()
+    dt = dt.with_columns(raw_y=best.over("run_id"))
+    changed = (pl.col("raw_y") != pl.col("raw_y").shift(1)).over("run_id").fill_null(True)
+    last = (pl.int_range(pl.len()) == pl.len() - 1).over("run_id")
+    return dt.filter(changed | last)
+
 
 @dataclass
 class Dataset:
@@ -245,12 +343,35 @@ class Dataset:
         if not os.path.isfile(json_file):
             raise FileNotFoundError(f"{json_file} not found")
         try:
-            with open(json_file) as f:
-                data = json.load(f)
-                return Dataset.from_dict(data, json_file)
-        except Exception as e:
+            return Dataset.from_ioh(load_ioh_json(json_file))
+        except (ValueError, OSError) as e:
             warnings.warn(f"Failed to load {json_file}: {e}")
             return None
+
+    @staticmethod
+    def from_ioh(meta: IohJson) -> "Dataset":
+        """A dataset from a parsed JSON file (``iohinspector.io.ioh.load_ioh_json``)."""
+        names = {name for name, _ in METADATA_SCHEMA}
+        experiment_attributes = []
+        for name, value in meta.experiment_attributes:
+            if name in names:
+                warnings.warn(
+                    f"Experiment attribute '{name}' is already present in the "
+                    "metadata schema. It will be renamed to avoid conflicts."
+                )
+                name = f"{name}_exp_attr"
+            experiment_attributes.append((name, value))
+        return Dataset(
+            "ioh",
+            str(meta.path),
+            meta.version,
+            meta.suite,
+            Function(meta.function_id, meta.function_name, meta.maximization),
+            Algorithm(meta.algorithm_name, meta.algorithm_info),
+            experiment_attributes or None,
+            meta.attributes or [],
+            [Scenario.from_ioh(scen, meta) for scen in meta.scenarios],
+        )
 
     @property
     def overview(self) -> pl.DataFrame:
@@ -272,6 +393,17 @@ class Dataset:
             exattr_values = []
             exattr_schema = []
 
+        runattr_names = list(
+            dict.fromkeys(
+                name for scen in self.scenarios for run in scen.runs for name in run.attributes
+            )
+        )
+        taken = {name for name, _ in METADATA_SCHEMA + exattr_schema}
+        runattr_schema = [
+            (f"{name}_run_attr" if name in taken else name, pl.Float64)
+            for name in runattr_names
+        ]
+
         records = []
         for scen in self.scenarios:
             for run in scen.runs:
@@ -280,9 +412,12 @@ class Dataset:
                     + meta_data
                     + [scen.dimension, run.instance, run.id, run.evals, run.best.y]
                     + exattr_values
+                    + [run.attributes.get(name) for name in runattr_names]
                 )
         return pl.DataFrame(
-            records, schema=METADATA_SCHEMA + exattr_schema, orient="row"
+            records,
+            schema=METADATA_SCHEMA + exattr_schema + runattr_schema,
+            orient="row",
         )
 
     @staticmethod

@@ -7,7 +7,7 @@ import polars as pl
 import pytest
 
 from iohinspector.format import FormatError, scan_dataset, validate_dataset
-from iohinspector.io import READERS, convert_nevergrad
+from iohinspector.io import CONVERTERS, convert_nevergrad
 from iohinspector.io._csv import MappingError
 from iohinspector.io.nevergrad import is_nevergrad_csv
 
@@ -55,7 +55,7 @@ def check_against_source(path, out):
 
 
 def test_registered():
-    assert READERS["nevergrad-csv"] is convert_nevergrad
+    assert CONVERTERS["nevergrad-csv"] is convert_nevergrad
     assert is_nevergrad_csv(SAMPLE)
 
 
