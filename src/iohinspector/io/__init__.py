@@ -12,7 +12,9 @@ from pathlib import Path
 
 from .base import Reader, ReaderError, ReadResult
 from .coco import detect_coco, read_coco
+from .custom_csv import convert_custom_csv
 from .ioh import detect_ioh, read_ioh
+from .nevergrad import convert_nevergrad
 
 #: One line per reader, in the order ``detect_format`` tries them.
 READERS: dict[str, Reader] = {
@@ -22,6 +24,15 @@ READERS: dict[str, Reader] = {
     "coco": Reader(
         "coco", "COCO single-objective .info + .dat", detect_coco, read_coco
     ),
+}
+
+#: Streaming converters that write a dataset themselves:
+#: ``(source, output, ...) -> manifest``. The custom CSV converter needs a column
+#: mapping, so neither is tried by ``detect_format``; I09's convert command brings
+#: both tables together.
+CONVERTERS = {
+    "nevergrad-csv": convert_nevergrad,
+    "custom-csv": convert_custom_csv,
 }
 
 
@@ -48,10 +59,13 @@ def read(  # pylint: disable=redefined-builtin
 
 
 __all__ = [
+    "CONVERTERS",
     "READERS",
     "ReadResult",
     "Reader",
     "ReaderError",
+    "convert_custom_csv",
+    "convert_nevergrad",
     "detect_format",
     "read",
     "read_coco",
