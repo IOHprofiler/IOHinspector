@@ -139,14 +139,9 @@ def write_dataset(
         counts = _write_small_tables(tmp, runs_df, descriptors_df)
         manifest["descriptors"] = summarize(descriptors_df)
         run_map = fr.run_map(runs_df)
-        max_obj = int(runs_df["n_objectives"].max() or 1)  # type: ignore[arg-type]
-        sorted_tables = [(_TableSpec.trace(extra_columns, max_obj), trace, TRACE_FILE)]
-        if positions is not None:
-            max_dim = int(runs_df["dimension"].max() or 0)  # type: ignore[arg-type]
-            sorted_tables.append(
-                (_TableSpec.positions(max_dim), positions, POSITIONS_FILE)
-            )
-        for spec, data, name in sorted_tables:
+        for spec, data, name in _sorted_tables(
+            runs_df, trace, positions, extra_columns
+        ):
             writer = _SortedTableWriter(spec, run_map, tmp, memory_limit)
             counts[f"{spec.name}_rows"] = writer.write(data, tmp / name)
         manifest["counts"] = counts
@@ -158,6 +153,21 @@ def write_dataset(
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     return manifest
+
+
+def _sorted_tables(
+    runs: pl.DataFrame,
+    trace: FrameSource,
+    positions: FrameSource | None,
+    extra_columns: Mapping[str, pl.DataType] | None,
+) -> list[tuple[_TableSpec, FrameSource, str]]:
+    """The trace, and the positions if given: spec, input and file name."""
+    max_obj = int(runs["n_objectives"].max() or 1)  # type: ignore[arg-type]
+    tables = [(_TableSpec.trace(extra_columns, max_obj), trace, TRACE_FILE)]
+    if positions is not None:
+        max_dim = int(runs["dimension"].max() or 0)  # type: ignore[arg-type]
+        tables.append((_TableSpec.positions(max_dim), positions, POSITIONS_FILE))
+    return tables
 
 
 def _writable_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
@@ -310,6 +320,30 @@ class _TableSpec:
         extras = [Column(n, t, True) for n, t in (self.extras or {}).items()]
         return [*self.fixed_optional, *extras]
 
+    def other_columns(self, columns: list[str]) -> list[str]:
+        """The extra columns among a chunk's ``columns``, after checking the others.
+
+        Raises ``FormatError`` for a missing required column, and for a column that
+        is neither fixed nor allowed as an extra column.
+        """
+        missing = [c.name for c in self.required if c.name not in columns]
+        if missing:
+            raise fr.FormatError(f"{self.name}: missing required column(s) {missing}")
+        known = {c.name for c in (*self.required, *self.fixed_optional)}
+        others = [c for c in columns if c not in known and c not in COPIED_RUN_COLUMNS]
+        if others and not self.extras_allowed:
+            raise fr.FormatError(
+                f"{self.name}: unknown column(s) {others}; positions hold run_id, row "
+                f"and x0 to x{len(self.fixed_optional) - 1} (the largest dimension)"
+            )
+        objectives = [c for c in others if _OBJECTIVE.fullmatch(c)]
+        if objectives:
+            raise fr.FormatError(
+                f"trace: column(s) {objectives} are not allowed; objective 0 is raw_y, "
+                + _objective_names(len(self.fixed_optional) + 1)
+            )
+        return others
+
     def null_problem(self, df: pl.DataFrame) -> str | None:
         """Fixed optional columns whose nulls do not match the run's count."""
         names = indexed_columns([c.name for c in self.fixed_optional])
@@ -401,26 +435,7 @@ class _SortedTableWriter:
     def _check_chunk_columns(self, chunk: pl.DataFrame) -> None:
         """Required columns are present; extra columns are known or set by this chunk."""
         spec = self.spec
-        missing = [c.name for c in spec.required if c.name not in chunk.columns]
-        if missing:
-            raise fr.FormatError(f"{spec.name}: missing required column(s) {missing}")
-        known = (
-            {c.name for c in spec.required}
-            | set(COPIED_RUN_COLUMNS)
-            | {c.name for c in spec.fixed_optional}
-        )
-        others = [c for c in chunk.columns if c not in known]
-        objectives = [c for c in others if _OBJECTIVE.fullmatch(c)]
-        if objectives and spec.extras_allowed:
-            raise fr.FormatError(
-                f"trace: column(s) {objectives} are not allowed; objective 0 is raw_y, "
-                + _objective_names(len(spec.fixed_optional) + 1)
-            )
-        if others and not spec.extras_allowed:
-            raise fr.FormatError(
-                f"{spec.name}: unknown column(s) {others}; positions hold run_id, row "
-                f"and x0 to x{len(spec.fixed_optional) - 1} (the largest dimension)"
-            )
+        others = spec.other_columns(chunk.columns)
         if spec.extras is None:
             spec.extras = _infer_extras(chunk, others)
             return

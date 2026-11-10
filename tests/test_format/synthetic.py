@@ -47,6 +47,35 @@ def make_dataset(
     Values include ties, zeros, inf and nan, so that a lossy writer would be caught.
     """
     rng = random.Random(seed)
+    runs, sources = _runs_and_sources(
+        algorithms, functions, dimensions, runs_per_file, dataset_id
+    )
+    descriptors = _descriptors(runs)
+    runs = runs.drop("algorithm")
+    trace_rows, pos_rows = [], []
+    for run in runs.iter_rows(named=True):
+        _add_run_rows(run, rows(rng), rng, extras, positions, trace_rows, pos_rows)
+    trace_schema = {
+        "run_id": pl.Int64,
+        "row": pl.Int64,
+        "evaluations": pl.Int64,
+        "raw_y": pl.Float64,
+    }
+    if extras:
+        trace_schema |= {"sigma": pl.Float64, "restart": pl.Int64, "tag": pl.String}
+    trace = pl.DataFrame(trace_rows, schema=trace_schema)
+    pos_df = None
+    if positions:
+        pos_schema = {"run_id": pl.Int64, "row": pl.Int64} | {
+            f"x{j}": pl.Float64 for j in range(max(dimensions))
+        }
+        pos_df = pl.DataFrame(pos_rows, schema=pos_schema)
+    manifest = new_manifest(dataset_id, "synthetic", "0.0", sources=sources)
+    return Synthetic(manifest, runs, trace, pos_df, descriptors)
+
+
+def _runs_and_sources(algorithms, functions, dimensions, runs_per_file, dataset_id):
+    """The runs (with an ``algorithm`` column) and the manifest's sources."""
     run_rows, sources = [], []
     for alg in algorithms:
         for f in functions:
@@ -61,22 +90,27 @@ def make_dataset(
                         "data_rows": 0,
                     }
                 )
-                for i in range(runs_per_file):
-                    run_rows.append(
-                        {
-                            "algorithm": alg,
-                            "function_id": f,
-                            "dimension": d,
-                            "instance": i + 1,
-                            "maximization": f % 2 == 0,
-                            "source_file": path,
-                            "source_run_index": i,
-                        }
-                    )
+                run_rows += [
+                    {
+                        "algorithm": alg,
+                        "function_id": f,
+                        "dimension": d,
+                        "instance": i + 1,
+                        "maximization": f % 2 == 0,
+                        "source_file": path,
+                        "source_run_index": i,
+                    }
+                    for i in range(runs_per_file)
+                ]
     runs = pl.DataFrame(run_rows)
     runs = runs.with_columns(
         run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
     )
+    return runs, sources
+
+
+def _descriptors(runs: pl.DataFrame) -> pl.DataFrame:
+    """``algorithm_name``, ``seed``, ``popsize`` and ``folder`` of every run."""
     records = []
     for run in runs.iter_rows(named=True):
         records.append((run["run_id"], "algorithm_name", run["algorithm"], "algorithm"))
@@ -85,49 +119,33 @@ def make_dataset(
             (run["run_id"], "popsize", 10 * (1 + run["function_id"] % 2), "algorithm")
         )
         records.append((run["run_id"], "folder", run["algorithm"], "path"))
-    descriptors = descriptor_frame(records)
-    runs = runs.drop("algorithm")
-    special = [0.0, float("inf"), float("-inf"), float("nan"), 1e-300, -0.0]
-    trace_rows, pos_rows = [], []
-    for run in runs.iter_rows(named=True):
-        n = rows(rng)
-        evals = 0
-        y = rng.uniform(1, 100)
-        for r in range(n):
-            evals += rng.randint(1, 3)
-            if rng.random() < 0.3:
-                y = rng.choice(special)
-            elif rng.random() < 0.5:
-                y = y * rng.uniform(0.5, 1.0)  # else: repeat the previous value
-            row = {"run_id": run["run_id"], "row": r, "evaluations": evals, "raw_y": y}
-            if extras:
-                row["sigma"] = rng.uniform(0, 1) if rng.random() < 0.9 else None
-                row["restart"] = rng.randint(0, 3)
-                row["tag"] = rng.choice(["a", "b", None])
-            trace_rows.append(row)
-            if positions and rng.random() < 0.7:
-                pos = {"run_id": run["run_id"], "row": r}
-                for j in range(run["dimension"]):
-                    pos[f"x{j}"] = rng.uniform(-5, 5)
-                pos_rows.append(pos)
-    trace_schema = {
-        "run_id": pl.Int64,
-        "row": pl.Int64,
-        "evaluations": pl.Int64,
-        "raw_y": pl.Float64,
-    }
-    if extras:
-        trace_schema |= {"sigma": pl.Float64, "restart": pl.Int64, "tag": pl.String}
-    trace = pl.DataFrame(trace_rows, schema=trace_schema)
-    pos_df = None
-    if positions:
-        max_dim = max(dimensions)
-        pos_schema = {"run_id": pl.Int64, "row": pl.Int64} | {
-            f"x{j}": pl.Float64 for j in range(max_dim)
-        }
-        pos_df = pl.DataFrame(pos_rows, schema=pos_schema)
-    manifest = new_manifest(dataset_id, "synthetic", "0.0", sources=sources)
-    return Synthetic(manifest, runs, trace, pos_df, descriptors)
+    return descriptor_frame(records)
+
+
+_SPECIAL = [0.0, float("inf"), float("-inf"), float("nan"), 1e-300, -0.0]
+
+
+def _add_run_rows(run, n, rng, extras, positions, trace_rows, pos_rows):
+    """Append ``n`` trace rows of ``run``, and positions for some of them."""
+    evals = 0
+    y = rng.uniform(1, 100)
+    for r in range(n):
+        evals += rng.randint(1, 3)
+        if rng.random() < 0.3:
+            y = rng.choice(_SPECIAL)
+        elif rng.random() < 0.5:
+            y = y * rng.uniform(0.5, 1.0)  # else: repeat the previous value
+        row = {"run_id": run["run_id"], "row": r, "evaluations": evals, "raw_y": y}
+        if extras:
+            row["sigma"] = rng.uniform(0, 1) if rng.random() < 0.9 else None
+            row["restart"] = rng.randint(0, 3)
+            row["tag"] = rng.choice(["a", "b", None])
+        trace_rows.append(row)
+        if positions and rng.random() < 0.7:
+            pos = {"run_id": run["run_id"], "row": r}
+            for j in range(run["dimension"]):
+                pos[f"x{j}"] = rng.uniform(-5, 5)
+            pos_rows.append(pos)
 
 
 def shuffled_chunks(
