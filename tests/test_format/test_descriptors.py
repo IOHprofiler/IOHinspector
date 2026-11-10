@@ -50,10 +50,6 @@ BIG_INTS = [2**63 - 1, 2**63, 2**64 - 1, -(2**63), -(2**63) - 1, 10**30]
         (np.float32(0.5), "float", "0.5"),
         ("CMA-ES", "string", "CMA-ES"),
         ("", "string", ""),
-        (None, "null", "null"),
-        ([1, 2.5, "a"], "json", '[1,2.5,"a"]'),
-        ((1, 2), "json", "[1,2]"),
-        ({"b": 1, "a": [True]}, "json", '{"a":[true],"b":1}'),
     ],
 )
 def test_encode_and_decode(value, kind, text):
@@ -62,10 +58,8 @@ def test_encode_and_decode(value, kind, text):
     decoded = decode_descriptor(kind, text)
     if kind == "float" and math.isnan(float(value)):
         assert math.isnan(decoded)
-    elif kind == "json":
-        assert decoded == json.loads(json.dumps(value))
     else:
-        assert decoded == value and type(decoded) in (bool, int, float, str, type(None))
+        assert decoded == value and type(decoded) in (bool, int, float, str)
 
 
 def test_encode_typed_columns():
@@ -78,8 +72,25 @@ def test_encode_typed_columns():
 def test_encode_rejects():
     with pytest.raises(TypeError):
         encode_descriptor(object())
-    with pytest.raises(ValueError):
-        encode_descriptor([float("nan")])
+
+
+@pytest.mark.parametrize("value", [None, [1, 2], (1, 2), {"a": 1}, []])
+def test_encode_rejects_non_scalars(value):
+    with pytest.raises(FormatError, match="scalars"):
+        encode_descriptor(value)
+
+
+def test_descriptor_frame_skips_none_and_refuses_containers():
+    df = descriptor_frame(
+        [(1, "a", 3, "run"), (1, "b", None, "run"), (2, "b", "x", "run")]
+    )
+    assert df.select("run_id", "key", "type").rows() == [
+        (1, "a", "int"),
+        (2, "b", "string"),
+    ]
+    assert descriptor_frame([(1, "b", None, "run")]).height == 0
+    with pytest.raises(FormatError):
+        descriptor_frame([(1, "a", [1], "run")])
 
 
 def test_descriptor_frame_accepts_tuples_and_mappings():
@@ -203,7 +214,7 @@ def test_exact_large_integers(tmp_path):
 
 def test_mixed_value_types_under_one_key(tmp_path):
     syn = make_dataset(functions=(1,), dimensions=(2,), runs_per_file=6, seed=40)
-    values = [100, "unlimited", 1e3, True, None, [1, 2]]
+    values = [100, "unlimited", 1e3, True, "[1, 2]", "None"]
     ids = syn.runs["run_id"].to_list()
     records = [(rid, "budget_note", v, "experiment") for rid, v in zip(ids, values * 2)]
     path = tmp_path / "mixed"
@@ -217,7 +228,7 @@ def test_mixed_value_types_under_one_key(tmp_path):
         row = stored.filter(pl.col("run_id") == rid).row(0, named=True)
         assert decode_descriptor(row["type"], row["value"]) == value
     summary = ds.manifest["descriptors"]["budget_note"]
-    assert summary["types"] == ["bool", "float", "int", "json", "null", "string"]
+    assert summary["types"] == ["bool", "float", "int", "string"]
     assert summary["origins"] == ["experiment"] and summary["distinct"] == 6
 
     col = ds.run_columns(["budget_note"]).collect()
@@ -228,8 +239,8 @@ def test_mixed_value_types_under_one_key(tmp_path):
         "unlimited",
         "1000.0",
         "true",
-        None,
-        "[1,2]",
+        "[1, 2]",
+        "None",
     ]
     with pytest.raises(ValueError, match="several types"):
         ds.run_columns(["budget_note"], mixed="error")
@@ -549,3 +560,55 @@ def test_manifest_schema_checks_the_summary(summary):
     m = new_manifest("x", "test", "0")
     m["descriptors"] = {"seed": summary}
     assert any("descriptors" in p for p in validate_manifest(m))
+
+
+def test_upsert_skips_none_and_refuses_containers(tmp_path):
+    syn = make_dataset(seed=43)
+    path = tmp_path / "ds"
+    write_dataset(path, syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors)
+    ids = syn.runs["run_id"].to_list()
+    update_descriptors(
+        path, [(ids[0], "tag", "a", "user"), (ids[1], "tag", None, "user")]
+    )
+    ds = scan_dataset(path)
+    assert ds.manifest["descriptors"]["tag"]["runs"] == 1
+    before = {p.name: _file_digest(p) for p in path.iterdir()}
+    with pytest.raises(FormatError, match="scalars"):
+        update_descriptors(path, [(ids[0], "tag", ["a"], "user")])
+    assert {p.name: _file_digest(p) for p in path.iterdir()} == before
+
+
+def test_grouping_with_a_key_missing_in_some_runs(tmp_path):
+    syn = make_dataset(functions=(1,), dimensions=(2,), runs_per_file=6, seed=44)
+    ids = syn.runs["run_id"].to_list()
+    records = [
+        (rid, "popsize", 10 * (n % 2 + 1), "algorithm") for n, rid in enumerate(ids)
+    ]
+    records += [(ids[0], "note", None, "run"), (ids[1], "note", "x", "run")]
+    path = tmp_path / "missing"
+    write_dataset(
+        path, syn.manifest, syn.runs, syn.trace, descriptors=descriptor_frame(records)
+    )
+    assert validate_dataset(path).ok
+    ds = scan_dataset(path)
+    assert ds.manifest["descriptors"]["note"]["runs"] == 1
+    col = ds.run_columns(["note"]).collect()
+    assert col.schema["note"] == pl.String
+    by_run = dict(zip(col["run_id"], col["note"]))
+    assert by_run[ids[1]] == "x"
+    assert all(by_run.get(r) is None for r in ids if r != ids[1])
+
+
+@pytest.mark.parametrize("kind", ["json", "null"])
+def test_validation_rejects_dropped_types(ds, kind):
+    rewrite_descriptors(
+        ds,
+        lambda d: d.with_columns(
+            pl.when(pl.col("key") == "seed")
+            .then(pl.lit(kind))
+            .otherwise("type")
+            .alias("type")
+        ),
+    )
+    report = validate_dataset(ds)
+    assert any("unknown type" in e for e in report.errors), report.errors

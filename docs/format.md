@@ -240,7 +240,7 @@ The schema below is normative. iohinspector ships the same schema as `iohinspect
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"enum": ["bool", "float", "int", "json", "null", "string"]}
+          "items": {"enum": ["bool", "float", "int", "string"]}
         },
         "origins": {
           "type": "array",
@@ -308,7 +308,7 @@ One row per run and descriptor. A descriptor is a named, typed value that descri
 | `run_id` | int64 | no | The run, which MUST exist in `runs.parquet` |
 | `key` | string | no | The descriptor's name |
 | `origin` | string | no | Where the value came from, see below |
-| `type` | string | no | The value's type: `string`, `int`, `float`, `bool`, `json` or `null` |
+| `type` | string | no | The value's type: `string`, `int`, `float`, `bool` |
 | `value` | string | no | The value as canonical text, see below. It is exact for every type |
 | `value_int` | int64 | yes | The value when `type` is `int` and it lies in [-2^63, 2^63); null otherwise |
 | `value_float` | float64 | yes | The value when `type` is `float`; null otherwise |
@@ -332,10 +332,13 @@ Types, and what `value` holds for each:
 | `int` | Decimal digits with an optional `-`, no leading zeros and no `-0` (`0\|-?[1-9][0-9]*`), of any size. Seeds above 2^63 are kept exactly here | `value_int`, when the integer fits in int64 |
 | `float` | Text that parses back to the same float64, including the sign of zero; `inf`, `-inf` or `nan`. Writers SHOULD use the shortest such text (Python's `repr`) | `value_float` |
 | `bool` | `true` or `false` | `value_bool` |
-| `json` | An array or object as compact JSON text (RFC 8259, so no NaN), for list-valued and nested attributes. Writers SHOULD sort object keys | none |
-| `null` | `null`: the source names the key but gives no value | none |
 
 Typed columns that a row's type does not use MUST be null.
+
+**Values are scalars.** There is no type for lists, objects or "no value" (decided at H2, see question 1). Every known source gives scalar descriptors, so nothing is lost:
+
+- A source key without a value gets no row. Grouping already gives null for runs that lack the key.
+- A reader that meets a list, tuple or object converts it to text itself and stores a `string`. The Python helper `encode_descriptor` does not convert: it raises `FormatError` for a list, tuple, dict or None, so that types are kept exactly. `descriptor_frame` skips records whose value is None, and `update_descriptors` does the same for records it is given.
 
 Rules:
 
@@ -350,9 +353,9 @@ Rules:
 
 **Grouping.** An analysis names what it compares with `by`, a list of names (default `["algorithm_name"]`). Each name is a `runs.parquet` column (such as `function_id` or `dimension`) or a descriptor key. A descriptor key becomes one column with one value per run:
 
-- if every value of the key has one type, the column has that type: string for `string` and `json`, int64 for `int` (string with the exact decimal text if any value is outside int64), float64 for `float`, boolean for `bool`;
+- if every value of the key has one type, the column has that type: string for `string`, int64 for `int` (string with the exact decimal text if any value is outside int64), float64 for `float`, boolean for `bool`;
 - if the key has several types, the column is a string column of the `value` texts, so that values that differ in type stay apart (the caller may ask for an error instead);
-- rows of type `null`, and runs without the key, are null.
+- runs without the key are null.
 
 ### Manifest summary
 
@@ -450,16 +453,16 @@ Data that breaks the format raises `FormatError`, an invalid manifest `ManifestE
 
 ## Open questions for H2
 
-Each question gives the recommendation that this draft implements. Questions 1, 2 and 5 are new with decision D17; 4, 6 and 7 changed with it.
+Each question gives the recommendation that this draft implements. Question 1 is decided; the others are open. Questions 1, 2 and 5 are new with decision D17; 4, 6 and 7 changed with it.
 
-1. **Descriptors: how per-run values are stored (D17).** The design above is a long table, one row per run and key, with the type kept in a `type` column, the exact value as text in `value`, and the value again in a typed column (`value_int`, `value_float`, `value_bool`) so that polars groups and filters without parsing. Rejected alternatives:
+1. **Descriptors: how per-run values are stored (D17).** *Decided at H2 on 2026-11-10: the long typed table, scalar types only; `json` and `null` dropped.* Every known source gives scalar descriptors (IOHexperimenter experiment attributes are string pairs and run attributes are doubles; `.info`, COCO and Nevergrad give single values), and `null` only told "key named without a value" from "key absent", which no analysis uses. The text below is the design as proposed, and it is kept for the record. The design above is a long table, one row per run and key, with the type kept in a `type` column, the exact value as text in `value`, and the value again in a typed column (`value_int`, `value_float`, `value_bool`) so that polars groups and filters without parsing. Rejected alternatives:
    - *A JSON text column in `runs.parquet`* (the previous draft): grouping needs every row parsed; JSON readers in JavaScript and R turn large integers into doubles; ints and floats blur; there is no cheap summary of the keys.
    - *A struct column:* one set of fields and one type per field for the whole file, so mixed types under one key need conversion, and adding a user tag changes the schema of `runs.parquet`.
    - *One column per key in `runs.parquet`:* the same problems as a struct, plus very wide, mostly empty tables when algorithms log different parameters.
    - *The long table with only a JSON-encoded value:* exact, but every grouping decodes text.
    - *An Arrow union column:* Parquet cannot store unions.
 
-   **Recommendation: the long typed table**, sorted by key, with the per-key summary in the manifest and in-place editing of descriptors only.
+   **Recommendation (accepted, without `json` and `null`): the long typed table**, sorted by key, with the per-key summary in the manifest and in-place editing of descriptors only.
 2. **Algorithm columns kept in `runs.parquet`.** `algorithm_name` and `algorithm_info` are descriptors, and also columns of `runs.parquet`. **Recommendation: keep the columns as copies** (the website catalog and the default `by` read them without a join), require both descriptors for every run, check that they agree, and rewrite `runs.parquet` (small) when either is edited. They are no longer sort keys, so an edit never touches the trace.
 3. **Function and dimension copied into the trace and positions.** The plan lists only `run_id`, `row`, `evaluations` and `raw_y` as fixed trace columns. With only a hashed `run_id`, a filter on function or dimension cannot use row-group statistics. **Recommendation: copy `function_id` and `dimension`**. Sorted, they compress to almost nothing on disk, and polars then skips row groups for the single-function views.
 4. **Sort order (changed by D17).** The plan says "function, dimension, algorithm, run and row". **Recommendation: suite, function, dimension, source file and run index**, without the algorithm. Run order then depends on nothing that can be edited, so descriptor edits never reorder the trace; and since sources keep one algorithm per file or folder, runs of one algorithm usually stay together. `suite` comes first so that datasets holding several suites are well ordered.

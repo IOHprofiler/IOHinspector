@@ -139,7 +139,7 @@ DESCRIPTORS_SCHEMA: dict[str, pl.DataType] = {
     c.name: c.dtype for c in DESCRIPTOR_COLUMNS
 }
 DESCRIPTOR_ORIGINS = ("algorithm", "experiment", "path", "run", "user")
-DESCRIPTOR_TYPES = ("bool", "float", "int", "json", "null", "string")
+DESCRIPTOR_TYPES = ("bool", "float", "int", "string")
 #: The typed column each type uses (``int`` only when the value fits in int64).
 TYPED_VALUE_COLUMN = {"int": "value_int", "float": "value_float", "bool": "value_bool"}
 DESCRIPTORS_SORT_KEYS = ("key", "run_id")

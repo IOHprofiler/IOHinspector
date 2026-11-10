@@ -160,7 +160,7 @@ MANIFEST_SCHEMA: dict[str, Any] = json.loads(
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"enum": ["bool", "float", "int", "json", "null", "string"]}
+          "items": {"enum": ["bool", "float", "int", "string"]}
         },
         "origins": {
           "type": "array",

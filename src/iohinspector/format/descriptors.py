@@ -7,7 +7,6 @@ type in ``type``, canonical text in ``value``, and a typed copy in ``value_int``
 
 from __future__ import annotations
 
-import json
 import math
 import numbers
 import os
@@ -45,10 +44,12 @@ Encoded = tuple[str, str, "int | None", "float | None", "bool | None"]
 def encode_descriptor(value: Any) -> Encoded:
     """``(type, value, value_int, value_float, value_bool)`` for a Python value.
 
-    bool, int (any size), float, str and None map to ``bool``, ``int``, ``float``,
-    ``string`` and ``null``; lists, tuples and dicts to ``json``. numpy scalars are
-    accepted. Raises ``TypeError`` for other values, and ``ValueError`` for NaN or
-    infinity inside a ``json`` value.
+    Descriptor values are scalars: bool, int (any size), float and str map to
+    ``bool``, ``int``, ``float`` and ``string``. numpy scalars are accepted. None
+    has no descriptor (a key without a value is not stored), and lists, tuples and
+    dicts are not converted: both raise ``FormatError``. A reader that meets a
+    container converts it to text itself and stores a ``string``. Raises
+    ``TypeError`` for other values.
     """
     if isinstance(value, (bool, np.bool_)):
         b = bool(value)
@@ -61,17 +62,12 @@ def encode_descriptor(value: Any) -> Encoded:
         return "float", repr(f), None, f, None
     if isinstance(value, str):
         return "string", value, None, None, None
-    if value is None:
-        return "null", "null", None, None, None
-    if isinstance(value, (Mapping, list, tuple)):
-        text = json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
+    if value is None or isinstance(value, (Mapping, list, tuple)):
+        what = "None" if value is None else type(value).__name__
+        raise fr.FormatError(
+            f"descriptor values are scalars (string, int, float, bool); got {what}. "
+            "Leave out a key without a value, and convert a list or dict to text"
         )
-        return "json", text, None, None, None
     raise TypeError(f"descriptor values cannot be of type {type(value).__name__}")
 
 
@@ -85,10 +81,6 @@ def decode_descriptor(kind: str, value: str) -> Any:
         return float(value)
     if kind == "bool":
         return value == "true"
-    if kind == "json":
-        return json.loads(value)
-    if kind == "null":
-        return None
     raise ValueError(f"unknown descriptor type {kind!r}")
 
 
@@ -97,8 +89,10 @@ def descriptor_frame(
 ) -> pl.DataFrame:
     """A descriptors table from ``(run_id, key, value, origin)`` records.
 
-    Each record is a 4-tuple or a mapping with those names; ``value`` is a Python
-    value, encoded with ``encode_descriptor``.
+    Each record is a 4-tuple or a mapping with those names; ``value`` is a scalar
+    Python value, encoded with ``encode_descriptor``. A record whose value is None
+    (a key without a value) gets no row. A list, tuple or dict value raises
+    ``FormatError``.
     """
     cols: dict[str, list[Any]] = {c.name: [] for c in DESCRIPTOR_COLUMNS}
     for record in records:
@@ -111,6 +105,8 @@ def descriptor_frame(
             )
         else:
             run, key, value, origin = record
+        if value is None:
+            continue
         kind, text, vi, vf, vb = encode_descriptor(value)
         for name, item in zip(
             DESCRIPTORS_SCHEMA,
@@ -328,21 +324,12 @@ def _bad_values(rows: pl.DataFrame, kind: str) -> pl.DataFrame | None:
             | pl.col("value_bool").is_null()
             | ((value == "true") != pl.col("value_bool"))
         )
-    if kind == "null":
-        return rows.filter(value != "null")
     if kind == "float":
         pairs = rows.select("value", "value_float").unique()
         bad = [
             text
             for text, number in pairs.iter_rows()
             if number is None or not _same_float(text, number)
-        ]
-        return rows.filter(value.is_in(bad))
-    if kind == "json":
-        bad = [
-            text
-            for text in rows["value"].unique().to_list()
-            if not _json_container(text)
         ]
         return rows.filter(value.is_in(bad))
     return None
@@ -356,14 +343,6 @@ def _same_float(text: str, number: float) -> bool:
     if math.isnan(parsed) or math.isnan(number):
         return math.isnan(parsed) and math.isnan(number)
     return parsed == number and math.copysign(1.0, parsed) == math.copysign(1.0, number)
-
-
-def _json_container(text: str) -> bool:
-    try:
-        value = json.loads(text, parse_constant=fr.reject_json_constant)
-    except ValueError:
-        return False
-    return isinstance(value, (list, dict))
 
 
 # -- manifest summary -------------------------------------------------------------
@@ -451,11 +430,11 @@ def descriptor_columns(
 ) -> pl.LazyFrame:
     """``run_id`` and one column per descriptor key, one row per run that has any.
 
-    A key with one type gets that type (String for ``string`` and ``json``, Int64
+    A key with one type gets that type (String for ``string``, Int64
     for ``int`` unless a value is outside int64, then String with the exact decimal
     text, Float64, Boolean). A key with several types gets the ``value`` text, or
-    raises ``ValueError`` with ``mixed="error"``. ``null`` values and runs without
-    the key are null. Raises ``ValueError`` for a key the table does not have.
+    raises ``ValueError`` with ``mixed="error"``. Runs without the key are null.
+    Raises ``ValueError`` for a key the table does not have.
     """
     lf = descriptors.lazy()
     keys = list(dict.fromkeys(keys))
@@ -475,11 +454,9 @@ def _key_column(lf: pl.LazyFrame, key: str, mixed: str) -> pl.LazyFrame:
     )
     if not stats.height:
         raise ValueError(f"no descriptor or runs column is named {key!r}")
-    types = set(stats["type"].to_list()) - {"null"}
+    types = set(stats["type"].to_list())
     big = stats.filter(pl.col("type") == "int")["nulls"].sum() > 0
-    if not types:
-        expr = pl.lit(None, pl.String)
-    elif types == {"int"} and not big:
+    if types == {"int"} and not big:
         expr = pl.col("value_int")
     elif types == {"float"}:
         expr = pl.col("value_float")
@@ -487,9 +464,8 @@ def _key_column(lf: pl.LazyFrame, key: str, mixed: str) -> pl.LazyFrame:
         expr = pl.col("value_bool")
     elif len(types) > 1 and mixed == "error":
         raise ValueError(f"descriptor {key!r} has several types: {sorted(types)}")
-    else:  # string, json, int with values outside int64, or several types
+    else:  # string, int with values outside int64, or several types
         expr = pl.col("value")
-    expr = pl.when(pl.col("type") == "null").then(None).otherwise(expr)
     return rows.select("run_id", expr.alias(key))
 
 
