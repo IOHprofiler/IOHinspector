@@ -1,6 +1,6 @@
 # WP I06: Reader: legacy IOHprofiler .info/.dat
 Branch: wp/I06-legacy-reader
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1: `.info` parser (`io/_legacy_info.py`, `io/_legacy_meta.py`) with tests
@@ -11,6 +11,8 @@ Status: in progress
 - step 3: variants from `readFiles.R` listed in `docs/readers-legacy.md` (section
   "Variants"), tests in `tests/io/test_legacy_variants.py`; new warnings
   `incomplete_info_record`, `info_run_without_evaluations`; empty `.info` files skipped
+- step 4: `tests/io/test_legacy_golden.py` agrees with I03's extdata goldens (`RT_sample`,
+  `FV_sample`, `maxRT`, `runtimes`, `funvals`), exactly
 
 ## Next step
 Step 3: list the old variants from `readFiles.R` in `docs/readers/legacy.md`, one test per variant.
@@ -33,4 +35,10 @@ Step 3: list the old variants from `readFiles.R` in `docs/readers/legacy.md`, on
   byte order of names; the name goes to `function_name`.
 
 ## Open questions / Blocked
-- none
+- No real multi-file legacy archive (`.cdat`/`.idat`/`.tdat`) was available; the merge is
+  tested on files from `tests/io/legacy_writer.py`, which mimics the IOHexperimenter 0.2
+  `Default` logger. That logger writes the run header only to the files triggered by the
+  run's first logged evaluation (it clears its cached header after the first write), so
+  its `.idat` (and maybe `.tdat`) files can lack run headers. The reader then fails with
+  "N run(s), but <primary> has M" instead of guessing run boundaries. Worth checking on a
+  real 0.2 archive with I09's corpus.
