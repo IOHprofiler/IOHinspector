@@ -76,6 +76,12 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
 - **[Marsaglia2003]** G. Marsaglia, W. W. Tsang, J. Wang. Evaluating
   Kolmogorov's distribution. *Journal of Statistical Software* 8(18), 2003.
   doi:10.18637/jss.v008.i18. Checked: Crossref.
+- **[Marsaglia2004]** G. Marsaglia, J. Marsaglia. Evaluating the
+  Anderson–Darling distribution. *Journal of Statistical Software* 9(2),
+  2004. doi:10.18637/jss.v009.i02. Checked: Crossref.
+- **[Hochberg1988]** Y. Hochberg. A sharper Bonferroni procedure for multiple
+  tests of significance. *Biometrika* 75(4):800–802, 1988.
+  doi:10.1093/biomet/75.4.800. Checked: Crossref.
 - **[Scholz1987]** F. W. Scholz, M. A. Stephens. K-sample Anderson–Darling
   tests. *Journal of the American Statistical Association* 82(399):918–924,
   1987. doi:10.1080/01621459.1987.10478517. Checked: Crossref.
@@ -184,7 +190,9 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
 
 The user supplied [Eftimov2020] and [DSCTool2022] as PDFs for the DSC
 specification. Both are copyrighted and stay outside the repository. The
-other DSC papers were not supplied and were not read.
+other DSC papers were not supplied and no open copy was found (the DiRROS
+repository copy did not answer on 10 November 2026); they were not read.
+[dsc-core] settles what they would.
 
 - **[Eftimov2017]** T. Eftimov, P. Korošec, B. Koroušić Seljak. A novel
   approach to statistical comparison of meta-heuristic stochastic
@@ -221,11 +229,32 @@ other DSC papers were not supplied and were not read.
   lower. Its section 3 and [Eftimov2020] section 5 link example requests and
   responses at `https://cs.ijs.si/dl/dsctool/` (`dsc.json`, `dsc.result`,
   `omnibus.json`, `omnibus.result`, `posthoc.json`, `posthoc.result` and
-  others). These answered without credentials on 6 November 2026. They were
-  not downloaded.
+  others). These answered without credentials on 6 November 2026 and gave
+  404 on 10 November 2026; see [DSCExample].
 - **[dsc-core]** P. Korošec (repository owner). dsc-core, the core library of
   DSCTool (Java, with an R script). <https://repo.ijs.si/korosec/dsc-core>,
   named in [Eftimov2020] pp. 3 and 5. Licence GPL-3.0-or-later. Last commit
-  4b2f2d9 of 19 August 2019, which is older than service version 1.5. Checked:
-  repository metadata and licence header only. The source was not read (see
-  Q-DS-3 in [dsc](dsc.md)).
+  4b2f2d9 of 19 August 2019 (Maven version 1.4), which is older than
+  service version 1.5. Checked: cloned and read in full on 10 November 2026,
+  with the user's permission (Q-DS-3 in [dsc](dsc.md)); not copied. It uses
+  Apache Commons Math 3.6.1 [CommonsMath361], ELKI 0.7.1 [ELKI071],
+  datumbox 0.8.1 (Levene's test) and a bundled `jsc.jar` (ranking).
+- **[DSCExample]** The DSCTool example of [Eftimov2020] section 5:
+  `dsc.json`, `dsc.result`, `omnibus.json`, `omnibus.result`,
+  `posthoc.json`, `posthoc.result`, formerly at
+  `https://cs.ijs.si/dl/dsctool/`, archived by the Wayback Machine on
+  15 June 2022, for example
+  <http://web.archive.org/web/20220615183205/https://cs.ijs.si/dl/dsctool/dsc.result>
+  (the other files have snapshots 20220615183426, 20220615183353,
+  20220615183214, 20220615183427 and 20220615183434). No licence stated.
+  Checked: downloaded on 10 November 2026 to a scratch folder, read, not
+  committed.
+- **[CommonsMath361]** Apache Commons Math 3.6.1,
+  `org.apache.commons.math3.stat.inference.KolmogorovSmirnovTest` and
+  `WilcoxonSignedRankTest`. Apache-2.0. Checked: source at tag
+  `MATH_3_6_1` of <https://github.com/apache/commons-math>.
+- **[ELKI071]** ELKI 0.7.1,
+  `de.lmu.ifi.dbs.elki.math.statistics.tests.StandardizedTwoSampleAndersonDarlingTest`,
+  which implements the tie-adjusted statistic of [Scholz1987]. AGPL-3.0.
+  Checked: source at tag `release0.7.1` of
+  <https://github.com/elki-project/elki>.

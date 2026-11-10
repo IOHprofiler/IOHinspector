@@ -38,7 +38,7 @@ checked against Crossref, arXiv, OpenAlex or the publisher.
 | Shapley portfolio values | [portfolio](portfolio.md) | I16 |
 | Cumulative difference plot | [cdp](cdp.md) | I16 |
 | EAF and EAF differences | [eaf](eaf.md) | I17 |
-| DSC | [dsc](dsc.md) (points DQ-1 to DQ-21 left to I18 step 2) | I18 |
+| DSC | [dsc](dsc.md) (DQ-1 to DQ-21 settled from dsc-core or decided) | I18 |
 | AOCC (from the "New" row) | [ecdf](ecdf.md) | I12 |
 
 The parity matrix is the metric part of the "Gap between IOHanalyzer and
@@ -179,13 +179,19 @@ golden tests name the decision there.
 | EA-4 | `xmax = Min` bug not ported | yes |
 | EA-5 | Precise (moocore) and discretised (matrix) modes, for the EAF and the difference | yes |
 | DS-1 | Local DSC, no network | – |
-| DS-2 | Inputs as IOHanalyzer's client, budgets from run metadata, B1 not ported; no NA sent; only problems every algorithm has | yes |
+| DS-2 | Inputs as IOHanalyzer's client, budgets from run metadata, B1 not ported; no NA sent; only problems every algorithm has, matched by name | yes |
 | DS-3 | NA options PAR-k (the RT-3 definition, k user-set, default 10), ERT, Remove-na; ERT fallback is the sum of budgets | yes, JSON data |
-| DS-4 | Ranking: all pairs, KS or AD (default AD, α = 0.05), Bonferroni, transitivity grouping; details from recordings (DQ-1 to DQ-6) | no |
-| DS-5 | pDSC: one ε, iteration count, the service's switches; seeded Monte Carlo (DQ-7 to DQ-11) | no (seed added) |
-| DS-6 | Omnibus: the service's method names, valid-method rule, parametric check and statistics (DQ-12 to DQ-17) | no |
-| DS-7 | Post-hoc statistic follows the omnibus test; all controls in one call; n, k from the ranked matrix | yes |
+| DS-4 | Ranking as dsc-core: all pairs, KS or AD (default AD, α = 0.05), equal when p ≥ α/m, equivalence check, groups by mean, average-position ranks; else ranks by mean | no |
+| DS-5 | pDSC: one ε for all problems, iteration count, seeded Monte Carlo (DS-11) | no (seed added) |
+| DS-6 | Omnibus: the service's names, statistics, `message` rule and `algorithm_means` (mean DSC ranks), limited by DS-12 to DS-14 | no |
+| DS-7 | Post-hoc: z = (m₀ − mₐ)/SE, one-sided Φ(z), Holm and Hochberg over k − 1; method follows the omnibus test; all controls in one call; n, k from the ranked matrix | yes |
 | DS-8 | Result fields keep the service's names | – |
+| DS-9 | KS: scipy two-sided, exact when nₐ·n_b < 10 000, no tie jitter. AD: Scholz–Stephens midrank statistic, p from its limit distribution, held in [1e-5, 0.99999] | slightly (AD p) |
+| DS-10 | At least two values per sample; identical samples p = 1; group order by the mean of member means; k ≥ 2 | yes, edge cases |
+| DS-11 | Sequential pDSC as dsc-core (run pairs closer than ε → midpoint), runs paired up to the shorter sample; Monte Carlo: median p over seeded shuffles | yes (Monte Carlo) |
+| DS-12 | `parametric_tests` always false; no paired t-test or ANOVA | only n ≤ 2 or tiny α |
+| DS-13 | k = 2: one-sided Wilcoxon (`wilcoxon-signed-rank-less`), scipy defaults, t = 0 | not recorded |
+| DS-14 | n < 2: no omnibus methods, "not enough problems" | not recorded |
 
 ## IOHanalyzer defects found in this audit
 
@@ -215,17 +221,21 @@ file:line, on the page named.
 - DSC PAR-1/PAR-10 leave NA in place for JSON data, and the ERT fallback for
   runs that never succeed is one budget instead of n for JSON data. The
   post-hoc test is chosen independently of the omnibus test, which the
-  DSCTool documentation rules out ([dsc](dsc.md)).
+  DSCTool documentation rules out. An algorithm missing a problem shifts the
+  service's position-based pairing of problems ([dsc](dsc.md)).
 
 ## Open questions for the user
 
 | ID | Question | Page |
 |---|---|---|
 | Q-EC-1 | Which data gave 0.67 and 0.90? | [ecdf](ecdf.md) |
-| Q-DS-1 | Answered: the DSCTool paper (2020) and the v1.5 documentation were supplied; the 2017 and 2019 papers were not | [dsc](dsc.md) |
-| Q-DS-3 | May I18 read the GPL-3.0-or-later dsc-core source to settle the DQ points (no copying into MIT code)? | [dsc](dsc.md) |
-| Q-DS-4 | May I18 use, and commit, the public DSCTool example files as a reference case? | [dsc](dsc.md) |
-| Q-DS-5 | Also accept one ε per problem, beyond the service's single ε? | [dsc](dsc.md) |
+
+DSC has no open questions. Q-DS-1 (answered): the DSCTool paper (2020) and
+the v1.5 documentation were supplied; the 2017 and 2019 papers were not, and
+dsc-core settles what they would. Q-DS-3 (answered): dsc-core may be read,
+not copied; it was read for [dsc](dsc.md). Q-DS-4 (decided): the example
+files carry no licence, so they are not committed; their numbers are cited.
+Q-DS-5 (decided): no, one ε per call, as the service and IOHanalyzer do.
 
 ## Answered by the D6 review
 
@@ -272,6 +282,10 @@ literature or the sources named on its page.
   (graph, pack-while-travel) need a user threshold. [parameters](parameters.md)
 - DSC PAR-k uses the summary's definition (one cutoff per run set, RT-3),
   default k = 10. [dsc](dsc.md)
+- DSC minimal decisions where the service is unknown or its 2019 code is
+  defective: AD p-value from the limit distribution, Monte Carlo pDSC by the
+  median p-value over seeded shuffles, no parametric omnibus tests, at least
+  two problems for an omnibus test (DS-9 to DS-14). [dsc](dsc.md)
 - CDP subsampling draws from the larger sample only. [cdp](cdp.md)
 - Log-spaced targets: no automatic clipping of the span; 1e-12 only when no
   positive value was observed. [targets](targets.md)
@@ -283,8 +297,8 @@ ERT, AUC, AOCC and closed-form p-values agree to a relative error of 1e-12.
 Exceptions are stated per page: Glicko-2 volatility (1e-5, minimiser
 tolerance), log-spaced targets (1e-15), bootstrap-based outputs, which are
 compared as distributions with a fixed seed, and DSC: omnibus and post-hoc
-statistics to 1e-9 against the recorded service responses, and Monte Carlo
-pDSC compared over several seeds ([dsc](dsc.md)).
+statistics to 1e-9 against the numbers of the published DSCTool example, and
+Monte Carlo pDSC only against itself under a seed ([dsc](dsc.md)).
 
 ## How the worked examples were computed
 

@@ -1,12 +1,16 @@
 # Deep Statistical Comparison (DSC)
 
 Status: **specification for I18**, for sign-off at checkpoint H1. Statements
-in the "Settled" lists follow from the sources named next to them. Points the
-sources leave open are numbered DQ-1 to DQ-21. I18 step 2 decides them from
-recorded service responses. I18 must not implement them from a guess.
+in the "Settled" lists follow from the sources named next to them. The points
+the 2020 paper and the service documentation left open, DQ-1 to DQ-21, are
+now closed: most from the DSCTool core library [dsc-core] and the public
+example of [Eftimov2020] section 5, the rest by a decision marked
+"(minimal)", which covers what IOHanalyzer does with DSC and nothing more.
+Two points can still be checked against the live service (see "Optional
+recordings"); without them, this page is the reference.
 Parity-matrix row: "DSC" (local implementation, decision in the plan's I18).
 Implemented in: I18.
-Sources: [Eftimov2020], [DSCTool2022], [IOHanalyzer]; see
+Sources: [Eftimov2020], [DSCTool2022], [dsc-core], [IOHanalyzer]; see
 [references](references.md).
 
 ## Sources
@@ -18,30 +22,28 @@ Sources: [Eftimov2020], [DSCTool2022], [IOHanalyzer]; see
   pages. From page 2 on, the printed page number is one lower.
 - Both are copyrighted and are not in the repository. This page paraphrases
   them and quotes only short phrases.
-- **Not supplied, not read:** [Eftimov2017], which defines the ranking scheme
-  in full; [Eftimov2019], which defines practical DSC in full; [Eftimov2017b],
-  which [Eftimov2020] cites for the choice between KS and AD (p. 3); and the
-  DSCTool R client manual ([DSCTool2022] p. 14).
-- **Available, not read:** [dsc-core], the source of DSCTool's core library,
-  which [Eftimov2020] names (pp. 3, 5). It is public and licensed
-  GPL-3.0-or-later (Q-DS-3). The example requests and responses of
-  [Eftimov2020] section 5 are public at `https://cs.ijs.si/dl/dsctool/`
-  (Q-DS-4).
-
-The two PDFs settle the structure of the method, the choice of tests, the
-Bonferroni correction, what `epsilon` and `monte_carlo_iterations` switch on,
-the omnibus and post-hoc interfaces, and every request and response field.
-They do not settle the exact transitivity check and rank assignment, the
-practical-DSC preprocessing, how the service picks the tests it offers, or
-the formulas of the statistics. [Eftimov2020] refers to [Eftimov2017] and
-[Eftimov2019] for these.
+- **[dsc-core]**, the public source of DSCTool's core library (Java, GPL-3.0-or-
+  later), read in full at commit 4b2f2d9 (19 August 2019, library version 1.4)
+  with the user's permission (Q-DS-3). This page states facts about the
+  algorithm in its own words. No code was copied or translated, and I18 must
+  not do so either: iohinspector is MIT. Where the page says "dsc-core does
+  X", it describes that commit, not necessarily service version 1.5.
+- **[DSCExample]**: the example requests and responses of [Eftimov2020]
+  section 5 and [DSCTool2022] section 3 (3 algorithms, the 22 BBOB functions
+  in dimension 10). They are gone from `https://cs.ijs.si/dl/dsctool/` (404
+  on 10 November 2026) but archived by the Wayback Machine (snapshots of
+  15 June 2022). They carry no licence. This page cites their numbers; the
+  files are not in the repository (Q-DS-4).
+- **Not read:** [Eftimov2017], [Eftimov2019] and [Eftimov2017b] (no open copy
+  found; the repository copy at DiRROS did not answer), and the DSCTool R
+  client manual. dsc-core and the example settle what they would.
 
 ## Notation
 
 k algorithms, n problems. A problem is one (function, dimension) pair, which
 IOHanalyzer names `F{funcId}_{DIM}D` (`R/stats.R:964`). x(a, p) is the sample
 of algorithm a on problem p: one value per run, smaller is better (step 1).
-r(a, p) is the DSC rank of a on p.
+r(a, p) is the DSC rank of a on p. m = k(k − 1)/2 is the number of pairs.
 
 ## Pipeline
 
@@ -58,11 +60,10 @@ the same chain of services.
 ## Step 1: client-side data preparation
 
 The service takes, for each algorithm and problem, a list of double values
-([DSCTool2022] p. 3). The sources say nothing about missing values, about
-the direction of the ranking, or about sample sizes. All of this is the
-client's job. IOHanalyzer's `convert_to_dsc_compliant` (`R/stats.R` 901–973)
-builds one vector of per-run values per algorithm and (function, dimension)
-pair:
+([DSCTool2022] p. 3). The sources say nothing about missing values or sample
+sizes. All of this is the client's job. IOHanalyzer's
+`convert_to_dsc_compliant` (`R/stats.R` 901–973) builds one vector of per-run
+values per algorithm and (function, dimension) pair:
 
 - **fixed target**: the runtime sample at the pair's target. Failed runs are
   NA and are handled by `na.correction` (Shiny default `PAR-10`, the first
@@ -81,21 +82,20 @@ pair:
 
 Reconciled with the sources:
 
-- **Orientation.** The sources rank "obtained solutions" and never state the
-  direction. Their post-hoc example takes the algorithm with the lowest mean
-  rank as control and finds that it significantly outperforms the others
-  ([Eftimov2020] p. 10; [DSCTool2022] p. 12), so rank 1 is best. That the
-  service puts the smallest values first is what IOHanalyzer's sign flip
-  assumes. DQ-1 confirms it.
+- **Orientation.** Smaller values rank first: dsc-core orders algorithms by
+  ascending sample mean (step 2). In [DSCExample], CMA-MSR has the lowest
+  mean rank and is the significantly better control ([Eftimov2020] p. 10).
+  IOHanalyzer's sign flip under maximisation is therefore right (DQ-1).
 - **Missing values.** The documented format has no missing value, so the
   PAR-k, ERT and Remove-na options are entirely the client's, as the plan
   says. Nothing in the sources conflicts with them.
 - **Ties.** PAR-1, PAR-10 and ERT give every failed run of a set the same
-  value (with equal budgets), so samples with failures contain ties. How the
-  service's tests treat ties is DQ-2.
-- **Sample sizes.** `Remove-na` makes sample sizes unequal and leaves an
-  empty sample when every run failed. The sources do not say what the service
-  accepts (DQ-6, DQ-11).
+  value (with equal budgets), so samples with failures contain ties. Step 2
+  says how the tests treat them (DQ-2).
+- **Problems are matched by position.** dsc-core takes the problem names
+  from the first algorithm and pairs the i-th problem of every algorithm with
+  the i-th problem of the first. A client that leaves a problem out for one
+  algorithm silently shifts the others.
 
 Defects in IOHanalyzer's preparation:
 
@@ -114,96 +114,138 @@ Defects in IOHanalyzer's preparation:
   budgets; the Shiny runtime page does the same explicitly
   (`inst/shiny-server/server/RT_DSCinterface.R:200`). See
   [targets](targets.md).
+- An algorithm that lacks a (function, dimension) pair gets a shorter problem
+  list, which the service then pairs by position (above).
 
 ## Step 2: ranking per problem (`rank`)
 
 Settled:
 
-- Each problem is ranked on its own, from its k samples only. This step is
-  non-parametric ([Eftimov2020] p. 3).
+- Each problem is ranked on its own, from its k samples only
+  ([Eftimov2020] p. 3).
 - Every pair of algorithms is compared with a two-sample test of whether the
-  two samples come from the same distribution: the two-sample
-  Kolmogorov–Smirnov test (KS) or the two-sample Anderson–Darling test (AD)
-  ([Eftimov2020] p. 3; [DSCTool2022] p. 3). All pairwise comparisons are
-  needed ([Eftimov2020] p. 3).
-- The pairwise p-values are corrected with the Bonferroni correction, which
-  controls the family-wise error rate, and are arranged in a matrix. The
-  ranks then follow from a "transitivity condition" on that matrix
-  ([Eftimov2020] pp. 3–4). The significance level is the request's
-  `method.alpha` ([DSCTool2022] p. 3).
+  two samples come from the same distribution: KS or AD ([Eftimov2020] p. 3;
+  [DSCTool2022] p. 3). The name is matched without regard to case.
+- **KS (DQ-2).** dsc-core calls Apache Commons Math 3.6.1
+  [CommonsMath361]. The test is two-sided. When the product of the two
+  sample sizes is below 10 000, the p-value is the exact P(D ≥ d), and tied
+  values are first broken by a small deterministic jitter (fixed seed);
+  otherwise it is the asymptotic Kolmogorov p-value on the data as given.
+- **AD (DQ-2).** dsc-core takes the standardised two-sample statistic of
+  [Scholz1987] in its version for ties (midranks, their A²_akN), as computed
+  by ELKI 0.7.1 [ELKI071]: (A² − 1)/σ_N, with the finite-sample σ_N of
+  [Scholz1987]. The p-value comes from a table of the statistic's upper
+  quantiles for one degree of freedom (k − 1 = 1), interpolated by a cubic
+  spline in logit(p). Outside the table it is held at the end values, so p
+  lies in [0.00001, 0.99999]. This follows the p-value scheme of the R
+  package kSamples, which dsc-core's R script calls.
+- **Correction (DQ-3).** Bonferroni on the level, not on the p-values: two
+  algorithms count as equal on a problem when p ≥ α / m, with m = k(k − 1)/2
+  over all k algorithms of the request, and α the request's `method.alpha`.
+  The equality relation includes each algorithm with itself.
+- **Transitivity (DQ-4).** The relation "equal" is checked to be an
+  equivalence: whenever A ~ B and B ~ C, also A ~ C. If it is, the
+  algorithms fall into disjoint groups of equal algorithms. If it is not, the
+  test results are dropped for that problem and the algorithms are ranked by
+  their sample means alone.
+- **Rank values (DQ-5).** Groups (or, without transitivity, single
+  algorithms) are ordered by ascending sample mean. Each gets the average of
+  the positions it spans: two equal algorithms in first place both get 1.5.
+  Without transitivity, algorithms with exactly equal means share the average
+  of their positions. dsc-core gives a group the mean of one of its members,
+  taken from an unordered set, so the member is arbitrary.
+- [DSCExample] (KS, α = 0.05, ε = 0, 15 runs each) has these rank patterns
+  over its 22 problems: (1, 2.5, 2.5) eleven times, (1, 2, 3) six times,
+  (1.5, 1.5, 3) three times and (2, 2, 2) twice. On problem f1 two
+  algorithms reach 0 in every run and share rank 1.5: identical samples are
+  equal.
 - The response gives one rank per (problem, algorithm) as a double
-  ([DSCTool2022] p. 4). Lower is better (step 1). The response contains no
-  p-values, so the pairwise tests are observable only through the ranks.
-- With more than four algorithms, the authors say the ranking suffers from
-  the family-wise error control, and they recommend comparisons with a
-  control algorithm, referring to their earlier studies ([Eftimov2020] p. 6).
-  The documentation sets no limit on k.
+  ([DSCTool2022] p. 4). It contains no p-values.
+- With more than four algorithms the authors recommend comparisons with a
+  control instead ([Eftimov2020] p. 6). Neither the documentation nor
+  dsc-core limits k.
 
-Not settled by the supplied sources:
+Decided (minimal):
 
-- **DQ-2. The tests.** Two-sided or one-sided; for KS, the exact or the
-  asymptotic p-value and the handling of ties; for AD, which two-sample
-  statistic (for example the k-sample test of [Scholz1987] with two samples)
-  and how its p-value is computed (asymptotic, tabulated, interpolated,
-  capped).
-- **DQ-3. The correction.** The number of comparisons m (presumably the
-  k(k−1)/2 unordered pairs), whether p is multiplied by m or α divided by m,
-  and whether two samples count as equal when the corrected p is > α or ≥ α.
-- **DQ-4. The transitivity check.** How the relation "not significantly
-  different" is checked for transitivity, and what the scheme does when the
-  check fails (for example A equal to B, B equal to C, A different from C).
-- **DQ-5. Rank values.** Which statistic orders the groups of equal
-  algorithms (mean, median or another), which rank a group of tied
-  algorithms receives (for example the average of the positions it spans,
-  which the double-valued ranks suggest), and the ranks when the transitivity
-  check fails.
-- **DQ-6. Edge cases.** Unequal sample sizes, a sample of one run, an empty
-  sample, a constant sample, identical samples, a problem that only some
-  algorithms have, and k = 1 (IOHanalyzer requires two algorithms,
-  `RT_DSCinterface.R` 189–193).
+- **DS-9. The pairwise tests.** KS: scipy's two-sided `ks_2samp`, exact
+  when n_a · n_b < 10 000 and asymptotic otherwise, on the data as given (no
+  jitter). With this rule and the rest of step 2, an independent check with
+  scipy 1.18.1 reproduced all 22 problem rankings of [DSCExample]. AD: the
+  standardised statistic T of [Scholz1987] with midranks (scipy's
+  `anderson_ksamp`, `midrank=True`, which returns exactly this T). The
+  p-value is the upper tail of T's limit distribution: p = 1 − F(1 + σ∞ T),
+  where F is the limiting Anderson–Darling distribution, computed as in
+  [Marsaglia2004], and σ∞² = 2(π² − 9)/3 its variance [Scholz1987]. p is
+  held in [0.00001, 0.99999] like the service's table. Between p = 0.1 and
+  p = 0.0001 this agrees with the service's table to within 2 % of p, so
+  decisions differ only for p-values within that margin of α / m. scipy's own
+  `anderson_ksamp` p-value is not used: it is capped to [0.001, 0.25], which
+  would wrongly equate pairs once α / m < 0.001 (more than ten algorithms at
+  α = 0.05).
+- **DS-10. Edge cases (DQ-6).** Only problems that every algorithm has enter
+  the analysis, matched by name (DS-2). Every sample needs at least two
+  values; otherwise the call fails and names the algorithm and problem (the
+  AD variance is undefined for fewer than four values in total, and an empty
+  sample has no mean). Two samples that are equal as multisets, constant or
+  not, have p = 1, as the service's ranks show. k = 1 is refused, as in
+  IOHanalyzer (`RT_DSCinterface.R` 189–193). A group's mean is the mean of
+  its members' sample means.
 
 ## Practical DSC (`epsilon`, `monte_carlo_iterations`)
 
 Settled:
 
 - pDSC separates practical from statistical significance ([Eftimov2020]
-  p. 2). Its threshold ε (the paper's ε_p) is chosen by the user and is the
-  difference within which two solutions are not considered practically
-  different. With ε = 0 the scheme reduces to standard DSC ([Eftimov2020]
-  p. 4).
-- There are two variants ([Eftimov2020] p. 2). **Sequential pDSC**
-  preprocesses the independent runs in their given order. **Monte Carlo
-  pDSC** removes the dependence on that order: for each pairwise comparison,
-  it repeats the analysis over permutations of the runs within each
-  algorithm ([Eftimov2020] p. 4).
+  p. 2). Its threshold ε is chosen by the user. With ε = 0 the scheme reduces
+  to standard DSC ([Eftimov2020] p. 4).
+- **Sequential pDSC (DQ-7).** dsc-core works on each pair of algorithms
+  separately, on fresh copies of the two samples. It walks through the runs
+  in their given order and compares run j of one algorithm with run j of the
+  other. When the absolute difference is strictly below ε, both values are
+  replaced by their midpoint. The pairwise test then runs on the modified
+  samples. ε is absolute, in the units of the samples: evaluations (after the
+  PAR-k substitution) on the runtime page, negated function values on the
+  value page. The same algorithm's sample can therefore be modified
+  differently against each opponent.
 - The service takes one `epsilon` per request, for all problems
   ([DSCTool2022] p. 3), although [Eftimov2020] calls the threshold problem
-  specific (p. 4). A value > 0 switches pDSC on. `monte_carlo_iterations` > 0
-  selects the Monte Carlo variant, with that number of permutations
-  ([DSCTool2022] p. 3). So ε = 0 gives DSC, ε > 0 with 0 iterations gives
-  sequential pDSC, and ε > 0 with iterations > 0 gives Monte Carlo pDSC.
-- IOHanalyzer passes ε unscaled, and the same ε applies to every (function,
-  dimension) pair. If ε is absolute (DQ-7), it is in the units of the
-  samples: evaluations (after the PAR-k substitution) on the runtime page,
-  negated function values on the value page.
+  specific (p. 4). IOHanalyzer passes it unscaled for every (function,
+  dimension) pair.
+- **Switches (DQ-9).** In dsc-core, `monte_carlo_iterations` > 0 selects the
+  Monte Carlo branch whatever ε is; ε ≠ 0 switches the midpoint step on.
+  Since KS and AD ignore the order of a sample, permutations with ε = 0
+  change nothing, and the paper's statement that ε = 0 is standard DSC holds
+  in principle.
+- **Monte Carlo pDSC (DQ-8, DQ-10).** The idea is to repeat the comparison
+  of each pair over random reorderings of the runs, so that the result no
+  longer depends on the run order ([Eftimov2020] pp. 2, 4). dsc-core shuffles
+  each sample without a seed, so repeated requests can differ. Its 2019 code
+  does not do what the paper describes: the midpoint step is applied to the
+  unshuffled copies, while the test runs on the shuffled samples, and the
+  share of significant iterations is computed in integer arithmetic, so the
+  rule that picks the final p-value (the most frequent p-value among the
+  significant or among the non-significant iterations) ends in most cases
+  at p = 0, which marks the pair as different. Whether service 1.5 fixed
+  this is not documented.
+- Unequal sample sizes under pDSC (DQ-11): dsc-core pairs runs up to the
+  first sample's length, and fails when the second sample is shorter.
 - Monte Carlo iterations dominate the service's run time ([Eftimov2020]
   p. 6). The API has no seed parameter ([DSCTool2022] p. 3).
 
-Not settled by the supplied sources:
+Decided (minimal):
 
-- **DQ-7. The preprocessing.** Which values are compared with ε (the order
-  dependence suggests run j of one algorithm against run j of the other, but
-  the sources do not say), what replaces two values that are within ε, < or
-  ≤ ε, and whether ε is absolute (as the wording suggests) or relative.
-- **DQ-8. Combining the iterations.** What the Monte Carlo variant aggregates
-  over the permutations (p-values, test decisions or ranks) and how.
-- **DQ-9. ε = 0 with iterations > 0.** [Eftimov2020] p. 4 says ε = 0 is
-  standard DSC; [DSCTool2022] p. 3 says iterations > 0 start the Monte Carlo
-  variant. Which wins.
-- **DQ-10. Randomness.** Whether repeated identical Monte Carlo requests give
-  identical responses.
-- **DQ-11. Unequal sample sizes under pDSC**, which a run-by-run pairing
-  could not handle.
+- **DS-11. pDSC.** Sequential pDSC as dsc-core does it, with runs paired up
+  to the shorter sample's length (the extra runs of the longer sample are
+  left as they are). ε = 0 gives DSC whatever the iteration count. Monte
+  Carlo pDSC, for ε > 0 and I > 0 iterations: in each iteration, shuffle the
+  run order of both samples independently (seeded), apply the midpoint step,
+  and test. The pair's p-value is the median of the I p-values, so the pair
+  counts as different exactly when more than half of the iterations say so
+  at α / m. The median is the simplest rule that follows the paper's aim; it
+  is not the service's rule, which the 2019 code does not implement as
+  described. IOHanalyzer's default is 0 iterations, so this matters only
+  when a user asks for it. No service comparison is planned for Monte Carlo
+  pDSC.
 
 ## Step 3: omnibus test (`omnibus`)
 
@@ -211,56 +253,80 @@ Settled:
 
 - The request carries the rank response's `ranked_matrix`,
   `number_algorithms` and `parametric_tests`, plus `method = {name, alpha}`
-  ([DSCTool2022] pp. 6–7). The name is one of the rank response's
-  `valid_methods` ([DSCTool2022] pp. 4, 12).
-- The ranking step checks the conditions for the safe use of parametric
-  tests on its own output (independent samples, normality, equal variances)
-  and points only to the tests that are appropriate, so that the user does
-  not have to ([Eftimov2020] p. 4). `parametric_tests` says whether a
-  parametric test is eligible ([DSCTool2022] p. 4).
-- With too few problems, `valid_methods` holds the message "Not enough
-  problems for multiple-problem analysis!" instead of test names
-  ([DSCTool2022] p. 4).
-- The response gives `message` (whether the null hypothesis was rejected),
-  `p_value`, `t` (the test statistic, or 0 where there is none), `method`,
-  and `algorithm_means`, one mean ranking per algorithm ([DSCTool2022] p. 7).
-- Method names in the sources: `"wilcoxon-signed-rank-less"`, a two-algorithm
-  test whose p-value is that of the algorithm with the lower mean against the
-  one with the higher mean; the name and the description indicate a
-  one-sided test ([DSCTool2022] p. 7); the
-  Friedman, Friedman aligned-ranks and Iman–Davenport tests, named by the
-  post-hoc description ([DSCTool2022] p. 8) and the worked example
-  ([Eftimov2020] p. 9). The documentation gives no complete list and no
-  name strings for the last three.
-- Fig. 1 of [Eftimov2020] (p. 5) shows the general selection pipeline that
-  the tool automates. For paired samples: with two algorithms, the paired
-  t-test when the conditions hold, otherwise the Wilcoxon test; with more
-  than two, repeated-measures ANOVA when they hold, otherwise Friedman,
-  Friedman aligned ranks or Iman–Davenport. Normality can be checked with KS
-  or Shapiro–Wilk and equal variances with Levene or Bartlett. The figure
-  gives examples ("etc."), not the service's exact choice.
-- Worked example: 3 algorithms on the 22 functions of BBOB 2015 in dimension
-  10, KS at α = 0.05, then Friedman at α = 0.05 rejects with p = 0.007
-  ([Eftimov2020] pp. 8–9; [DSCTool2022] pp. 11–12).
+  ([DSCTool2022] pp. 6–7).
+- **Valid methods (DQ-12).** dsc-core offers, for k = 2, the Wilcoxon
+  signed-rank test (`wilcoxon-signed-rank`) or, when `parametric_tests` is
+  true, the paired t-test (`paired-t`); for k ≥ 3, `friedman`,
+  `friedman-aligned-rank` and `iman-davenport` in that order, or `ANOVA`
+  when `parametric_tests` is true. Service 1.5 names the two-algorithm test
+  `wilcoxon-signed-rank-less` and describes it as one-sided: the algorithm
+  with the lower mean against the one with the higher mean ([DSCTool2022]
+  p. 7). [DSCExample] (k = 3) lists `friedman`, `friedman-aligned-rank`,
+  `iman-davenport`.
+- **Parametric check (DQ-13).** dsc-core collects each algorithm's ranks over
+  the problems and tests them for normality with a one-sample KS test
+  against the standard normal N(0, 1), not against a fitted normal, at the
+  rank request's α. If every algorithm passes, Levene's test for equal
+  variances decides at the same α. Since every rank is at least 1, the KS
+  distance is at least Φ(1) ≈ 0.84, and the exact p-value is then at most
+  2(1 − Φ(1))ⁿ, which is 0.008 for n = 3 problems. At α = 0.05 the check
+  therefore fails for every n ≥ 3. [DSCExample] has `parametric_tests:
+  false`.
+- **Too few problems (DQ-14).** dsc-core has no such case; service 1.5
+  returns the message "Not enough problems for multiple-problem analysis!"
+  in `valid_methods` ([DSCTool2022] p. 4). The threshold is not documented.
+- **Statistics (DQ-15).** The data are the k × n matrix of DSC ranks, with
+  algorithms in name order.
+  - `friedman`: χ²_F = 12n / (k(k + 1)) · (Σ_j R̄_j² − k(k + 1)²/4), R̄_j the
+    mean rank of algorithm j, with no correction for ties; p from χ² with
+    k − 1 degrees of freedom; `t` = χ²_F. [DSCExample]: χ²_F =
+    9.909090909090903, p = 0.007051284680703929.
+  - `iman-davenport`: F_ID = (n − 1) χ²_F / (n(k − 1) − χ²_F); p from the F
+    distribution with k − 1 and (k − 1)(n − 1) degrees of freedom; `t` = F_ID
+    ([Derrac2011]).
+  - `friedman-aligned-rank`: subtract each problem's mean rank from its
+    ranks, rank all kn aligned values together, and compute the aligned-ranks
+    statistic of [Garcia2010] and [Derrac2011] from the column and row sums
+    of these ranks; p from χ² with k − 1 degrees of freedom; `t` is the
+    statistic. (dsc-core ranks the negated aligned values; the statistic is
+    the same either way.)
+  - `wilcoxon-signed-rank` (dsc-core): Commons Math's exact two-sided
+    p-value, with zero differences kept in the ranking, and an error above
+    30 problems; `t` = 0. Service 1.5's renamed one-sided test (above)
+    suggests this changed.
+  - The service takes p as 1 minus the CDF, so p-values below about 1e-16
+    come out as 0.
+- **`algorithm_means` (DQ-16).** The mean DSC rank of each algorithm over the
+  problems, in algorithm-name order, whatever the method. [DSCExample]:
+  BSif 2.3181818181818183, BSqi 2.227272727272727, CMA-MSR
+  1.4545454545454546. The post-hoc step uses only these means.
+- **Input checks (DQ-17).** α only sets `message`: "rejected" when p ≤ α,
+  "not rejected" when p > α. The method name must belong to the family that
+  k and the request's `parametric_tests` select; otherwise the response
+  carries the error text in `message` and no p-value. The service does not
+  recompute `parametric_tests`.
 
-Not settled by the supplied sources:
+Decided (minimal):
 
-- **DQ-12. The valid methods.** The full list of name strings, and the rule
-  that picks them from k and `parametric_tests`.
-- **DQ-13. The parametric check.** Which normality and equal-variance tests,
-  at which α (the request's or a fixed one), applied to which data (for
-  example each algorithm's column of ranks).
-- **DQ-14. Too few problems.** The smallest n that gives test names.
-- **DQ-15. The statistics.** For each method, the statistic in `t` and the
-  p-value: for example Friedman's χ² with or without a tie correction,
-  Iman–Davenport's F, the aligned-ranks statistic, the parametric tests, and
-  Wilcoxon exact or normal.
-- **DQ-16. `algorithm_means`.** Whether it is the mean DSC rank of each
-  algorithm, or the mean of the ranks the omnibus method computes (aligned
-  ranks differ from DSC ranks). The post-hoc step uses only these means.
-- **DQ-17. Input checks.** Whether α changes anything but `message`, and
-  whether the service re-checks `parametric_tests` or rejects a name that is
-  not in `valid_methods`.
+- **DS-12. Methods offered.** `parametric_tests` is always false, so only the
+  non-parametric methods exist: for k = 2 the one-sided Wilcoxon test of
+  service 1.5, for k ≥ 3 Friedman, Friedman aligned ranks and
+  Iman–Davenport, as specified above. The paired t-test and ANOVA are not
+  implemented: by the bound above, the service can offer them only when
+  n ≤ 2 or α < 2(1 − Φ(1))ⁿ (0.008 for n = 3, 0.0013 for n = 4), and
+  IOHanalyzer only ever passes the service's list through.
+- **DS-13. Wilcoxon (k = 2).** scipy's `wilcoxon` on the differences
+  d = r(lower-mean algorithm) − r(other) (equal means: the first by
+  name), `alternative="less"`, zero
+  differences dropped (scipy's default), scipy's default choice between the
+  exact and normal p-value. If every difference is zero, p = 1. `t` = 0, as
+  the service documents for tests without a statistic. Name
+  `wilcoxon-signed-rank-less`.
+- **DS-14. Too few problems.** With n < 2 there are no omnibus methods and
+  the result says "Not enough problems for multiple-problem analysis!"; the
+  ranking is still returned. n = 2 is the smallest number of problems for
+  which every method above is defined (Iman–Davenport has
+  (k − 1)(n − 1) degrees of freedom).
 
 ## Step 4: post-hoc test (`posthoc`)
 
@@ -268,49 +334,35 @@ Settled:
 
 - Every algorithm is compared with one control algorithm, `base_algorithm`,
   which must be one of the algorithms in `algorithm_means` ([DSCTool2022]
-  p. 8).
-- The request carries `algorithm_means` from the omnibus response, `k` (the
-  number of algorithms), `n` (the number of problems), `base_algorithm` and
-  `method = {name: "friedman" | "friedman-aligned-rank", alpha}`
-  ([DSCTool2022] p. 8).
-- The post-hoc method must match the omnibus test: `friedman` after the
-  Friedman or Iman–Davenport test, `friedman-aligned-rank` after the
-  Friedman aligned-ranks test ([DSCTool2022] p. 8).
-- It is meant for the case where the omnibus test rejects ([DSCTool2022]
-  p. 7; [Eftimov2020] p. 5).
-- The response's `adjusted_p_values` holds four named lists, in this order:
-  `ZValue` (the statistic), `UnadjustedPValue` (computed from the z-value),
-  `Holm` and `Hochberg`. Each lists `{algorithm, value}` for the algorithms
-  compared with the control ([DSCTool2022] pp. 8–9).
-- The service receives only the means, k and n. Each z-value is therefore a
-  function of the control's mean, the other algorithm's mean, k and n alone.
-- Worked example: control CMA-MSR (the lowest mean), k = 3, n = 22,
-  `friedman` at α = 0.05; CMA-MSR is significantly better than both others
-  ([Eftimov2020] p. 10; [DSCTool2022] p. 12).
-
-Hypothesis for DQ-18 to DQ-20, to be tested, not specified. It comes from the
-usual comparisons with a control in [Derrac2011] and [Garcia2010], which
-were not re-read for this page: z = (m_a − m_0) / SE with SE = √(k(k+1)/(6n))
-for `friedman` and SE = √(k(n+1)/6) for `friedman-aligned-rank`, where m_a
-and m_0 are the means of algorithm a and of the control; the unadjusted
-p-value from the standard normal distribution; Holm's and Hochberg's
-adjusted p-values over the k − 1 comparisons with the control.
-
-Not settled by the supplied sources:
-
-- **DQ-18. The z-value.** Its formula and standard error for each method, and
-  its sign.
-- **DQ-19. One- or two-sided p-values.** IOHanalyzer's heat map marks a
-  pair (i, j) as significant from the list with control i and subtracts the
-  transpose (`inst/shiny-server/server/RT_DSCinterface.R` 143–150). With
-  two-sided unadjusted p-values this matrix is zero everywhere, so the
-  display assumes one-sided values or is wrong.
-- **DQ-20. The adjusted values.** The form of the Holm and Hochberg values
-  (adjusted p-values capped at 1, or another form), and whether the control
-  itself appears in the lists.
-- **DQ-21. Unsupported combinations.** What the service does with a post-hoc
-  method that does not match the omnibus test, or after an omnibus test that
-  has no documented post-hoc (the parametric and two-algorithm tests).
+  p. 8). An unknown name is an error.
+- The request carries `algorithm_means` from the omnibus response, `k`, `n`,
+  `base_algorithm` and `method = {name, alpha}` ([DSCTool2022] p. 8). The
+  documentation says the method must match the omnibus test: `friedman` after
+  Friedman or Iman–Davenport, `friedman-aligned-rank` after aligned ranks.
+- **z-value (DQ-18).** z_a = (m_0 − m_a) / SE, with m_0 the control's mean
+  rank and m_a the other algorithm's. SE = √(k(k + 1)/(6n)) for `friedman`
+  and SE = √(k(n + 1)/6) for `friedman-aligned-rank`, the comparisons with a
+  control of [Derrac2011]. Both use the mean DSC ranks of the omnibus
+  response, also for aligned ranks.
+- **One-sided (DQ-19).** The unadjusted p-value is Φ(z), the lower tail. A
+  small p-value means the control has a significantly lower, that is better,
+  mean rank than the other algorithm. IOHanalyzer's heat map
+  (`RT_DSCinterface.R` 143–150) is therefore right: (i, j) is marked when i
+  beats j, and subtracting the transpose gives +1 and −1.
+- **Adjusted values (DQ-20).** The control is left out; the k − 1 p-values
+  are adjusted as R's `p.adjust` does: Holm step-down [Holm1979] and
+  Hochberg step-up [Hochberg1988], both capped at 1. All four lists have the algorithms in
+  the same order, which IOHanalyzer relies on (it reads them by position).
+- **Unchecked combinations (DQ-21).** dsc-core does not check the post-hoc
+  method against the omnibus test, nor whether the omnibus test rejected. It
+  uses the aligned-ranks SE when the name is `friedman-aligned-rank` (or
+  `FAR`) and the Friedman SE for any other name, including after a Wilcoxon
+  or parametric omnibus test.
+- [DSCExample]: control CMA-MSR, k = 3, n = 22, `friedman`. z: BSif
+  −2.864357773488755, BSqi −2.56284642891099. Unadjusted: 0.0020892787840832367,
+  0.005190897894850896. Holm and Hochberg: 0.004178557568166473,
+  0.005190897894850896. These follow from the formulas above to the printed
+  precision.
 
 ## Service interface as IOHanalyzer uses it
 
@@ -327,9 +379,9 @@ Base URLs. IOHanalyzer uses `https://ws.ijs.si:8443/dsc-1.5/service/`
 (`R/stats.R` 795, 1014, 1061, 1115). [DSCTool2022] p. 2 gives
 `https://ws.ijs.si/dsc/service/` for the latest version and
 `https://ws.ijs.si/dsc/1.5/service/` for v1.5. [Eftimov2020] p. 5 gives the
-v1.4 URL on port 8443. The 8443 host did not answer during I02, and
-`https://ws.ijs.si/dsc/service/` did not answer on 6 November 2026, both
-from this environment.
+v1.4 URL on port 8443. On 10 November 2026 an empty, unauthenticated POST to
+`rank` under each of the three base URLs answered HTTP 401: the service is
+up and needs an account.
 
 ### `rank` ([DSCTool2022] pp. 3–4)
 
@@ -389,28 +441,43 @@ IOHanalyzer against this specification:
 - Default targets swapped (B1).
 - The post-hoc method is chosen independently of the omnibus test, which
   [DSCTool2022] p. 8 rules out, and the post-hoc runs whether or not the
-  omnibus test rejects.
+  omnibus test rejects. The service does not object (DQ-21).
 - `n` is the number of rows of the target table, not the number of problems
-  in the ranked matrix. They can differ when an algorithm lacks a problem
-  (DQ-6).
+  in the ranked matrix. They differ when an algorithm lacks a problem, and
+  then the service also pairs the remaining problems wrongly (step 1).
 - The "not enough problems" message is offered as an omnibus choice
   (`RT_DSCinterface.R` 20–21) and then sent as a method name.
 - The `epsilon` parameter is documented as being for "eDSC"
   (`R/stats.R:983`). In the sources ε belongs to pDSC, and eDSC is the
   multivariate service ([Eftimov2020] p. 4).
 
-## Proposed decisions
+iohinspector against the service (all deliberate):
+
+- KS ties are not jittered (DS-9). The ranks of [DSCExample] are unchanged.
+- AD p-values come from the limit distribution instead of the interpolated
+  table (DS-9): decisions can differ only when p is within about 2 % of
+  α / m.
+- Groups are ordered by the mean of their members' means, not by an
+  arbitrary member's mean (DS-10).
+- Samples with fewer than two values are refused; identical samples have
+  p = 1 by rule (DS-10).
+- Monte Carlo pDSC uses the median rule and a seed (DS-11).
+- `parametric_tests` is always false; no paired t-test or ANOVA (DS-12).
+- Problems are matched by name, not position (DS-2).
+
+## Decisions
 
 - **DS-1.** iohinspector implements DSC locally (no network), as the plan's
-  I18 decides; DSCtool serves only to record reference responses.
+  I18 decides.
 - **DS-2. Inputs.** As step 1, with the run's budget taken from run metadata
   (fixing the PAR-1/PAR-10 NA defect), fixed-budget values oriented so that
   smaller is better, and default targets from TG-4 (B1 not ported). A
   fixed-budget run without a value at the budget (the budget is below its
   first evaluation) is an error that names the problem, instead of an NA
   sent to the ranking. Only problems that every algorithm has enter the
-  analysis, and the dropped problems are reported, because the omnibus tests
-  are tests for paired samples ([Eftimov2020] Fig. 1, p. 5).
+  analysis, matched by name, and the dropped problems are reported, because
+  the omnibus tests are tests for paired samples ([Eftimov2020] Fig. 1,
+  p. 5).
 - **DS-3. Missing values.** Options PAR-k, ERT and Remove-na. PAR-k is the one
   definition of [runtime](runtime.md) (RT-3): a failed run counts as k · κ, with
   one cutoff κ per run set (the budget cap C, otherwise max_i B_i from run
@@ -422,117 +489,84 @@ IOHanalyzer against this specification:
   unified. Decided by the D6 review (dvermetten, 2026-11-06). When no run
   succeeds, the ERT option uses the sum of the runs' budgets, as
   IOHanalyzer's documentation states, also for JSON data.
-- **DS-4. Ranking.** Per problem, all pairs of algorithms, the two-sample KS
-  or AD test (default AD, α = 0.05, as in Shiny), Bonferroni correction over
-  the pairs, and ranks from the transitivity rule, lower is better. The test
-  variants, the form of the correction, the transitivity check and the tie
-  ranks are those the recordings establish (DQ-1 to DQ-6). iohinspector warns
-  when k > 4 ([Eftimov2020] p. 6) but does not refuse.
-- **DS-5. Practical DSC.** One ε for all problems and an iteration count, with
-  the service's switches (ε = 0: DSC; ε > 0: sequential pDSC; ε > 0 and
-  iterations > 0: Monte Carlo pDSC). The preprocessing and the combination of
-  iterations are those the recordings establish (DQ-7 to DQ-11). Monte Carlo
-  pDSC takes a seed, so iohinspector's results are reproducible whatever the
-  service does.
-- **DS-6. Omnibus.** The same method names, the same rule for the valid
-  methods, the same parametric check and the same statistics as the service
-  (DQ-12 to DQ-17).
-- **DS-7. Post-hoc.** The post-hoc statistic follows from the omnibus method
-  (`friedman` for Friedman and Iman–Davenport, `friedman-aligned-rank` for
-  Friedman aligned ranks), instead of a free choice. Where the service offers
-  no post-hoc for a method, iohinspector offers none (DQ-21). One call
-  returns the four value lists for every algorithm as control, which is the
-  k × k matrix the Shiny page builds from k calls. n and k come from the
-  ranked matrix. The omnibus result is returned with it; the post-hoc is not
-  refused when the omnibus test does not reject, but the result says so.
+- **DS-4. Ranking.** Step 2 as settled: all pairs, KS or AD (default AD,
+  α = 0.05, as in Shiny), p ≥ α / m means equal, the equivalence check, mean
+  order and average-position ranks, with the tests of DS-9 and the edge cases
+  of DS-10. iohinspector warns when k > 4 ([Eftimov2020] p. 6) but does not
+  refuse.
+- **DS-5. Practical DSC.** One ε for all problems and an iteration count, as
+  the service and IOHanalyzer have it (Q-DS-5), with the rules of DS-11.
+  Monte Carlo pDSC takes a seed.
+- **DS-6. Omnibus.** The service's method names, statistics, `message` rule
+  and `algorithm_means` (step 3), restricted by DS-12 to DS-14. A method
+  name outside the valid list is an error.
+- **DS-7. Post-hoc.** z, the one-sided unadjusted p-value, Holm and Hochberg
+  as settled in step 4. The post-hoc statistic follows from the omnibus
+  method (`friedman` for Friedman, Iman–Davenport and, for k = 2, Wilcoxon;
+  `friedman-aligned-rank` for aligned ranks) instead of a free choice. The
+  k = 2 case keeps IOHanalyzer's page working, which calls `friedman` there.
+  One call returns the four value lists for every algorithm as control,
+  which is the k × k matrix the Shiny page builds from k calls. n and k come
+  from the ranked matrix. The omnibus result is returned with it; the
+  post-hoc is not refused when the omnibus test does not reject, but the
+  result says so.
 - **DS-8. Names.** Result objects keep the service's field names
   (`ranked_matrix`, `valid_methods`, `parametric_tests`, `algorithm_means`,
   `ZValue`, `UnadjustedPValue`, `Holm`, `Hochberg`), so that tests compare
-  recorded responses field by field.
+  with [DSCExample] field by field.
+- **DS-9 to DS-14**: the minimal decisions in steps 2 and 3 and under
+  practical DSC.
 
-## Open points for I18 step 2
+## Optional recordings for I18 step 2
 
-These are not questions for the user. The recorded service responses decide
-them, and I18 records each answer on this page before implementing it.
-
-Notes for the recording design:
-
-- The rank response contains no p-values. With k = 2, the ranks show only
-  whether the corrected p-value is above α. Repeating one request over a
-  sequence of α values (bisection) brackets the corrected p-value of that
-  pair to any precision. About 20 throttled requests per pair are enough.
-- `omnibus` and `posthoc` take their inputs as given, so they can also be
-  recorded on synthetic ranked matrices and means, not only on rank
-  responses.
-- If the user agrees (Q-DS-4), the public example of [Eftimov2020] section 5
-  is a first reference case that needs no credentials.
-- Each recording names the base URL and service version it used.
+The two rows below concern behaviour of service 1.5 that dsc-core 1.4 does
+not show. They need an account, which a person registers (a **HUMAN** step;
+agents never read IOHanalyzer's stored credentials). If the service cannot
+be reached or no account is available, I18 implements DS-13 and DS-14 as
+written and this page is the reference. A recording that disagrees changes
+the decision only for the point it covers, recorded on this page first.
+Each recording names the base URL and service version.
 
 | ID | Point | Cases that decide it |
 |---|---|---|
-| DQ-1 | Smaller values rank first | k = 2, one sample entirely below the other |
-| DQ-2 | Test variants and p-values | k = 2, α bisection; samples where exact and asymptotic KS, or AD variants, give different p-values; with and without ties; n = 5, 15, 30, 100 |
-| DQ-3 | Bonferroni form, m, > or ≥ | the same pair with k = 2, 3 and 4 (extra algorithms far away), α bisection; the ratio of the thresholds gives m |
-| DQ-4 | Transitivity check | three algorithms with A ~ B, B ~ C and A ≁ C (shifted samples) |
-| DQ-5 | Group order and tie ranks | two groups of equal samples; groups whose mean and median orders disagree; all algorithms equal |
-| DQ-6 | Edge cases | unequal sizes, one run, empty sample, constant samples, identical samples, a problem missing for one algorithm |
-| DQ-7 | pDSC preprocessing | k = 2: the same values in different run orders; differences of exactly ε; the data scaled by 1000 with the same ε |
-| DQ-8 | Combining iterations | an order-sensitive case with 1, 10, 100 and 1000 iterations |
-| DQ-9 | ε = 0 with iterations > 0 | a DSC case repeated with 100 iterations |
-| DQ-10 | Determinism | every Monte Carlo case sent three times |
-| DQ-11 | Unequal sizes under pDSC | the DQ-6 unequal-size case with ε > 0 |
-| DQ-12 | Valid method names and rule | k = 2, 3 and 5, each with n = 1, 2, 3, 5, 10 and 30 |
-| DQ-13 | Parametric check | rankings that are close to normal and far from it, with equal and unequal spread; check `parametric_tests` |
-| DQ-14 | Smallest n | the n sweep of DQ-12 |
-| DQ-15 | Omnibus statistics | every valid method on the same rankings, compared with scipy and R implementations of each candidate |
-| DQ-16 | `algorithm_means` | a ranked matrix with tied ranks, under Friedman and aligned ranks |
-| DQ-17 | Omnibus input checks | an α sweep; a name not in `valid_methods`; `parametric_tests` flipped |
-| DQ-18 | z-value | both methods, every control, several (k, n), compared with the hypothesis above |
-| DQ-19 | One- or two-sided | the DQ-18 cases with the control above and below the others |
-| DQ-20 | Holm and Hochberg values | k = 5 and 8, where the two procedures differ |
-| DQ-21 | Unsupported combinations | `friedman-aligned-rank` after Friedman; post-hoc after a parametric and a Wilcoxon omnibus test |
+| DQ-12, DQ-15 | Name, sidedness and p-value of the two-algorithm test (DS-13) | k = 2, n = 10 and 30, one algorithm better on most problems; compare with scipy `wilcoxon` one- and two-sided |
+| DQ-14 | Smallest n with omnibus methods (DS-14) | k = 2 and 3, n = 1, 2, 3, 5 |
 
 ## Open questions for the user
 
-- Q-DS-1 (answered): the user supplied [Eftimov2020] and the DSCTool v1.5
-  documentation [DSCTool2022]. [Eftimov2017] and [Eftimov2019] were not
-  supplied. The points only they would settle are DQ-2 to DQ-11, left to I18
-  step 2. Supplying them would let I18 check its reading against the source
-  instead of inferring it from responses alone.
+None. Answered or decided:
+
+- Q-DS-1 (answered): the user supplied [Eftimov2020] and [DSCTool2022].
+  [Eftimov2017] and [Eftimov2019] were not supplied and no open copy was
+  found; dsc-core settles what they would have.
 - Q-DS-2 (answered): the two PAR-k conventions are unified, user-customisable
   with a sensible default. Decided by the D6 review (dvermetten, 2026-11-06).
   The default is k = 10, matching the answer to Q-RT-1, and the definition is
   the summary's (RT-3). See DS-3. Remaining point for H1: the shared
   definition uses one cutoff per run set rather than each run's own budget; the
   review did not say which of the two to keep.
-- Q-DS-3: May I18 read [dsc-core], the public source of DSCTool's core
-  library, to settle the DQ points? It is GPL-3.0-or-later and iohinspector
-  is MIT, so its code must not be copied or translated. Reading it to check a
-  specification is a licensing judgement for the user. Its last commit (2019)
-  is older than service version 1.5.
-- Q-DS-4: May I18 download the public example files at
-  `https://cs.ijs.si/dl/dsctool/` (3 algorithms, 22 problems, with rank,
-  omnibus and post-hoc responses) as a reference case, and commit them under
-  `tests/golden/dsc/`? Their licence is not stated.
-- Q-DS-5: The service takes one ε for all problems, while [Eftimov2020] calls
-  the threshold problem specific (p. 4). Should iohinspector also accept one
-  ε per problem, beyond what the service offers?
+- Q-DS-3 (answered): the user allows reading [dsc-core] to settle the
+  algorithm, with no copying or translation of its code into iohinspector.
+  This page describes it in its own words.
+- Q-DS-4 (decided): the example files state no licence, so they are not
+  committed. This page cites their numbers as facts. I18 tests may download
+  them at test time from the pinned Wayback Machine snapshots and skip when
+  offline; the numbers cited here are the committed reference.
+- Q-DS-5 (decided): no. One ε per call, as the service and IOHanalyzer do.
 
 ## Test tolerance
 
-- Ranks and every decision match the recorded responses exactly: the rank
-  groups, `valid_methods`, `parametric_tests`, the omnibus `message`, and
-  post-hoc significance at α.
-- Pairwise test p-values are not in the responses. They are compared only
-  through decisions, or through the α brackets of DQ-2.
+- Ranks, rank groups, `valid_methods`, `parametric_tests`, the omnibus
+  `message` and post-hoc significance at α match [DSCExample] exactly.
 - Omnibus `p_value` and `t`, and post-hoc `ZValue`, `UnadjustedPValue`,
-  `Holm` and `Hochberg`: relative error 1e-9, or the precision the service
-  prints if that is coarser. This is looser than the 1e-12 of the
-  [README](README.md) because the service's distribution functions come from
-  an unknown Java library. I18 may relax it for one statistic only with
-  recorded evidence and the reason written here.
-- Monte Carlo pDSC: iohinspector cannot reproduce the service's random
-  permutations. If DQ-10 shows that the service is deterministic, its ranks
-  are compared with iohinspector's over several seeds; otherwise both are
-  compared as distributions. I18 states the criterion from the recorded
-  spread.
+  `Holm` and `Hochberg`: closed forms, so relative error 1e-12 against an
+  independent computation of the formulas, and 1e-9 against the numbers of
+  [DSCExample]. Below p = 1e-10 compare with an absolute 1e-15, because the
+  service computes upper tails as 1 minus the CDF.
+- Pairwise p-values do not appear in any response. KS p-values are compared
+  with scipy (relative 1e-12). AD p-values are tested at the end points of
+  their range and against known quantiles of the limit distribution
+  ([Marsaglia2004]).
+- Monte Carlo pDSC: identical results for the same seed, ε = 0 gives the
+  DSC ranks, and the median rule is tested on fixed lists of p-values. No
+  service comparison.
