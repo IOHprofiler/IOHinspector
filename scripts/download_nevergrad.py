@@ -32,13 +32,13 @@ def _get(url: str) -> bytes:
 def experiment_names() -> list[str]:
     page = _get(f"{BASE}/list.html").decode("utf-8", "replace")
     return re.findall(
-        r'href="https://dl\.fbaipublicfiles\.com/nevergrad/allxps/([^/"]+)/data\.csv\.gz"',
+        r'href="' + re.escape(BASE) + r'/([^/"]+)/data\.csv\.gz"',
         page,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("names", nargs="*", default=["yatinybbob"])
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--list", action="store_true", help="print the available names")

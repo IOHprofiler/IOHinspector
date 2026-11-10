@@ -137,14 +137,16 @@ def _source(name: str, kind: str, value: Any) -> Source:
     )
 
 
+# #lizard forgives  (one check per mapping key)
 def parse_mapping(obj: Mapping[str, Any]) -> CsvMapping:
-    """A ``CsvMapping`` from the JSON object; raises ``MappingError`` with the reason."""
+    """A ``CsvMapping`` from the JSON object; ``MappingError`` says what is wrong."""
     if not isinstance(obj, Mapping):
         raise MappingError("the mapping must be a JSON object")
     for key in obj:
         if key not in _KEYS:
             raise MappingError(
-                f"unknown key {key!r}.{_suggest(key, _KEYS)} Allowed keys: {', '.join(_KEYS)}"
+                f"unknown key {key!r}.{_suggest(key, _KEYS)} "
+                f"Allowed keys: {', '.join(_KEYS)}"
             )
     if obj.get("version", MAPPING_VERSION) != MAPPING_VERSION:
         raise MappingError(f"version must be {MAPPING_VERSION}")
@@ -214,6 +216,7 @@ def validate_mapping(
     return parsed
 
 
+# #lizard forgives  (public API with keyword-only options)
 def convert_custom_csv(
     source: str | Path,
     output: str | Path,

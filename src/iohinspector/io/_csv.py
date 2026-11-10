@@ -60,6 +60,7 @@ class Source:
     fn: Callable[[Callable[[str], str]], Any] | None = None
 
 
+# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True)
 class CsvMapping:
     """How the columns of a CSV file become runs, a trace and descriptors."""
@@ -135,8 +136,9 @@ class _Types:
         self.big_int = False
         self.seen = False
 
-    def add(self, token: str) -> None:
-        if token == "":
+    def add(self, cell: str) -> None:
+        token = cell
+        if not token:
             return
         self.seen = True
         if self.bool_ok and token.lower() not in ("true", "false"):
@@ -161,6 +163,12 @@ class _Types:
         return "float" if self.float_ok and not self.big_int else "string"
 
 
+_FAST: dict[str, Callable[[str], Any]] = {
+    "int": int,
+    "float": float,
+    "bool": lambda token: token.lower() == "true",
+    "string": str,
+}
 _DTYPES = {
     "bool": pl.Boolean(),
     "int": pl.Int64(),
@@ -195,6 +203,7 @@ def _unknown(name: str, known: Sequence[str]) -> str:
     return f"column {name!r} is not in the file{hint} (columns: {shown})"
 
 
+# #lizard forgives  (one check per kind of mapping error)
 def check_mapping(mapping: CsvMapping, header: Sequence[str]) -> None:
     """Raise ``MappingError`` when the mapping names a column the file lacks."""
     if len(set(header)) != len(header):
@@ -243,6 +252,8 @@ class _Scan:
     rows: int = 0
 
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+# #lizard forgives  (helper with its own bookkeeping lists)
 def _rename(
     names: Sequence[str],
     table: str,
@@ -270,6 +281,7 @@ def _rename(
 class CsvConverter:
     """Converts one CSV file with a mapping. See ``convert`` for the entry point."""
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         path: Path,
@@ -289,6 +301,7 @@ class CsvConverter:
         self.function_ids: dict[str, int] | None = None
         self._plan_columns()
 
+    # #lizard forgives  (plans the descriptor, trace and position columns)
     def _plan_columns(self) -> None:
         m = self.mapping
         consumed = {m.evaluations, m.value}
@@ -336,7 +349,8 @@ class CsvConverter:
         try:
             with open_text(self.path) as fh:
                 reader = csv.reader(fh, delimiter=self.mapping.delimiter)
-                next(reader)
+                if next(reader, None) is None:
+                    return
                 for row in reader:
                     if not row:
                         continue
@@ -388,40 +402,42 @@ class CsvConverter:
 
     # -- first pass --------------------------------------------------------
 
-    def scan(self) -> _Scan:
+    def _check_row(self, scan: _Scan, row: list[str], where: str) -> None:
+        """Check the numbers of a row and note the types of its extra columns."""
         m = self.mapping
+        parse_int(row[self.col[m.evaluations]], f"{where}: column {m.evaluations!r}")
+        parse_float(row[self.col[m.value]], f"{where}: column {m.value!r}")
+        for c in m.positions:
+            parse_float(row[self.col[c]], f"{where}: column {c!r}")
+        for c in self.extra_cols:
+            scan.extra_types[c].add(row[self.col[c]])
+
+    def _new_run(
+        self, scan: _Scan, row: list[str], attrs: tuple[str, ...], where: str, line: int
+    ) -> _Run:
+        run = _Run(self._field_values(row, where), attrs, hashlib.sha256(), line)
+        scan.runs.append(run)
+        n = self.n_field_cols
+        for c, token in zip(self.descriptor_cols, attrs[n:], strict=True):
+            scan.descriptor_types[c].add(token)
+        return run
+
+    def scan(self) -> _Scan:
+        """First pass: check every token, find the runs and the column types."""
         scan = _Scan()
-        ev_i, val_i = self.col[m.evaluations], self.col[m.value]
-        pos_i = [self.col[c] for c in m.positions]
-        extra_i = [(c, self.col[c]) for c in self.extra_cols]
         scan.extra_types = {c: _Types() for c in self.extra_cols}
         scan.descriptor_types = {c: _Types() for c in self.descriptor_cols}
-        index: dict[tuple[str, ...], int] = {}
+        index: dict[tuple[str, ...], _Run] = {}
         for line, row in self._rows():
             where = f"{self.name}:{line}"
-            parse_int(row[ev_i], f"{where}: column {m.evaluations!r}")
-            parse_float(row[val_i], f"{where}: column {m.value!r}")
-            for c, i in zip(m.positions, pos_i, strict=True):
-                parse_float(row[i], f"{where}: column {c!r}")
-            for c, i in extra_i:
-                scan.extra_types[c].add(row[i])
+            self._check_row(scan, row, where)
             attrs = tuple(row[i] for i in self.attr_idx)
-            run = None
-            if m.run_by:
-                key = self._run_key(row)
-                found = index.get(key)
-                run = scan.runs[found] if found is not None else None
-                if run is None:
-                    index[key] = len(scan.runs)
+            key = self._run_key(row) if self.mapping.run_by else None
+            run = index.get(key) if key is not None else None
             if run is None:
-                run = _Run(
-                    self._field_values(row, where), attrs, hashlib.sha256(), line
-                )
-                scan.runs.append(run)
-                for c, tok in zip(
-                    self.descriptor_cols, attrs[self.n_field_cols :], strict=True
-                ):
-                    scan.descriptor_types[c].add(tok)
+                run = self._new_run(scan, row, attrs, where, line)
+                if key is not None:
+                    index[key] = run
             elif attrs != run.attrs:
                 self._constancy_error(run, attrs, where)
             run.digest.update((" ".join(row) + "\n").encode("utf-8"))
@@ -487,71 +503,65 @@ class CsvConverter:
     def run_id_list(self, dataset_id: str, n: int) -> list[int]:
         return run_ids(dataset_id, [self.name] * n, range(n)).to_list()
 
-    def chunks(self, scan: _Scan, ids: list[int], part: str) -> Iterator[pl.DataFrame]:
-        """Chunks of the ``trace``, ``positions`` or ``descriptors`` table.
+    def _run_rows(self, ids: list[int]) -> Iterator[tuple[str, list[str], int, bool]]:
+        """``(where, tokens, run index, first row of the run)`` per data row."""
+        index: dict[tuple[str, ...], int] = {}
+        next_run = 0
+        for line, row in self._rows():
+            r = next_run
+            if self.mapping.run_by:
+                r = index.setdefault(self._run_key(row), next_run)
+            is_new = r == next_run
+            next_run += is_new
+            yield f"{self.name}:{line}", row, r, is_new
 
-        Each call reads the file again, in the order of the first pass. The
-        descriptors of a run come with its first row.
+    def descriptor_chunks(self, scan: _Scan, ids: list[int]) -> Iterator[pl.DataFrame]:
+        """Chunks of the descriptors table; a run's come with its first row."""
+        kinds = [scan.descriptor_types[c].kind() for c in self.descriptor_cols]
+        records: list[tuple[int, str, Any, str]] = []
+        for where, row, r, is_new in self._run_rows(ids):
+            if is_new:
+                records.extend(self._records(ids[r], row, kinds, where, scan.runs[r]))
+            if len(records) >= CHUNK_ROWS:
+                yield descriptor_frame(records)
+                records = []
+        yield descriptor_frame(records)
+
+    def table_chunks(
+        self, scan: _Scan, ids: list[int], part: str
+    ) -> Iterator[pl.DataFrame]:
+        """Chunks of the ``trace`` or ``positions`` table, in file order.
+
+        Each call reads the file again, in the order of the first pass.
         """
         m = self.mapping
-        ev_i, val_i = self.col[m.evaluations], self.col[m.value]
-        extra = [
-            (c, self.col[c], scan.extra_types[c].kind(int64=True))
-            for c in self.extra_cols
-        ]
-        pos_i = [self.col[c] for c in m.positions]
-        d_kinds = [scan.descriptor_types[c].kind() for c in self.descriptor_cols]
-        index: dict[tuple[str, ...], int] = {}
+        if part == "positions":
+            idx = [self.col[c] for c in m.positions]
+            names = [f"x{j}" for j in range(len(idx))]
+            kinds = ["float"] * len(idx)
+        else:
+            idx = [self.col[m.evaluations], self.col[m.value]]
+            idx += [self.col[c] for c in self.extra_cols]
+            names = ["evaluations", "raw_y"]
+            names += [self.extra_names[c] for c in self.extra_cols]
+            kinds = ["int", "float"]
+            kinds += [scan.extra_types[c].kind(int64=True) for c in self.extra_cols]
         counter = [0] * len(ids)
         run_col: list[int] = []
         row_col: list[int] = []
-        t_ev: list[int] = []
-        t_val: list[float] = []
-        t_extra: list[list[Any]] = [[] for _ in extra]
-        p_cols: list[list[float]] = [[] for _ in pos_i]
-        records: list[tuple[int, str, Any, str]] = []
-        next_run = 0
-        for line, row in self._rows():
-            where = f"{self.name}:{line}"
-            r = next_run
-            if m.run_by:
-                key = self._run_key(row)
-                r = index.setdefault(key, next_run)
-            is_new = r == next_run
-            next_run += is_new
-            if part == "descriptors":
-                if is_new:
-                    records.extend(
-                        self._records(ids[r], row, d_kinds, where, scan.runs[r])
-                    )
-                if len(records) >= CHUNK_ROWS:
-                    yield descriptor_frame(records)
-                    records = []
-                continue
+        values: list[list[Any]] = [[] for _ in idx]
+        for _where, row, r, _new in self._run_rows(ids):
             run_col.append(ids[r])
             row_col.append(counter[r])
             counter[r] += 1
-            if part == "trace":
-                t_ev.append(int(row[ev_i]))
-                t_val.append(float(row[val_i]))
-                for out, (_c, i, kind) in zip(t_extra, extra, strict=True):
-                    out.append(None if row[i] == "" else _PARSERS[kind](row[i], where))
-            else:
-                for out, i in zip(p_cols, pos_i, strict=True):
-                    out.append(float(row[i]))
+            for out, i, kind in zip(values, idx, kinds, strict=True):
+                out.append(None if row[i] == "" else _FAST[kind](row[i]))
             if len(run_col) >= CHUNK_ROWS:
-                yield self._frame(
-                    part, run_col, row_col, t_ev, t_val, extra, t_extra, p_cols
-                )
-                run_col, row_col, t_ev, t_val = [], [], [], []
-                t_extra = [[] for _ in extra]
-                p_cols = [[] for _ in pos_i]
-        if part == "descriptors":
-            yield descriptor_frame(records)
-        elif run_col:
-            yield self._frame(
-                part, run_col, row_col, t_ev, t_val, extra, t_extra, p_cols
-            )
+                yield _table_frame(run_col, row_col, names, kinds, values)
+                run_col, row_col = [], []
+                values = [[] for _ in idx]
+        if run_col:
+            yield _table_frame(run_col, row_col, names, kinds, values)
 
     def _records(
         self,
@@ -576,30 +586,21 @@ class CsvConverter:
                 out.append((run_id, self.descriptor_keys[c], value, self.origin))
         return out
 
-    def _frame(
-        self,
-        part: str,
-        run: list[int],
-        row: list[int],
-        evals: list[int],
-        val: list[float],
-        extra: list[tuple[str, int, str]],
-        extra_values: list[list[Any]],
-        positions: list[list[float]],
-    ) -> pl.DataFrame:
-        data: dict[str, Any] = {
-            "run_id": pl.Series(run, dtype=pl.Int64),
-            "row": pl.Series(row, dtype=pl.Int64),
-        }
-        if part == "positions":
-            for j, values in enumerate(positions):
-                data[f"x{j}"] = pl.Series(values, dtype=pl.Float64)
-            return pl.DataFrame(data)
-        data["evaluations"] = pl.Series(evals, dtype=pl.Int64)
-        data["raw_y"] = pl.Series(val, dtype=pl.Float64)
-        for (c, _i, kind), values in zip(extra, extra_values, strict=True):
-            data[self.extra_names[c]] = pl.Series(values, dtype=_DTYPES[kind])
-        return pl.DataFrame(data)
+
+def _table_frame(
+    run: list[int],
+    row: list[int],
+    names: list[str],
+    kinds: list[str],
+    values: list[list[Any]],
+) -> pl.DataFrame:
+    data: dict[str, Any] = {
+        "run_id": pl.Series(run, dtype=pl.Int64),
+        "row": pl.Series(row, dtype=pl.Int64),
+    }
+    for name, kind, column in zip(names, kinds, values, strict=True):
+        data[name] = pl.Series(column, dtype=_DTYPES[kind])
+    return pl.DataFrame(data)
 
 
 def _run_dtypes(cols: Mapping[str, Any]) -> dict[str, pl.DataType]:
@@ -626,6 +627,8 @@ def _dataset_id_from(name: str) -> str:
     return check_dataset_id(cleaned if cleaned[0].isalnum() else "d" + cleaned)
 
 
+# pylint: disable=too-many-arguments,too-many-locals
+# #lizard forgives  (entry point shared by two readers; keyword-only options)
 def convert(
     source: str | Path,
     output: str | Path,
@@ -639,7 +642,6 @@ def convert(
     overwrite: bool = False,
     reader_options: Mapping[str, Any] | None = None,
     delimiter: str = ",",
-    extra: Callable[[CsvConverter], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Convert the CSV file ``source`` to a dataset in ``output``; returns its manifest.
 
@@ -662,7 +664,7 @@ def convert(
     fields: dict[str, Any] = {"reader_options": dict(reader_options or {})}
     if conv.renamed:
         fields["renamed_columns"] = conv.renamed
-    info = dict(extra(conv)) if extra else {}
+    info: dict[str, Any] = {}
     if conv.function_ids is not None:
         info["function_ids"] = conv.function_ids
     if info:
@@ -672,9 +674,11 @@ def convert(
         output,
         manifest,
         runs,
-        conv.chunks(scan, ids, "trace"),
-        positions=conv.chunks(scan, ids, "positions") if mapping.positions else None,
-        descriptors=conv.chunks(scan, ids, "descriptors"),
+        conv.table_chunks(scan, ids, "trace"),
+        positions=(
+            conv.table_chunks(scan, ids, "positions") if mapping.positions else None
+        ),
+        descriptors=conv.descriptor_chunks(scan, ids),
         overwrite=overwrite,
         extra_columns={
             conv.extra_names[c]: _DTYPES[scan.extra_types[c].kind(int64=True)]

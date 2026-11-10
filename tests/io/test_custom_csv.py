@@ -29,7 +29,7 @@ HEADER = "alg,fid,dim,seed,popsize,evals,f,sigma,label\n"
 
 def make_rows(seed=0, n_runs=6):
     """Runs of two algorithms, written interleaved, as ``(key, rows)``."""
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - test data, not security
     runs = []
     for k in range(n_runs):
         alg, fid, dim = ("A", "B")[k % 2], 1 + k % 3, 5
@@ -117,7 +117,8 @@ def test_run_hash_follows_source_order(tmp_path, source):
 def test_one_row_per_run_with_constants_and_function_names(tmp_path):
     path = tmp_path / "r.csv"
     path.write_text(
-        "name,dim,evals,f,opt\nsphere,3,100,0.5,0\nackley,3,100,inf,0\nsphere,3,100,nan,0\n"
+        "name,dim,evals,f,opt\nsphere,3,100,0.5,0\n"
+        "ackley,3,100,inf,0\nsphere,3,100,nan,0\n"
     )
     mapping = {
         "evaluations": "evals",
@@ -305,7 +306,8 @@ def test_duplicate_header(tmp_path):
         )
 
 
-def bad(tmp_path, lines, mapping=MAPPING, header=HEADER):
+def bad(tmp_path, lines, mapping=None, header=HEADER):
+    mapping = MAPPING if mapping is None else mapping
     path = write_csv(tmp_path / "bad.csv", lines, header)
     return path, mapping
 
