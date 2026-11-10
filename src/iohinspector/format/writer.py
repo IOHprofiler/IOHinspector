@@ -9,6 +9,7 @@ the Parquet file is written row group by row group.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
@@ -51,7 +52,9 @@ from .schema import (
     TRACE_FILE,
     Column,
     arrow_schema,
+    indexed_columns,
     is_reserved_trace_name,
+    objective_columns,
     position_columns,
 )
 from .validate import validate_dataset
@@ -69,6 +72,7 @@ _MIN_MEMORY_LIMIT = 2**20
 _MIN_SPILL_ROWS = 2**12
 _MIN_BATCH_ROWS = 2**10
 _PARQUET_OPTIONS = PARQUET_OPTIONS
+_OBJECTIVE = re.compile(r"y[0-9]+")
 
 
 def write_dataset(
@@ -103,6 +107,10 @@ def write_dataset(
 
     ``trace`` holds ``run_id``, ``row``, ``evaluations``, ``raw_y`` and any extra
     logged columns; ``function_id`` and ``dimension`` are copied from the runs.
+    ``raw_y`` is objective 0. When runs have ``n_objectives`` above 1, the trace
+    also holds ``y1`` to ``y(M-1)`` for the largest ``n_objectives`` M: not null up
+    to each run's own count, null beyond it. A chunk may leave out a ``y`` column
+    that none of its runs needs.
     ``positions`` holds ``run_id``, ``row`` and ``x0`` ... Both may be a DataFrame, a
     LazyFrame or an iterable of DataFrame chunks, in any order. Extra column types are
     taken from the first chunk unless ``extra_columns`` gives them; a later chunk
@@ -131,7 +139,8 @@ def write_dataset(
         counts = _write_small_tables(tmp, runs_df, descriptors_df)
         manifest["descriptors"] = summarize(descriptors_df)
         run_map = fr.run_map(runs_df)
-        sorted_tables = [(_TableSpec.trace(extra_columns), trace, TRACE_FILE)]
+        max_obj = int(runs_df["n_objectives"].max() or 1)  # type: ignore[arg-type]
+        sorted_tables = [(_TableSpec.trace(extra_columns, max_obj), trace, TRACE_FILE)]
         if positions is not None:
             max_dim = int(runs_df["dimension"].max() or 0)  # type: ignore[arg-type]
             sorted_tables.append(
@@ -256,14 +265,19 @@ class _TableSpec:
     required: tuple[Column, ...]
     #: Fixed columns a chunk may leave out; they are null then.
     fixed_optional: tuple[Column, ...]
+    #: The run_map column that says which fixed optional columns a run fills.
+    count: str
     #: Extra column types; None until the first chunk (or ``extra_columns``) sets them.
     extras: dict[str, pl.DataType] | None
     extras_allowed: bool
     contiguous: bool
 
     @classmethod
-    def trace(cls, extra_columns: Mapping[str, pl.DataType] | None) -> _TableSpec:
-        """The trace: required keys and values, and extra logged columns."""
+    def trace(
+        cls, extra_columns: Mapping[str, pl.DataType] | None, max_objectives: int
+    ) -> _TableSpec:
+        """The trace: required keys and values, objectives ``y1`` to ``y(M-1)``,
+        and extra logged columns."""
         extras = None
         if extra_columns is not None:
             extras = {}
@@ -271,7 +285,12 @@ class _TableSpec:
                 _check_extra_name(name)
                 extras[name] = fr.extra_column_dtype(dtype, f"extra column {name!r}")
         required = tuple(c for c in TRACE_COLUMNS if c.name not in COPIED_RUN_COLUMNS)
-        return cls("trace", required, (), extras, True, contiguous=True)
+        objectives = tuple(
+            Column(y, pl.Float64(), True) for y in objective_columns(max_objectives)
+        )
+        return cls(
+            "trace", required, objectives, fr.RUN_NOBJ, extras, True, contiguous=True
+        )
 
     @classmethod
     def positions(cls, max_dimension: int) -> _TableSpec:
@@ -282,12 +301,21 @@ class _TableSpec:
         coords = tuple(
             Column(x, pl.Float64(), True) for x in position_columns(max_dimension)
         )
-        return cls("positions", required, coords, {}, False, contiguous=False)
+        return cls(
+            "positions", required, coords, fr.RUN_DIM, {}, False, contiguous=False
+        )
 
     def value_columns(self) -> list[Column]:
         """The fixed optional columns and the extra columns, in output order."""
         extras = [Column(n, t, True) for n, t in (self.extras or {}).items()]
         return [*self.fixed_optional, *extras]
+
+    def null_problem(self, df: pl.DataFrame) -> str | None:
+        """Fixed optional columns whose nulls do not match the run's count."""
+        names = indexed_columns([c.name for c in self.fixed_optional])
+        what = "objective values" if self.name == "trace" else "coordinates"
+        problem = fr.count_null_problem(df, names, self.count, what)
+        return None if problem is None else f"{self.name}: {problem}"
 
     def output_columns(self) -> list[Column]:
         """All columns of the written table, in order."""
@@ -382,6 +410,12 @@ class _SortedTableWriter:
             | {c.name for c in spec.fixed_optional}
         )
         others = [c for c in chunk.columns if c not in known]
+        objectives = [c for c in others if _OBJECTIVE.fullmatch(c)]
+        if objectives and spec.extras_allowed:
+            raise fr.FormatError(
+                f"trace: column(s) {objectives} are not allowed; objective 0 is raw_y, "
+                + _objective_names(len(spec.fixed_optional) + 1)
+            )
         if others and not spec.extras_allowed:
             raise fr.FormatError(
                 f"{spec.name}: unknown column(s) {others}; positions hold run_id, row "
@@ -449,6 +483,9 @@ class _SortedTableWriter:
             raise fr.FormatError(
                 f"{name}: row must be between 0 and {fr.ROW_LIMIT - 1}"
             )
+        problem = self.spec.null_problem(df)
+        if problem is not None:
+            raise fr.FormatError(problem)
         return df
 
     # -- spilling --------------------------------------------------------------
@@ -545,6 +582,16 @@ class _SortedTableWriter:
             return out.finish()
         finally:
             out.close()
+
+
+def _objective_names(max_objectives: int) -> str:
+    """Which objective columns a trace with the largest n_objectives M has."""
+    if max_objectives <= 1:
+        return "and every run has n_objectives 1, so there are no y columns"
+    return (
+        f"and objectives 1 to {max_objectives - 1} are y1 to y{max_objectives - 1} "
+        f"(the largest n_objectives is {max_objectives}; there is no y0)"
+    )
 
 
 def _infer_extras(chunk: pl.DataFrame, names: list[str]) -> dict[str, pl.DataType]:

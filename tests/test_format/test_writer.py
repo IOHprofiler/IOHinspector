@@ -95,6 +95,7 @@ def test_round_trip(tmp_path):
     assert {k: trace.schema[k] for k in TRACE_SCHEMA} == TRACE_SCHEMA
     assert trace.schema["sigma"] == pl.Float64 and trace.schema["restart"] == pl.Int64
     assert trace.schema["tag"] == pl.String
+    assert not [c for c in trace.columns if c.startswith("y")]  # single-objective
     assert_same_values(trace, expected_trace(syn))
 
 
@@ -411,7 +412,8 @@ def test_row_groups_start_at_function_and_dimension_changes(tmp_path, monkeypatc
             lambda s: s.trace.with_columns(pl.lit(99, pl.Int32).alias("function_id")),
             "differs",
         ),
-        (lambda s: s.trace.with_columns(pl.lit(1.0).alias("y0")), "reserved"),
+        (lambda s: s.trace.with_columns(pl.lit(1.0).alias("y0")), "no y columns"),
+        (lambda s: s.trace.with_columns(pl.lit(1.0).alias("x0")), "reserved"),
         (lambda s: s.trace.with_columns(pl.lit(1.0).alias("instance")), "reserved"),
         (lambda s: s.trace.with_columns(pl.lit(None).alias("empty")), "no type"),
         (lambda s: s.trace.drop("evaluations"), "missing"),
@@ -437,7 +439,7 @@ def test_bad_trace_is_refused(tmp_path, mutate, message):
         (lambda r: r.drop("maximization"), "missing required"),
         (lambda r: r.with_columns(pl.col("run_id") + 1), "stable hash"),
         (lambda r: r.with_columns(pl.lit(None, pl.String).alias("suite")), "null"),
-        (lambda r: r.with_columns(pl.lit(2).alias("n_objectives")), "n_objectives"),
+        (lambda r: r.with_columns(pl.lit(0).alias("n_objectives")), "n_objectives"),
         (lambda r: r.with_columns(pl.lit(0).alias("dimension")), "dimension"),
         (lambda r: r.with_columns(pl.lit("{}").alias("attributes")), "descriptors"),
         (lambda r: r.with_columns(pl.lit("abc").alias("source_rows_sha256")), "sha256"),

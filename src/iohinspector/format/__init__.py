@@ -34,6 +34,7 @@ from .schema import (
     RUNS_SORT_KEYS,
     TRACE_SCHEMA,
     is_reserved_trace_name,
+    objective_columns,
     position_columns,
 )
 from .validate import DatasetValidationError, ValidationReport, validate_dataset
@@ -65,6 +66,7 @@ __all__ = [
     "file_entry",
     "is_reserved_trace_name",
     "new_manifest",
+    "objective_columns",
     "position_columns",
     "read_manifest",
     "run_id",

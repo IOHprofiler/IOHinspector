@@ -145,8 +145,12 @@ def test_newer_minor_version_allows_unknown_columns(ds):
         (lambda df: df.with_columns(pl.col("run_id") + 1), "stable hash"),
         (lambda df: df.reverse(), "run order"),
         (
+            lambda df: df.with_columns(pl.lit(0, pl.Int32).alias("n_objectives")),
+            "n_objectives that is not at least 1",
+        ),
+        (
             lambda df: df.with_columns(pl.lit(2, pl.Int32).alias("n_objectives")),
-            "n_objectives",
+            "column 'y1' is missing",
         ),
         (lambda df: pl.concat([df, df.tail(1)]), "not unique"),
     ],
@@ -197,7 +201,8 @@ def _second_run(df):
             ),
             "null",
         ),
-        (lambda df: df.with_columns(pl.lit(1.0).alias("y0")), "reserved"),
+        (lambda df: df.with_columns(pl.lit(1.0).alias("y0")), "not an objective"),
+        (lambda df: df.with_columns(pl.lit(1.0).alias("x1")), "reserved"),
         (
             lambda df: df.with_columns(pl.lit(1.0, pl.Float32).alias("f32")),
             "not allowed",

@@ -284,7 +284,7 @@ One row per run. "Not null" columns MUST NOT contain nulls. Writers MUST NOT add
 | `budget` | int64 | yes | The evaluation budget the run was given, when the source records it |
 | `evals_used` | int64 | yes | Evaluations the run used, as the source reports them. It can be larger than the last logged evaluation, for example with improvement-only logging |
 | `best_y` | float64 | yes | The best value as the source reports it, for example IOHexperimenter's `best.y`. Analysis computes best-so-far values from the trace and does not rely on this column |
-| `n_objectives` | int32 | no | Number of objectives. MUST be 1 in version 1 (see [Reserved fields](#reserved-for-multiple-objectives-and-mixed-variables)) |
+| `n_objectives` | int32 | no | Number of objectives, at least 1. Objective 0 is the trace's `raw_y`, the others are `y1` ... (see [Multiple objectives](#multiple-objectives)) |
 | `source_file` | string | no | The file the run's rows were read from. See [Source paths](#source-paths). It MUST be listed in `manifest.sources` |
 | `source_run_index` | int64 | no | Index of the run in `source_file`, counting from 0 |
 | `source_rows_sha256` | string | yes | Lower-case hex SHA-256 of the run's data lines in the source, normalised as described below. Null when the source is not text (an `.rds` file, or a logger writing directly) |
@@ -371,7 +371,7 @@ Rules:
 
 ## trace.parquet
 
-One row per logged evaluation.
+One row per logged evaluation. The columns come in the order of the table below: the fixed columns, the objective columns, then the extra columns.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
@@ -380,12 +380,13 @@ One row per logged evaluation.
 | `dimension` | int32 | no | Copy of the run's `dimension`, for the same reason |
 | `row` | int64 | no | Position within the run: 0, 1, 2, ... without gaps |
 | `evaluations` | int64 | no | The evaluation count the source logged for the row |
-| `raw_y` | float64 | no | The objective value as logged. NaN is allowed; null is not |
+| `raw_y` | float64 | no | The objective value as logged; objective 0 when the run has several. NaN is allowed; null is not |
+| `y1` ... `y(M-1)` | float64 | see below | Objectives 1 to M-1, only when some run has more than one objective. M is the largest `n_objectives` in `runs.parquet`. See [Multiple objectives](#multiple-objectives) |
 | extra columns | float64, int64, bool or string | yes | Every other logged column, such as algorithm parameters or constraint values, with its source name |
 
 **Sort order.** The rows of a run are contiguous and in `row` order, and runs appear in run order (the order of `runs.parquet`). This sorts the trace by suite, function, dimension, source file, run and row. A run MAY have no trace rows.
 
-**Extra columns.** Readers keep every extra logged column. Names MUST be non-empty and MUST NOT be one of the reserved names: the six columns above, every `runs.parquet` column name, `algorithm_name`, `algorithm_info`, and every name matching `y[0-9]+` or `x[0-9]+`. A reader that meets a reserved source name renames the column and records it in `manifest.renamed_columns`. A column that a source file does not have is null for that file's rows.
+**Extra columns.** Readers keep every extra logged column. Names MUST be non-empty and MUST NOT be one of the reserved names: the six fixed columns above, every `runs.parquet` column name, `algorithm_name`, `algorithm_info`, and every name matching `y[0-9]+` or `x[0-9]+`. Of those, only the objective columns `y1` ... are written, and only as described above; `y0` is never written. A reader that meets a reserved source name renames the column and records it in `manifest.renamed_columns`. A column that a source file does not have is null for that file's rows.
 
 **Storage.** These rules make filters on function and dimension fast:
 
@@ -408,23 +409,30 @@ Optional. One row per logged evaluation whose position the source recorded.
 
 Rows follow the trace order, and not every trace row needs a position. Integer and binary variables are stored as float64, which is exact up to 2^53. The storage rules of the trace apply.
 
-## Reserved for multiple objectives and mixed variables
+## Multiple objectives
 
-Version 1 only reserves room; the design follows after launch with IOHexperimenter (E01). Single-objective data does not depend on it.
+Version 1 stores multi-objective data in a simple form. Richer support follows with IOHexperimenter (E01), and MAY extend this in a later minor version, or change it in a major one.
 
-- `runs.n_objectives` exists and MUST be 1.
-- Trace columns named `y0`, `y1`, ... are reserved for objective values and MUST NOT be written.
-- `manifest.variable_types` is reserved for per-variable types and MUST be null or absent.
+- `runs.n_objectives` is the run's number of objectives, any integer from 1.
+- `raw_y` holds objective 0 of every run. There is no `y0` column, so no value is stored twice.
+- When the largest `n_objectives` M is above 1, the trace has the columns `y1` to `y(M-1)`, of type float64. For a run with k objectives, `y1` to `y(k-1)` are not null (NaN is allowed) and the other `y` columns are null. A single-objective dataset (M = 1) has no `y` columns.
+- This follows the layout of the positions, where `x0` ... go up to the largest dimension.
+- Single-objective analyses use `raw_y` only, and so treat a multi-objective run by its objective 0. Analyses of several objectives read the `y` columns.
+- `best_y` in `runs.parquet` stays what the source reports.
+
+## Reserved for mixed variables
+
+- `manifest.variable_types` is reserved for per-variable types and MUST be null or absent in version 1.
 
 ## Validation
 
 `validate_dataset(path)` checks a dataset without reading it all into memory. It reports errors for:
 
 - the manifest: JSON Schema, the format name, an unknown major version, duplicate source paths, and an `archive` that is not listed;
-- the schemas: missing or unknown columns, wrong types, nulls in not-null columns, reserved names, positions columns that are not `x0` to `x(D-1)`;
-- the runs: duplicate or wrongly computed run ids, duplicate `(source_file, source_run_index)`, sort order, `n_objectives` other than 1, `dimension` below 1, `source_file` not in the manifest, and a malformed `source_rows_sha256`;
+- the schemas: missing or unknown columns, wrong types, nulls in not-null columns, reserved names, positions columns that are not `x0` to `x(D-1)`, objective columns that are not `y1` to `y(M-1)`;
+- the runs: duplicate or wrongly computed run ids, duplicate `(source_file, source_run_index)`, sort order, `n_objectives` below 1, `dimension` below 1, `source_file` not in the manifest, and a malformed `source_rows_sha256`;
 - the descriptors: run ids that are not in `runs.parquet`, duplicate `(run_id, key)`, unknown origins or types, a `value` that is not canonical for its type or disagrees with the typed column, typed columns that should be null, invalid or reserved keys, sort order, runs without `algorithm_name` or `algorithm_info`, those two with a type other than `string` or an origin other than `algorithm` or `user`, and a manifest summary that does not match;
-- the trace and positions: run ids that are not in `runs.parquet` (referential integrity), `function_id` or `dimension` that differ from the run's, sort order, row numbers with gaps, positions without a trace row, and coordinates whose nulls do not match the run's dimension;
+- the trace and positions: run ids that are not in `runs.parquet` (referential integrity), `function_id` or `dimension` that differ from the run's, sort order, row numbers with gaps, positions without a trace row, coordinates whose nulls do not match the run's dimension, and objective values whose nulls do not match the run's `n_objectives`;
 - the counts: `manifest.counts` against the row counts of the files.
 
 It warns about a codec other than zstd, missing row-group statistics, missing key-value metadata, and unexpected files in the directory.
@@ -435,7 +443,7 @@ All of it lives in `iohinspector.format`.
 
 | Function | Purpose |
 |---|---|
-| `write_dataset(path, manifest, runs, trace, *, positions=None, descriptors=None)` | Writes a dataset. `runs` has the columns of `RUNS_SCHEMA` only; `algorithm_name` or `algorithm_info` there is refused. `descriptors` MUST give every run an `algorithm_name`, usually as a record `(run_id, "algorithm_name", name, "algorithm")`; a run without `algorithm_info` gets `""` with origin `algorithm`. So the algorithm has one place in the input as on disk, and a dataset opened with `scan_dataset` writes back unchanged. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
+| `write_dataset(path, manifest, runs, trace, *, positions=None, descriptors=None)` | Writes a dataset. `runs` has the columns of `RUNS_SCHEMA` only; `algorithm_name` or `algorithm_info` there is refused. `descriptors` MUST give every run an `algorithm_name`, usually as a record `(run_id, "algorithm_name", name, "algorithm")`; a run without `algorithm_info` gets `""` with origin `algorithm`. So the algorithm has one place in the input as on disk, and a dataset opened with `scan_dataset` writes back unchanged. `trace` holds `y1` to `y(M-1)` when some run has several objectives; a chunk MAY leave out a `y` column that none of its runs needs, and it is null there. `trace` and `positions` may be DataFrames, LazyFrames or iterables of DataFrame chunks, in any order. The writer sorts them with an external merge sort, writes to a temporary directory next to `path`, runs `validate_dataset`, and then moves the result into place. Memory stays near twice `memory_limit` (default 256 MiB) plus one input chunk: writing ten million trace rows in scrambled order peaks at about 0.8 GB resident, including the Python process itself |
 | `scan_dataset(path)` | Returns a `StoredDataset` with the manifest and `runs`, `descriptors`, `trace` and `positions` as polars LazyFrames. Refuses an unknown major version, and issues the manifest's warnings as `DatasetWarning` |
 | `StoredDataset.run_columns(by)` | A LazyFrame of `run_id` and one column per name in `by`, taken from `runs.parquet` or turned from descriptors into columns, ready for `trace.join(..., on="run_id").group_by(by)` |
 | `descriptor_columns(descriptors, keys)` | The same for a descriptors table alone |
@@ -446,6 +454,7 @@ All of it lives in `iohinspector.format`.
 | `new_manifest(dataset_id, reader_name, reader_version, ...)`, `file_entry(local_path, path, ...)` | Build a manifest, and a `sources` entry with the file's sha256 and size |
 | `run_id(dataset_id, source_file, source_run_index)`, `run_ids(...)` | Run ids, for one run or as an Int64 series |
 | `RUNS_SCHEMA`, `TRACE_SCHEMA`, `POSITIONS_KEY_SCHEMA`, `MANIFEST_SCHEMA` | The fixed polars schemas and the manifest's JSON Schema |
+| `objective_columns(M)`, `position_columns(D)` | The names `y1` to `y(M-1)` and `x0` to `x(D-1)` |
 
 Data that breaks the format raises `FormatError`, an invalid manifest `ManifestError`, and an unknown version `UnsupportedFormatVersion`.
 

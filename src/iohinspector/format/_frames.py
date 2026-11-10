@@ -22,6 +22,7 @@ KEY = "__ioh_key"
 RANK = "__ioh_rank"
 GROUP = "__ioh_group"
 RUN_DIM = "__ioh_run_dim"
+RUN_NOBJ = "__ioh_run_nobj"
 
 ROW_BITS = 32
 ROW_LIMIT = 1 << ROW_BITS
@@ -144,7 +145,7 @@ def _range_problems(df: pl.DataFrame) -> list[str]:
     for column, condition, rule in (
         ("dimension", pl.col("dimension") < 1, "at least 1"),
         ("source_run_index", pl.col("source_run_index") < 0, ">= 0"),
-        ("n_objectives", pl.col("n_objectives") != 1, "1 in format version 1"),
+        ("n_objectives", pl.col("n_objectives") < 1, "at least 1"),
     ):
         n = df.filter(condition).height
         if n:
@@ -199,8 +200,33 @@ def run_map(sorted_runs: pl.DataFrame) -> pl.DataFrame:
         pl.col(RANK).cast(pl.Int64),
         pl.struct(list(ROW_GROUP_KEYS)).rle_id().cast(pl.Int64).alias(GROUP),
         pl.col("dimension").alias(RUN_DIM),
+        pl.col("n_objectives").alias(RUN_NOBJ),
         "source_file",
         "source_run_index",
+    )
+
+
+def count_null_problem(
+    df: pl.DataFrame, columns: Sequence[tuple[str, int]], count: str, what: str
+) -> str | None:
+    """Rows of ``df`` whose indexed columns are null where they should not be.
+
+    Column ``(name, i)`` must be null exactly when the run's ``count`` (its
+    dimension for ``x<i>``, its number of objectives for ``y<i>``) is at most ``i``.
+    ``df`` holds ``run_id``, ``row``, the columns and ``count``.
+    """
+    if not columns:
+        return None
+    mismatch = pl.any_horizontal(
+        [pl.col(name).is_null() != (pl.col(count) <= i) for name, i in columns]
+    )
+    bad = df.filter(mismatch)
+    if not bad.height:
+        return None
+    return (
+        f"{bad.height} row(s) have {what} whose nulls do not match the run's "
+        f"{'dimension' if count == RUN_DIM else 'n_objectives'}, for example run "
+        f"{bad['run_id'][0]} row {bad['row'][0]}"
     )
 
 

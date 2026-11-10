@@ -181,6 +181,20 @@ def position_columns(max_dimension: int) -> list[str]:
     return [f"x{i}" for i in range(max_dimension)]
 
 
+def objective_columns(max_objectives: int) -> list[str]:
+    """Names of the trace columns of objectives 1 to M-1, ``y1`` to ``y(M-1)``.
+
+    Objective 0 is ``raw_y``, so there is no ``y0``; a single-objective dataset
+    (M = 1) has no objective columns.
+    """
+    return [f"y{i}" for i in range(1, max_objectives)]
+
+
+def indexed_columns(names: list[str]) -> list[tuple[str, int]]:
+    """``(name, index)`` for columns named a letter and an index, such as ``x3``."""
+    return [(name, int(name[1:])) for name in names]
+
+
 _ARROW_TYPES = {
     pl.Int32(): pa.int32(),
     pl.Int64(): pa.int64(),

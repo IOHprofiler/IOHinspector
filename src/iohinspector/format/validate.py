@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,11 +36,15 @@ from .schema import (
     TRACE_FILE,
     TRACE_STATISTICS_COLUMNS,
     Column,
+    indexed_columns,
     is_reserved_trace_name,
+    objective_columns,
     position_columns,
 )
 
 DEFAULT_BATCH_ROWS = 2**18
+_X = re.compile(r"x[0-9]+")
+_Y = re.compile(r"y[0-9]+")
 _BATCH_BYTES = 64 * 2**20
 
 
@@ -312,12 +317,22 @@ class _Checker:
         if pf is None:
             return
         schema = dict(pl.scan_parquet(self.path / TRACE_FILE).collect_schema())
-        readable = self.schema_problems("trace", schema, list(TRACE_COLUMNS))
-        fixed = {c.name for c in TRACE_COLUMNS}
+        objectives = [
+            Column(y, pl.Float64(), True)
+            for y in objective_columns(self.largest(fr.RUN_NOBJ, 1))
+        ]
+        fixed = [*TRACE_COLUMNS, *objectives]
+        readable = self.schema_problems("trace", schema, fixed)
+        fixed_names = {c.name for c in fixed}
         for name, dtype in schema.items():
-            if name in fixed:
+            if name in fixed_names:
                 continue
-            if is_reserved_trace_name(name):
+            if _Y.fullmatch(name):
+                self.problem(
+                    f"trace: column {name!r} is not an objective column; they are y1 to "
+                    f"y(M-1) for the largest n_objectives M = {len(objectives) + 1}"
+                )
+            elif is_reserved_trace_name(name):
                 self.problem(f"trace: extra column {name!r} has a reserved name")
             if not any(dtype == allowed for allowed in EXTRA_COLUMN_DTYPES):
                 self.problem(
@@ -328,7 +343,7 @@ class _Checker:
         if not readable:
             return
         self.trace_rows_per_run = self.stream(
-            "trace", pf, [c.name for c in TRACE_COLUMNS], contiguous=True
+            "trace", pf, [c.name for c in fixed], contiguous=True
         )
 
     def check_positions(self) -> None:
@@ -338,9 +353,7 @@ class _Checker:
         if pf is None:
             return
         schema = dict(pl.scan_parquet(self.path / POSITIONS_FILE).collect_schema())
-        max_dim = 0
-        if self.run_map is not None and self.run_map.height:
-            max_dim = int(self.run_map["dimension"].max())  # type: ignore[arg-type]
+        max_dim = self.largest("dimension", 0)
         coords = [Column(x, pl.Float64(), True) for x in position_columns(max_dim)]
         fixed = list(POSITIONS_KEY_COLUMNS) + coords
         readable = self.schema_problems("positions", schema, fixed)
@@ -354,6 +367,12 @@ class _Checker:
         self.count("positions_rows", pf.metadata.num_rows)
         if readable:
             self.stream("positions", pf, [c.name for c in fixed], contiguous=False)
+
+    def largest(self, column: str, default: int) -> int:
+        """The largest value of a run map column, or ``default`` without runs."""
+        if self.run_map is None or not self.run_map.height:
+            return default
+        return int(self.run_map[column].max())  # type: ignore[arg-type]
 
     def stream(
         self, table: str, pf: pq.ParquetFile, columns: list[str], contiguous: bool
@@ -374,8 +393,13 @@ class _Checker:
             np.add.at(
                 state.per_run, counts[fr.RANK].to_numpy(), counts["len"].to_numpy()
             )
-            if not contiguous:
-                self.positions_rows(df, [c for c in columns if c.startswith("x")])
+            if contiguous:
+                indexed = indexed_columns([c for c in columns if _Y.fullmatch(c)])
+                self.null_pattern(df, indexed, fr.RUN_NOBJ, "trace", "objective values")
+            else:
+                self.positions_rows(df)
+                indexed = indexed_columns([c for c in columns if _X.fullmatch(c)])
+                self.null_pattern(df, indexed, fr.RUN_DIM, "positions", "coordinates")
         return state.per_run
 
     def batch_with_runs(self, state: _StreamState, batch: pl.DataFrame) -> pl.DataFrame:
@@ -406,7 +430,19 @@ class _Checker:
                 )
         return df
 
-    def positions_rows(self, df: pl.DataFrame, coords: list[str]) -> None:
+    def null_pattern(
+        self,
+        df: pl.DataFrame,
+        indexed: list[tuple[str, int]],
+        count: str,
+        table: str,
+        what: str,
+    ) -> None:
+        problem = fr.count_null_problem(df, indexed, count, what)
+        if problem is not None:
+            self.error(f"{table}: {problem}")
+
+    def positions_rows(self, df: pl.DataFrame) -> None:
         if self.trace_rows_per_run is not None:
             limit = self.trace_rows_per_run[df[fr.RANK].to_numpy()]
             missing = df.filter(df["row"].to_numpy() >= limit)
@@ -414,20 +450,6 @@ class _Checker:
                 self.error(
                     f"positions: {missing.height} row(s) have no trace row, for example "
                     f"run {missing['run_id'][0]} row {missing['row'][0]}"
-                )
-        if coords:
-            pattern = pl.any_horizontal(
-                [
-                    pl.col(x).is_null() != (pl.col(fr.RUN_DIM) <= j)
-                    for j, x in enumerate(coords)
-                ]
-            )
-            bad = df.filter(pattern)
-            if bad.height:
-                self.error(
-                    f"positions: {bad.height} row(s) have coordinates whose nulls do "
-                    f"not match the run's dimension, for example run {bad['run_id'][0]} "
-                    f"row {bad['row'][0]}"
                 )
 
 
