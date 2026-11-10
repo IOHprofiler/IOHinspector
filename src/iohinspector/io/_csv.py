@@ -41,7 +41,6 @@ _FLOAT = re.compile(
     r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[+-]?(?:inf|nan)",
     re.IGNORECASE,
 )
-_INT64 = (-(2**63), 2**63 - 1)
 _BOOLS = {"true": True, "false": False, "1": True, "0": False}
 
 
@@ -123,12 +122,17 @@ _PARSERS: dict[str, Callable[[str, str], Any]] = {
 
 
 class _Types:
-    """The type of a CSV column: bool, int, float or string, from all its tokens."""
+    """The type of a CSV column: bool, int, float or string, from all its tokens.
 
-    __slots__ = ("bool_ok", "float_ok", "int_ok", "seen")
+    Nothing is converted inexactly: an integer too large for float64 keeps the
+    column from being float, and for a trace column (int64) it makes it a string.
+    """
+
+    __slots__ = ("big_int", "bool_ok", "float_ok", "int64_ok", "int_ok", "seen")
 
     def __init__(self) -> None:
-        self.bool_ok = self.int_ok = self.float_ok = True
+        self.bool_ok = self.int_ok = self.int64_ok = self.float_ok = True
+        self.big_int = False
         self.seen = False
 
     def add(self, token: str) -> None:
@@ -139,19 +143,22 @@ class _Types:
             self.bool_ok = False
         if self.float_ok and not _FLOAT.fullmatch(token):
             self.float_ok = False
-        if self.int_ok and not (
-            _INT.fullmatch(token) and _INT64[0] <= int(token) <= _INT64[1]
-        ):
+        if _INT.fullmatch(token):
+            value = abs(int(token))
+            self.big_int = self.big_int or value > 2**53
+            self.int64_ok = self.int64_ok and value < 2**63
+        else:
             self.int_ok = False
 
-    def kind(self) -> str:
+    def kind(self, int64: bool = False) -> str:
+        """The type name; ``int64`` for a column that must fit int64."""
         if not self.seen:
             return "string"
         if self.bool_ok:
             return "bool"
         if self.int_ok:
-            return "int"
-        return "float" if self.float_ok else "string"
+            return "int" if self.int64_ok or not int64 else "string"
+        return "float" if self.float_ok and not self.big_int else "string"
 
 
 _DTYPES = {
@@ -183,7 +190,7 @@ def read_header(path: Path, delimiter: str = ",") -> list[str]:
 
 def _unknown(name: str, known: Sequence[str]) -> str:
     close = difflib.get_close_matches(name, list(known), n=1)
-    hint = f"; did you mean {close[0]!r}?" if close else ""
+    hint = f". Did you mean {close[0]!r}?" if close else ""
     shown = ", ".join(repr(k) for k in known[:30])
     return f"column {name!r} is not in the file{hint} (columns: {shown})"
 
@@ -488,7 +495,10 @@ class CsvConverter:
         """
         m = self.mapping
         ev_i, val_i = self.col[m.evaluations], self.col[m.value]
-        extra = [(c, self.col[c], scan.extra_types[c].kind()) for c in self.extra_cols]
+        extra = [
+            (c, self.col[c], scan.extra_types[c].kind(int64=True))
+            for c in self.extra_cols
+        ]
         pos_i = [self.col[c] for c in m.positions]
         d_kinds = [scan.descriptor_types[c].kind() for c in self.descriptor_cols]
         index: dict[tuple[str, ...], int] = {}
@@ -667,7 +677,7 @@ def convert(
         descriptors=conv.chunks(scan, ids, "descriptors"),
         overwrite=overwrite,
         extra_columns={
-            conv.extra_names[c]: _DTYPES[scan.extra_types[c].kind()]
+            conv.extra_names[c]: _DTYPES[scan.extra_types[c].kind(int64=True)]
             for c in conv.extra_cols
         },
     )

@@ -51,8 +51,13 @@ Keys:
 ``delimiter``
     One character, default ``,``.
 
-A column name the format reserves (such as ``seed`` is not, but ``budget`` is) is
-renamed with the suffix ``_src`` and recorded in ``manifest.renamed_columns``.
+A column name that the format reserves (``budget``, ``dimension``, ``row``, ...)
+is renamed with the suffix ``_src`` when it is kept as a descriptor or trace column,
+and recorded in ``manifest.renamed_columns``.
+
+Every data line of the file is kept. Source-run hashes (``source_rows_sha256``) are
+computed from the fields of each line as the ``csv`` module reads them (quotes
+removed), joined by one space.
 """
 
 from __future__ import annotations
