@@ -13,12 +13,19 @@ from pathlib import Path
 from .base import Reader, ReaderError, ReadResult
 from .custom_csv import convert_custom_csv
 from .ioh import detect_ioh, read_ioh
+from .legacy import detect_legacy, read_legacy
 from .nevergrad import convert_nevergrad
 
 #: One line per reader, in the order ``detect_format`` tries them.
 READERS: dict[str, Reader] = {
     "ioh": Reader(
         "ioh", "IOHexperimenter JSON + .dat (0.3, 0.4)", detect_ioh, read_ioh
+    ),
+    "ioh-legacy": Reader(
+        "ioh-legacy",
+        "legacy IOHprofiler .info + .dat/.cdat/.idat/.tdat",
+        detect_legacy,
+        read_legacy,
     ),
 }
 
@@ -65,4 +72,5 @@ __all__ = [
     "detect_format",
     "read",
     "read_ioh",
+    "read_legacy",
 ]
