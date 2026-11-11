@@ -1,44 +1,49 @@
-from iohinspector.indicators import add_indicator
 from skelo.model.elo import EloEstimator
 import numpy as np
 import pandas as pd
 import polars as pl
-from typing import Iterable
+from typing import Iterable, Sequence
+
+from .._upgrade import upgrade_hints
+from ..indicators import add_indicator
 
 
+@upgrade_hints
 def get_tournament_ratings(
     data: pl.DataFrame,
-    alg_vars: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     fid_vars: Iterable[str] = ["function_name"],
     fval_var: str = "raw_y",
     nrounds: int = 25,
     maximization: bool = False,
-    return_as_pandas: bool = True,
-) -> pl.DataFrame | pd.DataFrame:
+) -> pl.DataFrame:
     """Calculate ELO tournament ratings for algorithms competing on multiple problems.
 
     Args:
         data (pl.DataFrame): The data object containing algorithm performance data.
-        alg_vars (Iterable[str], optional): Which columns specify the algorithms that will compete. Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): Which columns specify the algorithms that will
+            compete. Defaults to ["algorithm_name"].
         fid_vars (Iterable[str], optional): Which columns denote the problems on which competition occurs. Defaults to ["function_name"].
         fval_var (str, optional): Which column contains the performance values. Defaults to "raw_y".
         nrounds (int, optional): Number of tournament rounds to play. Defaults to 25.
         maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame or pl.DataFrame: A DataFrame with ELO ratings, deviations, and algorithm identifiers.
+        pl.DataFrame: A DataFrame with ELO ratings, deviations, and algorithm
+            identifiers.
     """
     fids = data[fid_vars].unique()
+    by = list(by)
     aligned_comps = data.pivot(
-        index=alg_vars,
+        index=by,
         on=fid_vars,
         values=fval_var,
         aggregate_function=pl.element(),
     )
-    players = aligned_comps[alg_vars]
+    players = aligned_comps[by]
     n_players = players.shape[0]
-    comp_arr = np.array(aligned_comps[aligned_comps.columns[len(alg_vars) :]])
+    first = len(by)
+    comp_arr = np.array(aligned_comps[aligned_comps.columns[first:]])
 
     rng = np.random.default_rng()
     fids = [i for i in range(len(fids))]
@@ -79,11 +84,27 @@ def get_tournament_ratings(
         ]
     ).transpose()
     rating_dt_elo.columns = ["Rating", "Deviation", *players.columns]
-    if return_as_pandas:
-        return rating_dt_elo
-    else:
-        rating_dt_elo_pl = pl.from_pandas(rating_dt_elo)
-        return rating_dt_elo_pl
+    return pl.from_pandas(rating_dt_elo)
+
+
+def _indicator_table(
+    data: pl.DataFrame, obj_vars: Iterable[str], evals: list[int], indicator: object
+) -> pd.DataFrame:
+    """The indicator at ``evals``: one row per algorithm and run, as robustranking
+    takes it. Runs are numbered 1, 2, ... per algorithm in the order of ``data``, and
+    robustranking pairs the runs of the algorithms by that number."""
+    run = pl.col("run_id").is_first_distinct().cum_sum().over("algorithm_name")
+    data = data.with_columns(run=run)
+    df = add_indicator(data, indicator, obj_vars=obj_vars, evals=evals).to_pandas()
+    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run"]]
+    dt_pivoted = pd.pivot(
+        df_part,
+        index=["algorithm_name", "run"],
+        columns=["evaluations"],
+        values=[indicator.var_name],
+    ).reset_index()
+    dt_pivoted.columns = ["algorithm_name", "run"] + list(evals)
+    return dt_pivoted
 
 
 def get_robustrank_over_time(
@@ -106,17 +127,9 @@ def get_robustrank_over_time(
     from robustranking import Benchmark
     from robustranking.comparison import MOBootstrapComparison
 
-    df = add_indicator(data, indicator, obj_vars=obj_vars, evals=evals).to_pandas()
-    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
-    dt_pivoted = pd.pivot(
-        df_part,
-        index=["algorithm_name", "run_id"],
-        columns=["evaluations"],
-        values=[indicator.var_name],
-    ).reset_index()
-    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+    dt_pivoted = _indicator_table(data, obj_vars, evals, indicator)
     benchmark = Benchmark()
-    benchmark.from_pandas(dt_pivoted, "algorithm_name", "run_id", evals)
+    benchmark.from_pandas(dt_pivoted, "algorithm_name", "run", evals)
     comparison = MOBootstrapComparison(
         benchmark,
         alpha=0.05,
@@ -148,19 +161,11 @@ def get_robustrank_changes(
     from robustranking import Benchmark
     from robustranking.comparison import BootstrapComparison
 
-    df = add_indicator(data, indicator, obj_vars=obj_vars, evals=evals).to_pandas()
-    df_part = df[["evaluations", indicator.var_name, "algorithm_name", "run_id"]]
-    dt_pivoted = pd.pivot(
-        df_part,
-        index=["algorithm_name", "run_id"],
-        columns=["evaluations"],
-        values=[indicator.var_name],
-    ).reset_index()
-    dt_pivoted.columns = ["algorithm_name", "run_id"] + evals
+    dt_pivoted = _indicator_table(data, obj_vars, evals, indicator)
 
     comparisons = {
         f"{eval}": BootstrapComparison(
-            Benchmark().from_pandas(dt_pivoted, "algorithm_name", "run_id", eval),
+            Benchmark().from_pandas(dt_pivoted, "algorithm_name", "run", eval),
             alpha=0.05,
             minimise=indicator.minimize,
             bootstrap_runs=1000,

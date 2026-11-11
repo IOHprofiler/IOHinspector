@@ -1,14 +1,12 @@
 import numpy as np
 import polars as pl
-import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
 import seaborn as sbs
-from typing import Optional, Iterable
-from iohinspector.metrics import get_eaf_data, get_eaf_pareto_data, get_eaf_diff_data
-from iohinspector.plots.utils import HeatmapPlotArgs, _create_plot_args, _save_fig
-from moocore import eaf, eafdiff
+from typing import Optional
+from ..metrics import get_eaf_data, get_eaf_pareto_data, get_eaf_diff_data
+from .utils import HeatmapPlotArgs, _create_plot_args, _save_fig
 
 
 def plot_eaf_single_objective(
@@ -52,7 +50,8 @@ def plot_eaf_single_objective(
             - All other HeatmapPlotArgs parameters.
 
     Returns:
-        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            processed
             dataframe used to create the plot.
     """
     df = get_eaf_data(
@@ -61,7 +60,6 @@ def plot_eaf_single_objective(
         eval_min=eval_min,
         eval_max=eval_max,
         scale_eval_log=scale_eval_log,
-        return_as_pandas=False,
     )
     eval_min = df[eval_var].min()
     eval_max = df[eval_var].max()
@@ -155,7 +153,8 @@ def plot_eaf_pareto(
             - All other HeatmapPlotArgs parameters.
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the EAF
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            EAF
             dataframe used to create the plot.
     """
 
@@ -188,14 +187,14 @@ def plot_eaf_pareto(
     else:
         fig = None
 
-    eaf_data_df = eaf_data_df.sort_values(obj1_var)
+    eaf_data_df = eaf_data_df.sort(obj1_var, maintain_order=True)
 
     cmap = plt.get_cmap(plot_args.heatmap_palette)
     norm = plt.Normalize(
         vmin=(min_eaf if plot_args.use_background_color else 0), vmax=1
     )
-    _unique_eafs = eaf_data_df["eaf"].unique()
-    colors = [cmap(norm(v)) for v in _unique_eafs]
+    unique_eafs = eaf_data_df["eaf"].unique(maintain_order=True)
+    colors = [cmap(norm(v)) for v in unique_eafs]
 
     ax.add_patch(
         Rectangle(
@@ -211,8 +210,9 @@ def plot_eaf_pareto(
         )
     )
 
-    for i, color in zip(eaf_data_df["eaf"].unique(), colors):
-        poly = np.array(eaf_data_df[eaf_data_df["eaf"] == i][[obj1_var, obj2_var]])
+    for i, color in zip(unique_eafs, colors):
+        poly = eaf_data_df.filter(pl.col("eaf") == i).select(obj1_var, obj2_var)
+        poly = poly.to_numpy()
         poly = np.append(poly, np.array([[x_max, y_max]]), axis=0)
         poly = np.append(poly, np.array([[min(poly[:, 0]), y_max]]), axis=0)
         poly2 = np.repeat(poly, 2, axis=0)
@@ -266,7 +266,8 @@ def plot_eaf_diffs(
             - All other HeatmapPlotArgs parameters.
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the EAF
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            EAF
             differences dataframe used to create the plot.
 
     Note:
@@ -283,10 +284,8 @@ def plot_eaf_diffs(
 
     cols = ["x_min", "x_max", "y_min", "y_max"]
 
-    eaf_diff_rect_data[cols] = (
-        eaf_diff_rect_data[cols]
-        .apply(pd.to_numeric, errors="coerce")
-        .replace([np.inf, -np.inf], np.nan)
+    eaf_diff_rect_data = eaf_diff_rect_data.with_columns(
+        pl.col(cols).cast(pl.Float64).replace([np.inf, -np.inf], np.nan)
     )
 
     x_min = eaf_diff_rect_data["x_min"].min()
@@ -323,13 +322,13 @@ def plot_eaf_diffs(
     else:
         fig = None
 
-    for rect in eaf_diff_rect_data.itertuples(index=False):
+    for rect in eaf_diff_rect_data.iter_rows(named=True):
         ax.add_patch(
             Rectangle(
-                (rect.x_min, rect.y_min),
-                rect.x_max - rect.x_min,
-                rect.y_max - rect.y_min,
-                facecolor=color_dict[rect.eaf_diff],
+                (rect["x_min"], rect["y_min"]),
+                rect["x_max"] - rect["x_min"],
+                rect["y_max"] - rect["y_min"],
+                facecolor=color_dict[rect["eaf_diff"]],
             )
         )
 

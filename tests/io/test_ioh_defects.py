@@ -41,7 +41,7 @@ def load(folder: Path, **kwargs) -> pl.DataFrame:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         manager.add_folder(str(folder))
-    return manager.load(**kwargs)
+    return manager.load(include_columns=["source_run_index"], **kwargs)
 
 
 def trace_by_run(result) -> list[list[tuple[int, float]]]:
@@ -81,7 +81,8 @@ def test_manager_splits_runs_on_header_lines(ioh_logs):
     df = load(folder, monotonic=False)
     # evaluation 1 is never logged: 0.0.8 loads zero rows
     assert len(df) == 10
-    assert df.group_by("run_id").len().sort("run_id")["len"].to_list() == [4, 3, 3]
+    runs = df.group_by("source_run_index").len().sort("source_run_index")
+    assert runs["len"].to_list() == [4, 3, 3]
 
 
 # --- A global raw_y.diff() != 0 filter removes rows across run boundaries --------
@@ -99,7 +100,8 @@ def test_manager_improvement_filter_is_per_run(ioh_logs):
 
 def test_manager_monotonic_load_keeps_final_rows(ioh_logs):
     df = load(ioh_logs / "cross_run", monotonic=True)
-    lasts = df.group_by("run_id").agg(pl.col("evaluations").max()).sort("run_id")
+    lasts = df.group_by("source_run_index").agg(pl.col("evaluations").max())
+    lasts = lasts.sort("source_run_index")
     assert lasts["evaluations"].to_list() == [9, 6]
 
 
@@ -161,4 +163,4 @@ def test_manager_reads_run_attributes(ioh_logs):
         2.0**40 + 1,
         2.0**40 + 1,
     ]
-    assert manager.data_sets[0].function.maximization is True
+    assert manager.overview["maximization"].to_list() == [True] * 4

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, Sequence, Union, Dict, Any
 from dataclasses import fields
-from typing import TypeVar, Generic
+from typing import TypeVar
 
 T = TypeVar("T", bound="BasePlotArgs")
 
@@ -89,7 +89,7 @@ class BasePlotArgs:
             RuntimeError: If matplotlib is not available.
         """
         try:
-            import matplotlib.pyplot as plt
+            pass
         except Exception as exc:
             raise RuntimeError(
                 "matplotlib is required to apply plot properties"
@@ -295,6 +295,13 @@ class ScatterPlotArgs(BasePlotArgs):
             other: Scatter plot arguments to override current values with.
         """
         return super().override(other)
+
+
+def _hue(df: Any, by: Sequence[str]) -> Any:
+    """The seaborn ``hue`` for the groups ``by`` of the pandas frame ``df``: the
+    column, or a tuple per row for several columns."""
+    by = list(by)
+    return by[0] if len(by) == 1 else df[by].apply(tuple, axis=1)
 
 
 def _save_fig(fig=None, file_name: str = None, plot_args: BasePlotArgs = None):

@@ -31,7 +31,7 @@ class TestPlotAttractorNetwork(unittest.TestCase):
                     442,
                     481,
                 ],
-                "data_id": [1] * 13,
+                "run_id": [1] * 13,
             }
         )
 

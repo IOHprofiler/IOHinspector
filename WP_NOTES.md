@@ -4,12 +4,13 @@ Status: in progress
 
 ## Done
 - step 1: inventory (this file)
+- steps 2-3: `_upgrade.py`; `DataManager` on the four tables; `read_dataset`;
+  `data.py` is a stub; metrics, plots, indicators and `align` on `run_id`, `by`,
+  polars; tests updated; notebooks updated and running; `examples/parquet` removed.
 
 ## Next step
-Step 2: `_upgrade.py` (one table of removed names + hints; a decorator for removed
-keyword arguments; a `__getattr__` factory for removed module and class names), then
-`DataManager` on the four tables, `read_dataset` (source -> temporary format v1
-dataset), delete `data.py`; update the manager and io tests.
+Step 4: `CHANGELOG.md`, README, `FUNCTION_REFERENCE.md`; re-execute the notebooks so
+their stored outputs match; line counts.
 
 ## Baseline
 - `src/iohinspector`: 11,873 lines of Python; `tests`: 9,259 lines.
@@ -84,6 +85,29 @@ imports. After I26 the package defines `__all__` at every level.
   `FUNCTION_REFERENCE.md` 28.
 
 ## Decisions
+- `DataManager.add_folder` reads any source through `convert.read_dataset`: it
+  converts to a temporary folder and opens it with `scan_dataset`, so a source and a
+  converted dataset are the same `StoredDataset` (one code path, the writer's). The
+  temporary folder lives as long as the dataset object (`StoredDataset.files`).
+- A manager is a list of datasets; `select` returns a manager over the same datasets
+  with their four tables filtered on the selected `run_id`s.
+- Adding a dataset whose `dataset_id` is already loaded fails; pass `dataset_id=`.
+  (0.0.8's `add_json` warned and skipped; `add_folder` silently duplicated.)
+- `load()` keeps `evaluations` as UInt64 as before (the indicators join on UInt64).
+- `run_id` is the format's stable hash, so it is not 1, 2, ... per file any more.
+  Two places used the old per-file number: the robustranking pairing (now a run number
+  per algorithm in data order, `_indicator_table`, the same pairing for data from
+  `load`) and moocore's set ids (now a dense rank of `run_id`, `eaf._points`).
+- `get_discritized_eaf_single_objective` returns `eaf_target` as a column (it was the
+  pandas index), and one column per evaluation value named by its value.
+- `get_attractor_network` returns polars; a node's number is its row number.
+- Plots take `by` (a list) and return the polars frame they drew; `_hue` gives seaborn
+  the one column, or tuples for several (one `by` column now gives plain legend labels
+  instead of 1-tuples).
+- Removed stubs that only raised `NotImplementedError`
+  (`plot_multi_function_fixed_target`, `plot_multi_function_fixed_budget`,
+  `robustranking`, `stats_comparison`, `winnning_fraction_heatmap`), and the dead
+  `indicators.anytime.NonDominated` (shadowed by `final.NonDominated`).
 - Removed names fail through one table (`iohinspector/_upgrade.py`): a decorator for
   removed keyword arguments, and a `__getattr__` for removed module and class names.
 - `fid_vars` of `get_tournament_ratings` stays: it names the problems, not a grouping

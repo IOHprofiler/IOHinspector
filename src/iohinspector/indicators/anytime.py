@@ -3,6 +3,8 @@ from typing import Iterable
 import numpy as np
 import polars as pl
 
+from .._upgrade import removed_names
+
 from moocore import (
     hypervolume,
     igd_plus,
@@ -48,20 +50,6 @@ def _r2(weight_vec_set, ideal_point, point_set):
             min_tch = min(min_tch, tch)
         sum_tch += min_tch
     return sum_tch / len(weight_vec_set)
-
-
-class NonDominated:
-    def __call__(self, group: pl.DataFrame, obj_vars: Iterable):
-        objectives = np.array(group[obj_vars])
-        is_efficient = np.ones(objectives.shape[0], dtype=bool)
-        for i, c in enumerate(objectives[1:]):
-            if is_efficient[i + 1]:
-                is_efficient[i + 1 :][is_efficient[i + 1 :]] = np.any(
-                    objectives[i + 1 :][is_efficient[i + 1 :]] < c, axis=1
-                )
-                is_efficient[i + 1] = True
-        group = group.with_columns(pl.Series(name="nondominated", values=is_efficient))
-        return group
 
 
 class HyperVolume:
@@ -295,3 +283,6 @@ except ImportError:
             import warnings
 
             warnings.warn("R2 indicator is N/A without pymoo installed")
+
+
+__getattr__ = removed_names(__name__)

@@ -4,11 +4,10 @@ from iohinspector.align import align_data, turbo_align
 
 
 class TestAlignData(unittest.TestCase):
-
     def test_align_data_minimization_long(self):
         df = pl.DataFrame(
             {
-                "data_id": [1, 1, 1, 2, 2, 2],
+                "run_id": [1, 1, 1, 2, 2, 2],
                 "evaluations": [1, 2, 5, 1, 4, 5],
                 "raw_y": [10, 8, 6, 20, 18, 16],
             }
@@ -18,7 +17,7 @@ class TestAlignData(unittest.TestCase):
         result = align_data(
             df,
             evals,
-            group_cols=("data_id",),
+            group_cols=("run_id",),
             x_col="evaluations",
             y_col="raw_y",
             output="long",
@@ -29,22 +28,22 @@ class TestAlignData(unittest.TestCase):
             {
                 "evaluations": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
                 "raw_y": [10, 8, 8, 8, 6, 20, 20, 20, 18, 16],
-                "data_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+                "run_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
             }
         )
-        result_sorted = result.sort(["data_id", "evaluations"])
-        expected_sorted = expected.sort(["data_id", "evaluations"])
+        result_sorted = result.sort(["run_id", "evaluations"])
+        expected_sorted = expected.sort(["run_id", "evaluations"])
         self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
 
     def test_align_data_maximization_long(self):
         df = pl.DataFrame(
-            {"data_id": [1, 1, 1], "evaluations": [1, 2, 3], "raw_y": [5, 7, 6]}
+            {"run_id": [1, 1, 1], "evaluations": [1, 2, 3], "raw_y": [5, 7, 6]}
         )
         evals = [1, 2, 3]
         result = align_data(
             df,
             evals,
-            group_cols=("data_id",),
+            group_cols=("run_id",),
             x_col="evaluations",
             y_col="raw_y",
             output="long",
@@ -52,16 +51,16 @@ class TestAlignData(unittest.TestCase):
             silence_warning=True,
         )
         expected = pl.DataFrame(
-            {"evaluations": [1, 2, 3], "raw_y": [5, 7, 7], "data_id": [1, 1, 1]}
+            {"evaluations": [1, 2, 3], "raw_y": [5, 7, 7], "run_id": [1, 1, 1]}
         )
-        result_sorted = result.sort(["data_id", "evaluations"])
-        expected_sorted = expected.sort(["data_id", "evaluations"])
+        result_sorted = result.sort(["run_id", "evaluations"])
+        expected_sorted = expected.sort(["run_id", "evaluations"])
         self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
 
     def test_align_data_wide_output(self):
         df = pl.DataFrame(
             {
-                "data_id": [1, 1, 1, 2, 2, 2],
+                "run_id": [1, 1, 1, 2, 2, 2],
                 "evaluations": [1, 2, 5, 1, 4, 5],
                 "raw_y": [10, 8, 6, 20, 18, 16],
             }
@@ -71,7 +70,7 @@ class TestAlignData(unittest.TestCase):
         result = align_data(
             df,
             evals,
-            group_cols=("data_id",),
+            group_cols=("run_id",),
             x_col="evaluations",
             y_col="raw_y",
             output="wide",
@@ -103,13 +102,13 @@ class TestAlignData(unittest.TestCase):
 
     def test_align_data_non_default_x_col(self):
         df = pl.DataFrame(
-            {"data_id": [1, 1, 1], "steps": [10, 20, 30], "score": [100, 90, 80]}
+            {"run_id": [1, 1, 1], "steps": [10, 20, 30], "score": [100, 90, 80]}
         )
         evals = [10, 20, 30]
         result = align_data(
             df,
             evals,
-            group_cols=("data_id",),
+            group_cols=("run_id",),
             x_col="steps",
             y_col="score",
             output="long",
@@ -123,7 +122,7 @@ class TestTurboAlignData(unittest.TestCase):
     def test_turbo_align_minimization_long(self):
         df = pl.DataFrame(
             {
-                "data_id": [1, 1, 1, 2, 2, 2],
+                "run_id": [1, 1, 1, 2, 2, 2],
                 "evaluations": [1, 2, 5, 1, 4, 5],
                 "raw_y": [10, 8, 6, 20, 18, 16],
             }
@@ -140,17 +139,17 @@ class TestTurboAlignData(unittest.TestCase):
         expected = pl.DataFrame(
             {
                 "evaluations": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-                "data_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+                "run_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
                 "raw_y": [10, 8, 8, 8, 6, 20, 20, 20, 18, 16],
             }
         )
-        result_sorted = result.sort(["data_id", "evaluations"])
-        expected_sorted = expected.sort(["data_id", "evaluations"])
+        result_sorted = result.sort(["run_id", "evaluations"])
+        expected_sorted = expected.sort(["run_id", "evaluations"])
         self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
 
     def test_turbo_align_maximization_long(self):
         df = pl.DataFrame(
-            {"data_id": [1, 1, 1], "evaluations": [1, 2, 5], "raw_y": [5, 7, 8]}
+            {"run_id": [1, 1, 1], "evaluations": [1, 2, 5], "raw_y": [5, 7, 8]}
         )
         evals = [1, 2, 3, 4, 5]
         result = turbo_align(
@@ -164,18 +163,18 @@ class TestTurboAlignData(unittest.TestCase):
         expected = pl.DataFrame(
             {
                 "evaluations": [1, 2, 3, 4, 5],
-                "data_id": [1, 1, 1, 1, 1],
+                "run_id": [1, 1, 1, 1, 1],
                 "raw_y": [5, 7, 7, 7, 8],
             }
         )
-        result_sorted = result.sort(["data_id", "evaluations"])
-        expected_sorted = expected.sort(["data_id", "evaluations"])
+        result_sorted = result.sort(["run_id", "evaluations"])
+        expected_sorted = expected.sort(["run_id", "evaluations"])
         self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
 
     def test_turbo_align_wide_output(self):
         df = pl.DataFrame(
             {
-                "data_id": [1, 1, 1, 2, 2, 2],
+                "run_id": [1, 1, 1, 2, 2, 2],
                 "evaluations": [1, 2, 5, 1, 4, 5],
                 "raw_y": [10, 8, 6, 20, 18, 16],
             }
@@ -196,7 +195,7 @@ class TestTurboAlignData(unittest.TestCase):
 
     def test_turbo_align_non_default_x_col(self):
         df = pl.DataFrame(
-            {"data_id": [1, 1, 1], "steps": [10, 20, 30], "score": [100, 90, 80]}
+            {"run_id": [1, 1, 1], "steps": [10, 20, 30], "score": [100, 90, 80]}
         )
         evals = [10, 20, 30]
         result = turbo_align(

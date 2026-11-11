@@ -9,7 +9,7 @@ class TestPlotHeatmapSingleRun(unittest.TestCase):
     def setUp(self):
         self.data = pl.DataFrame(
             {
-                "data_id": [1] * 5,
+                "run_id": [1] * 5,
                 "evaluations": [1, 2, 3, 4, 5],
                 "x1": np.linspace(-5, 5, 5),
                 "x2": np.linspace(-5, 5, 5)[::-1],
@@ -28,14 +28,14 @@ class TestPlotHeatmapSingleRun(unittest.TestCase):
             var_maxs=self.var_maxs,
         )
         self.assertEqual(dt_plot.shape, (2, 5))
-        self.assertAlmostEqual(dt_plot.values.min(), 0)
-        self.assertAlmostEqual(dt_plot.values.max(), 1)
-        self.assertTrue(np.all((dt_plot.values >= 0) & (dt_plot.values <= 1)))
+        self.assertAlmostEqual(dt_plot.to_numpy().min(), 0)
+        self.assertAlmostEqual(dt_plot.to_numpy().max(), 1)
+        self.assertTrue(np.all((dt_plot.to_numpy() >= 0) & (dt_plot.to_numpy() <= 1)))
 
-    def test_asserts_on_multiple_data_ids(self):
+    def test_asserts_on_multiple_run_ids(self):
         data = pl.DataFrame(
             {
-                "data_id": [1, 2],
+                "run_id": [1, 2],
                 "evaluations": [1, 2],
                 "x1": [0, 1],
             }
@@ -46,7 +46,7 @@ class TestPlotHeatmapSingleRun(unittest.TestCase):
     def test_single_variable(self):
         data = pl.DataFrame(
             {
-                "data_id": [1] * 3,
+                "run_id": [1] * 3,
                 "evaluations": [1, 2, 3],
                 "x1": [-5, 0, 5],
             }
@@ -59,12 +59,12 @@ class TestPlotHeatmapSingleRun(unittest.TestCase):
             var_maxs=[5],
         )
         self.assertEqual(dt_plot.shape, (1, 3))
-        np.testing.assert_allclose(dt_plot.values, [[0, 0.5, 1]])
+        np.testing.assert_allclose(dt_plot.to_numpy(), [[0, 0.5, 1]])
 
     def test_non_default_eval_col(self):
         data = pl.DataFrame(
             {
-                "data_id": [1] * 4,
+                "run_id": [1] * 4,
                 "evals": [1, 2, 3, 4],
                 "x1": [0, 1, 2, 3],
                 "x2": [3, 2, 1, 0],

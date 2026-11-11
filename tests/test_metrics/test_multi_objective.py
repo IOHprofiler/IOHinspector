@@ -1,7 +1,6 @@
 import unittest
 from iohinspector.indicators.anytime import HyperVolume, Epsilon, IGDPlus
 import polars as pl
-import pandas as pd
 import numpy as np
 from iohinspector.metrics.multi_objective import (
     get_pareto_front_2d,
@@ -21,12 +20,12 @@ class TestGetParetoFront2D(unittest.TestCase):
                 "F2": [0.2, 0.5, 0.8, 0.8, 0.2, 0.9, 0.7, 0.4, 0.1],
                 "algorithm_name": ["A", "A", "A", "B", "B", "B", "C", "C", "C"],
                 "evaluations": [1, 2, 3, 1, 2, 3, 1, 2, 3],
-                "data_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+                "run_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
             }
         )
 
     def test_basic_call(self):
-        result = get_pareto_front_2d(self.df, return_as_pandas=False)
+        result = get_pareto_front_2d(self.df)
         self.assertIn("final_nondominated", result.columns)
 
         expected = {
@@ -44,9 +43,7 @@ class TestGetParetoFront2D(unittest.TestCase):
     def test_custom_obj_vars(self):
         # Test with custom objective variable names
         df_custom = self.df.rename({"raw_y": "obj1", "F2": "obj2"})
-        result = get_pareto_front_2d(
-            df_custom, obj1_var="obj1", obj2_var="obj2", return_as_pandas=False
-        )
+        result = get_pareto_front_2d(df_custom, obj1_var="obj1", obj2_var="obj2")
         self.assertIn("final_nondominated", result.columns)
         # Check that the correct points are marked as non-dominated for each algorithm, point by point
         expected = {
@@ -73,7 +70,7 @@ class TestGetIndicatorOverTimeData(unittest.TestCase):
                 "F2": [0.8, 0.6, 0.4, 0.2, 0.1],
                 "algorithm_name": ["A"] * 5,
                 "evaluations": [1, 10, 100, 1000, 10000],
-                "data_id": [1] * 5,
+                "run_id": [1] * 5,
             }
         )
         # Create a dict mapping evaluation to (raw_y, F2) point

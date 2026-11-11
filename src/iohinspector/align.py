@@ -4,11 +4,14 @@ from typing import Iterable
 import polars as pl
 import numpy as np
 
+from ._upgrade import upgrade_hints
 
+
+@upgrade_hints
 def align_data(
     df: pl.DataFrame,
     evals: Iterable[int | float],
-    group_cols: Iterable[str] = ("data_id",),
+    group_cols: Iterable[str] = ("run_id",),
     x_col: str = "evaluations",
     y_col: str = "raw_y",
     output: str = "long",
@@ -67,6 +70,7 @@ def align_data(
     return pivot_df
 
 
+@upgrade_hints
 def turbo_align(
     df: pl.DataFrame,
     x_values: Iterable[int | float],
@@ -79,7 +83,7 @@ def turbo_align(
 
     Note:
         Assumes the data is monotonic!
-        Assumes data_id is present -> i.e. data comes from manager
+        Assumes run_id is present, as in DataManager.load
 
     Args:
         df (pl.DataFrame): DataFrame containing at minimum x, y and group columns specified in further parameters
@@ -93,21 +97,21 @@ def turbo_align(
         pl.DataFrame: Alligned DataFrame
     """
 
-    data_ids = df["data_id"].unique()
+    run_ids = df["run_id"].unique()
 
     x_vals = pl.DataFrame(
         {
-            x_col: np.repeat(x_values, len(data_ids)),
-            "data_id": np.tile(data_ids, len(x_values)),
+            x_col: np.repeat(x_values, len(run_ids)),
+            "run_id": np.tile(run_ids, len(x_values)),
         },
-        schema={x_col: df[x_col].dtype, "data_id": df["data_id"].dtype},
+        schema={x_col: df[x_col].dtype, "run_id": df["run_id"].dtype},
     )
-    df = df.sort([x_col, "data_id"])
+    df = df.sort([x_col, "run_id"])
 
     if x_col != "evaluations" and maximization:
         result_df = x_vals.join_asof(
             df,
-            by="data_id",
+            by="run_id",
             on=x_col,
             strategy="forward",
             check_sortedness=False,
@@ -115,7 +119,7 @@ def turbo_align(
     else:
         result_df = x_vals.join_asof(
             df,
-            by="data_id",
+            by="run_id",
             on=x_col,
             strategy="backward",
             check_sortedness=False,
@@ -124,5 +128,5 @@ def turbo_align(
     if output == "long":
         return result_df
 
-    pivot_df = result_df.pivot(index=x_col, on=("data_id",), values=y_col)
+    pivot_df = result_df.pivot(index=x_col, on=("run_id",), values=y_col)
     return pivot_df

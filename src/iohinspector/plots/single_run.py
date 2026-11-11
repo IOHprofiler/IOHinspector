@@ -3,9 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sbs
 import polars as pl
 from typing import Iterable, Optional
-import numpy as np
-from iohinspector.plots.utils import HeatmapPlotArgs, _create_plot_args, _save_fig
-from iohinspector.metrics.single_run import get_heatmap_single_run_data
+from .utils import HeatmapPlotArgs, _create_plot_args, _save_fig
+from ..metrics.single_run import get_heatmap_single_run_data
 
 
 def plot_heatmap_single_run(
@@ -27,7 +26,7 @@ def plot_heatmap_single_run(
 
     Args:
         data (pl.DataFrame): Input dataframe containing trajectory data from a single algorithm run.
-            Must contain data for exactly one run (unique data_id).
+            Must contain data for exactly one run (one run_id).
         vars (Iterable[str]): Which columns contain the decision/search space variables to visualize.
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
         var_mins (Iterable[float], optional): Minimum bounds for the search space variables.
@@ -45,14 +44,13 @@ def plot_heatmap_single_run(
             - All other HeatmapPlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the processed
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            processed
             heatmap dataframe used to create the plot.
 
     Raises:
-        AssertionError: If data contains multiple runs (data_id has more than one unique value).
+        AssertionError: If data contains several runs (several run_id values).
     """
-    assert data["data_id"].n_unique() == 1
-
     dt_plot = get_heatmap_single_run_data(
         data=data,
         vars=vars,
@@ -75,7 +73,9 @@ def plot_heatmap_single_run(
     else:
         fig = None
 
-    sbs.heatmap(dt_plot, cmap=plot_args.heatmap_palette, vmin=0, vmax=1, ax=ax)
+    sbs.heatmap(
+        dt_plot.to_pandas(), cmap=plot_args.heatmap_palette, vmin=0, vmax=1, ax=ax
+    )
 
     plot_args.apply(ax)
 

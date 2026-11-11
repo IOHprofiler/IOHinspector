@@ -1,6 +1,6 @@
 import polars as pl
-import pandas as pd
-from typing import Iterable, Callable
+from typing import Sequence
+from .._upgrade import upgrade_hints
 from functools import partial
 import numpy as np
 
@@ -42,26 +42,27 @@ def _aocc(group: pl.DataFrame, eval_max: int, fval_var: str = "eaf") -> pl.DataF
     )
 
 
+@upgrade_hints
 def get_aocc(
     data: pl.DataFrame,
     eval_max: int,
     fval_var: str = "eaf",
-    free_vars: Iterable[str] = ["function_name", "algorithm_name"],
+    by: Sequence[str] = ("function_name", "algorithm_name"),
     scale_eval_log: bool = False,
-    return_as_pandas: bool = True,
-) -> pl.DataFrame | pd.DataFrame:
+) -> pl.DataFrame:
     """Calculate Area Over Convergence Curve (AOCC) metric for algorithm performance evaluation.
 
     Args:
         data (pl.DataFrame): The data object containing performance evaluation data.
         eval_max (int): Maximum value of evaluations to use for AOCC calculation.
         fval_var (str, optional): Which data column specifies the performance value. Defaults to "eaf".
-        free_vars (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["function_name", "algorithm_name"].
+        by (Sequence[str], optional): The columns to group by: runs columns or
+            descriptors. Defaults to ["function_name", "algorithm_name"].
         scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to False.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pl.DataFrame or pd.DataFrame: A dataframe with the area under the EAF (=area over convergence curve).
+        pl.DataFrame: A dataframe with the area under the EAF (=area over convergence
+            curve).
     """
     # Ensure consistent data types for evaluations
     data = data.with_columns(pl.col("evaluations").cast(pl.Float64))
@@ -70,15 +71,12 @@ def get_aocc(
         data = data.with_columns(pl.col("evaluations").log10().alias("evaluations"))
         eval_max = np.log10(eval_max)
     # Group by without strict=False (invalid argument for polars)
-    aocc_contribs = data.group_by(*["data_id"]).map_groups(
+    aocc_contribs = data.group_by("run_id").map_groups(
         partial(_aocc, eval_max=eval_max, fval_var=fval_var)
     )
-    aoccs = aocc_contribs.group_by(["data_id"] + free_vars).agg(
+    aoccs = aocc_contribs.group_by(["run_id", *by]).agg(
         pl.col("aocc_contribution").sum()
     )
-    final_df = aoccs.group_by(free_vars).agg(
+    return aoccs.group_by(list(by)).agg(
         pl.col("aocc_contribution").mean().alias("AOCC")
     )
-    if return_as_pandas:
-        return final_df.to_pandas()
-    return final_df

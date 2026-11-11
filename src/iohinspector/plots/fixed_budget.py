@@ -2,17 +2,18 @@ import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sbs
 import polars as pl
-from typing import Iterable
-from iohinspector.metrics.fixed_budget import aggregate_convergence
-from iohinspector.plots.utils import LinePlotArgs, _save_fig, _create_plot_args
-import matplotlib
+from typing import Iterable, Sequence
+from .._upgrade import upgrade_hints
+from ..metrics.fixed_budget import aggregate_convergence
+from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
 
 
+@upgrade_hints
 def plot_single_function_fixed_budget(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
-    free_vars: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     eval_min: float = None,
     eval_max: float = None,
     maximization: bool = False,
@@ -32,8 +33,9 @@ def plot_single_function_fixed_budget(
         data (pl.DataFrame): Input dataframe containing optimization algorithm trajectory data.
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
         fval_var (str, optional): Which column contains the function/objective values. Defaults to "raw_y".
-        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing
-            between different lines in the plot. Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): The columns whose values tell the lines apart:
+            runs
+            columns or descriptors. Defaults to ["algorithm_name"].
         eval_min (float, optional): Minimum evaluation bound for the plot. If None, uses data minimum. Defaults to None.
         eval_max (float, optional): Maximum evaluation bound for the plot. If None, uses data maximum. Defaults to None.
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
@@ -52,20 +54,25 @@ def plot_single_function_fixed_budget(
             - All other LinePlotArgs parameters (xlim, ylim, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            processed
             (melted/filtered) dataframe used to create the plot.
     """
     dt_agg = aggregate_convergence(
         data,
         eval_var=eval_var,
         fval_var=fval_var,
-        free_vars=free_vars,
+        by=by,
         eval_min=eval_min,
         eval_max=eval_max,
         maximization=maximization,
     )
-    dt_molt = dt_agg.melt(id_vars=[eval_var] + free_vars)
-    dt_plot = dt_molt[dt_molt["variable"].isin(measures)].sort_values(free_vars)
+    dt_plot = (
+        dt_agg.unpivot(index=[eval_var, *by])
+        .filter(pl.col("variable").is_in(list(measures)))
+        .sort(by, maintain_order=True)
+    )
+    pdf = dt_plot.to_pandas()
 
     plot_args = _create_plot_args(
         LinePlotArgs(
@@ -83,11 +90,11 @@ def plot_single_function_fixed_budget(
         fig = None
 
     sbs.lineplot(
-        dt_plot,
+        pdf,
         x=eval_var,
         y="value",
         style="variable",
-        hue=dt_plot[free_vars].apply(tuple, axis=1),
+        hue=_hue(pdf, by),
         palette=plot_args.line_colors,
         ax=ax,
     )
@@ -97,7 +104,3 @@ def plot_single_function_fixed_budget(
     _save_fig(fig, file_name, plot_args=plot_args)
 
     return ax, dt_plot
-
-
-def plot_multi_function_fixed_budget():
-    raise NotImplementedError

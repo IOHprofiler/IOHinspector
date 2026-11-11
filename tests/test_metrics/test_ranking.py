@@ -1,7 +1,6 @@
 import unittest
 import numpy as np
 import polars as pl
-import pandas as pd
 from iohinspector.metrics import (
     get_tournament_ratings,
     get_robustrank_over_time,
@@ -23,28 +22,28 @@ class TestGetTournamentRatings(unittest.TestCase):
 
     def test_basic(self):
         result = get_tournament_ratings(self.data)
-        self.assertIsInstance(result, pd.DataFrame)
+        self.assertIsInstance(result, pl.DataFrame)
         self.assertIn("Rating", result.columns)
         self.assertIn("Deviation", result.columns)
         self.assertIn("algorithm_name", result.columns)
         self.assertEqual(len(result), 3)  # Three algorithms
         # Check that algorithms are ordered by rating: C, A, B
-        sorted_algos = result.sort_values("Rating", ascending=False)[
+        sorted_algos = result.sort("Rating", descending=True)[
             "algorithm_name"
-        ].tolist()
+        ].to_list()
         self.assertEqual(sorted_algos, ["C", "A", "B"])
 
     def test_basic_maximisation(self):
         result = get_tournament_ratings(self.data, maximization=True)
-        self.assertIsInstance(result, pd.DataFrame)
+        self.assertIsInstance(result, pl.DataFrame)
         self.assertIn("Rating", result.columns)
         self.assertIn("Deviation", result.columns)
         self.assertIn("algorithm_name", result.columns)
         self.assertEqual(len(result), 3)  # Three algorithms
         # Check that algorithms are ordered by rating: C, A, B
-        sorted_algos = result.sort_values("Rating", ascending=False)[
+        sorted_algos = result.sort("Rating", descending=True)[
             "algorithm_name"
-        ].tolist()
+        ].to_list()
         self.assertEqual(sorted_algos, ["B", "A", "C"])
 
     def test_single_function(self):
@@ -155,7 +154,7 @@ class TestGetRobustRankOverTime(unittest.TestCase):
                     2.9,
                     0.2,  # C, run 3
                 ],
-                "data_id": [1] * 3
+                "run_id": [1] * 3
                 + [2] * 3
                 + [3] * 3
                 + [4] * 3
@@ -164,15 +163,6 @@ class TestGetRobustRankOverTime(unittest.TestCase):
                 + [7] * 3
                 + [8] * 3
                 + [9] * 3,
-                "run_id": [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3,
             }
         )
 
@@ -280,7 +270,7 @@ class TestGetRobustRankChanges(unittest.TestCase):
                     2.9,
                     0.2,  # C, run 3
                 ],
-                "data_id": [1] * 3
+                "run_id": [1] * 3
                 + [2] * 3
                 + [3] * 3
                 + [4] * 3
@@ -289,15 +279,6 @@ class TestGetRobustRankChanges(unittest.TestCase):
                 + [7] * 3
                 + [8] * 3
                 + [9] * 3,
-                "run_id": [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3,
             }
         )
 

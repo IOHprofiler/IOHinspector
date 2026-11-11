@@ -124,7 +124,7 @@ class TestPlotRobustRankOverTime(unittest.TestCase):
                     2.9,
                     0.2,  # C, run 3
                 ],
-                "data_id": [1] * 3
+                "run_id": [1] * 3
                 + [2] * 3
                 + [3] * 3
                 + [4] * 3
@@ -133,15 +133,6 @@ class TestPlotRobustRankOverTime(unittest.TestCase):
                 + [7] * 3
                 + [8] * 3
                 + [9] * 3,
-                "run_id": [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3,
                 "function_id": [1] * 9 + [1] * 9 + [1] * 9,
             }
         )
@@ -255,7 +246,7 @@ class TestPlotRobustRankChanges(unittest.TestCase):
                     2.9,
                     0.2,  # C, run 3
                 ],
-                "data_id": [1] * 3
+                "run_id": [1] * 3
                 + [2] * 3
                 + [3] * 3
                 + [4] * 3
@@ -264,15 +255,6 @@ class TestPlotRobustRankChanges(unittest.TestCase):
                 + [7] * 3
                 + [8] * 3
                 + [9] * 3,
-                "run_id": [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3
-                + [1] * 3
-                + [2] * 3
-                + [3] * 3,
                 "function_id": [1] * 9 + [1] * 9 + [1] * 9,
             }
         )

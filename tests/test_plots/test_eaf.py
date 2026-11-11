@@ -19,7 +19,7 @@ class TestPlotEAFSingleObjective(unittest.TestCase):
             {
                 "raw_y": [10, 8, 6, 20, 18, 16],
                 "evaluations": [1, 2, 5, 1, 4, 5],
-                "data_id": [1, 1, 1, 2, 2, 2],
+                "run_id": [1, 1, 1, 2, 2, 2],
             }
         )
 
@@ -35,7 +35,7 @@ class TestPlotEAFPareto(unittest.TestCase):
             {
                 "x": [1, 2, 3, 1, 2, 3],
                 "y": [10, 8, 6, 20, 18, 16],
-                "data_id": [1, 1, 1, 2, 2, 2],
+                "run_id": [1, 1, 1, 2, 2, 2],
             }
         )
 
@@ -48,11 +48,9 @@ class TestPlotEAFPareto(unittest.TestCase):
 class TestPlotEAFDiffs(unittest.TestCase):
     def setUp(self):
         self.data1 = pl.DataFrame(
-            {"x": [1, 2, 3], "y": [10, 8, 6], "data_id": [1, 1, 1]}
+            {"x": [1, 2, 3], "y": [10, 8, 6], "run_id": [1, 1, 1]}
         )
-        self.data2 = pl.DataFrame(
-            {"x": [1, 2, 3], "y": [9, 7, 5], "data_id": [2, 2, 2]}
-        )
+        self.data2 = pl.DataFrame({"x": [1, 2, 3], "y": [9, 7, 5], "run_id": [2, 2, 2]})
 
     def test_basic_call_returns_axes_and_data(self):
         ax, data = plot_eaf_diffs(self.data1, self.data2, obj1_var="x", obj2_var="y")

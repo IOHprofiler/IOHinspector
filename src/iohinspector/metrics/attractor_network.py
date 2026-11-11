@@ -3,6 +3,8 @@ import pandas as pd
 import polars as pl
 from typing import Iterable, Tuple
 
+from .._upgrade import upgrade_hints
+
 
 def _get_nodeidx(xloc: np.ndarray, yval: float, nodes: pd.DataFrame, epsilon: float):
     """Internal helper function to find existing node index based on position and function value.
@@ -29,6 +31,7 @@ def _get_nodeidx(xloc: np.ndarray, yval: float, nodes: pd.DataFrame, epsilon: fl
     return -1
 
 
+@upgrade_hints
 def get_attractor_network(
     data: pl.DataFrame,
     coord_vars: Iterable[str] = ["x1", "x2"],
@@ -38,7 +41,7 @@ def get_attractor_network(
     beta: int = 40,
     epsilon: float = 0.0001,
     eval_max=None,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pl.DataFrame, pl.DataFrame]:
     """Create an attractor network from optimization trajectory data.
 
     Args:
@@ -52,7 +55,9 @@ def get_attractor_network(
         eval_max (int, optional): Maximum evaluation number to consider. Defaults to the maximum of eval_var if None.
 
     Returns:
-        tuple[pd.DataFrame, pd.DataFrame]: Two DataFrames containing the nodes and edges of the network respectively.
+        tuple[pl.DataFrame, pl.DataFrame]: The nodes and the edges of the network. A
+            node's
+            number (``start`` and ``end`` of an edge) is its row number.
     """
 
     running_idx = 0
@@ -62,10 +67,8 @@ def get_attractor_network(
     if eval_max is None:
         eval_max = max(data[eval_var])
 
-    for run_id in data["data_id"].unique():
-        dt_group = data.filter(
-            pl.col("data_id") == run_id, pl.col(eval_var) <= eval_max
-        )
+    for run_id in data["run_id"].unique(maintain_order=True):
+        dt_group = data.filter(pl.col("run_id") == run_id, pl.col(eval_var) <= eval_max)
         if maximization:
             ys = np.maximum.accumulate(np.array(dt_group[fval_var]))
         else:
@@ -122,4 +125,4 @@ def get_attractor_network(
                 ) / (curr_count + 1)
                 edges.loc[edge_idxs[0], "count"] += 1
             node1 = node2
-    return nodes, edges
+    return pl.from_pandas(nodes.infer_objects()), pl.from_pandas(edges.infer_objects())

@@ -18,7 +18,7 @@ class TestPlotParetoFronts2D(unittest.TestCase):
                 "F2": [0.2, 0.5, 0.8, 0.8, 0.2, 0.9, 0.7, 0.4, 0.1],
                 "algorithm_name": ["A", "A", "A", "B", "B", "B", "C", "C", "C"],
                 "evaluations": [1, 2, 3, 1, 2, 3, 1, 2, 3],
-                "data_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+                "run_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
             }
         )
 
@@ -36,7 +36,7 @@ class TestPlotIndicatorOverTime(unittest.TestCase):
                 "F2": [0.8, 0.6, 0.4, 0.2, 0.1],
                 "algorithm_name": ["A"] * 5,
                 "evaluations": [1, 10, 100, 1000, 10000],
-                "data_id": [1] * 5,
+                "run_id": [1] * 5,
             }
         )
         # Create a dict mapping evaluation to (raw_y, F2) point
@@ -55,7 +55,7 @@ class TestPlotIndicatorOverTime(unittest.TestCase):
             eval_max=10_000,
             scale_eval_log=True,
             obj_vars=["raw_y", "F2"],
-            free_var="algorithm_name",
+            by=["algorithm_name"],
         )
         self.assertIsNotNone(ax)
         self.assertIsNotNone(data)

@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Iterable
 
 import numpy as np
-import pandas as pd
 import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
@@ -87,7 +86,8 @@ def plot_attractor_network(
             - All other BasePlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame, pd.DataFrame]: The matplotlib axes object
+        tuple[matplotlib.axes.Axes, pl.DataFrame, pl.DataFrame]: The matplotlib axes
+            object
             and two dataframes with the nodes and edges of the attractor network.
     """
     try:
@@ -118,16 +118,16 @@ def plot_attractor_network(
     )
 
     network = nx.DiGraph()
-    for idx, row in nodes.iterrows():
+    for idx, row in enumerate(nodes.iter_rows(named=True)):
         network.add_node(
             idx,
-            decision=np.array(row)[: len(coord_vars)],
+            decision=np.array([row[c] for c in coord_vars]),
             fitness=row["y"],
             hitcount=row["count"],
             evals=row["evals"] / row["count"],
         )
 
-    for _, row in edges.iterrows():
+    for row in edges.iter_rows(named=True):
         network.add_edge(
             row["start"],
             row["end"],

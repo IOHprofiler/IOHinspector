@@ -2,16 +2,18 @@ import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sbs
-from typing import Iterable
-from iohinspector.metrics.fixed_target import aggregate_running_time
-from iohinspector.plots.utils import LinePlotArgs, _save_fig, _create_plot_args
+from typing import Iterable, Sequence
+from .._upgrade import upgrade_hints
+from ..metrics.fixed_target import aggregate_running_time
+from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
 
 
+@upgrade_hints
 def plot_single_function_fixed_target(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
-    free_vars: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     f_min: float = None,
     f_max: float = None,
     scale_f_log: bool = True,
@@ -32,8 +34,9 @@ def plot_single_function_fixed_target(
         data (pl.DataFrame): Input dataframe containing optimization algorithm trajectory data.
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
         fval_var (str, optional): Which column contains the function/objective values. Defaults to "raw_y".
-        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing
-            between different lines in the plot. Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): The columns whose values tell the lines apart:
+            runs
+            columns or descriptors. Defaults to ["algorithm_name"].
         f_min (float, optional): Minimum function value bound for target range. If None, uses data minimum. Defaults to None.
         f_max (float, optional): Maximum function value bound for target range. If None, uses data maximum. Defaults to None.
         scale_f_log (bool, optional): Whether function values should be log-scaled for target sampling. Defaults to True.
@@ -55,7 +58,8 @@ def plot_single_function_fixed_target(
             - All other LinePlotArgs parameters (xlim, ylim, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the processed
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            processed
             (melted/filtered) dataframe used to create the plot.
     """
 
@@ -63,7 +67,7 @@ def plot_single_function_fixed_target(
         data,
         eval_var=eval_var,
         fval_var=fval_var,
-        free_vars=free_vars,
+        by=by,
         f_min=f_min,
         f_max=f_max,
         scale_f_log=scale_f_log,
@@ -71,8 +75,12 @@ def plot_single_function_fixed_target(
         maximization=maximization,
     )
 
-    dt_molt = dt_agg.melt(id_vars=[fval_var] + free_vars)
-    dt_plot = dt_molt[dt_molt["variable"].isin(measures)].sort_values(free_vars)
+    dt_plot = (
+        dt_agg.unpivot(index=[fval_var, *by])
+        .filter(pl.col("variable").is_in(list(measures)))
+        .sort(by, maintain_order=True)
+    )
+    pdf = dt_plot.to_pandas()
 
     plot_args = _create_plot_args(
         LinePlotArgs(
@@ -91,11 +99,11 @@ def plot_single_function_fixed_target(
         fig = None
 
     sbs.lineplot(
-        dt_plot,
+        pdf,
         x=fval_var,
         y="value",
         style="variable",
-        hue=dt_plot[free_vars].apply(tuple, axis=1),
+        hue=_hue(pdf, by),
         palette=plot_args.line_colors,
         ax=ax,
     )
@@ -105,8 +113,3 @@ def plot_single_function_fixed_target(
     _save_fig(fig, file_name, plot_args=plot_args)
 
     return ax, dt_plot
-
-
-def plot_multi_function_fixed_target():
-    # either just loop over function column(s), or more advanced
-    raise NotImplementedError

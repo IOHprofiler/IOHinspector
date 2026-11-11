@@ -10,7 +10,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from iohinspector.format import scan_dataset, validate_dataset
+from iohinspector.format import DatasetWarning, scan_dataset, validate_dataset
 from iohinspector.io import READERS, ReaderError, detect_format, read
 from iohinspector.io.ioh import infer_triggers, load_ioh_json, parse_dat, read_ioh
 
@@ -464,14 +464,15 @@ def test_manager_columns_with_positions():
     from iohinspector import DataManager
 
     manager = DataManager()
-    with pytest.warns(UserWarning, match="metadata schema"):
+    with pytest.warns(DatasetWarning):
         manager.add_folder(str(ROOT / "io" / "fixtures" / "ioh040" / "attributes"))
     df = manager.load(monotonic=False)
     assert df.height == 12
-    assert df.columns[:3] == ["evaluations", "raw_y", "sigma"]
-    assert {"x0", "position_x0", "position_x1", "position_x5"} <= set(df.columns)
-    assert df.group_by("data_id").len()["len"].sort().to_list() == [2, 3, 3, 4]
+    assert df.columns[:4] == ["run_id", "evaluations", "raw_y", "sigma"]
+    # a logged property named x0 is renamed; x0 ... are the positions
+    assert {"x0_logged", "x0", "x1", "x5"} <= set(df.columns)
+    assert df.group_by("run_id").len()["len"].sort().to_list() == [2, 3, 3, 4]
     assert df.schema["evaluations"] == pl.UInt64
     overview = manager.overview
-    assert overview["instance_exp_attr"].to_list() == ["seven"] * 4
+    assert overview["instance_experiment"].to_list() == ["seven"] * 4
     assert overview["unset"].is_nan().all()

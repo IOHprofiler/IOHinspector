@@ -1,36 +1,37 @@
 import polars as pl
-import pandas as pd
-from typing import Iterable, Callable
+from typing import Callable, Sequence
 from .utils import get_sequence
+from .._upgrade import upgrade_hints
 from ..align import align_data
 
 
+@upgrade_hints
 def aggregate_convergence(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
-    free_vars: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     eval_min: int = None,
     eval_max: int = None,
     custom_op: Callable[[pl.Series], float] = None,
     maximization: bool = False,
-    return_as_pandas: bool = True,
-) -> pl.DataFrame | pd.DataFrame:
+) -> pl.DataFrame:
     """Aggregate performance data from a fixed-budget perspective with multiple statistics.
 
     Args:
         data (pl.DataFrame): The data object containing evaluation and performance data.
         eval_var (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
         fval_var (str, optional): Which column contains the function values. Defaults to "raw_y".
-        free_vars (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): The columns to group by: runs columns or
+            descriptors. Defaults to ["algorithm_name"].
         eval_min (int, optional): Minimum evaluation value to include. If None, uses minimum from data. Defaults to None.
         eval_max (int, optional): Maximum evaluation value to include. If None, uses maximum from data. Defaults to None.
         custom_op (Callable[[pl.Series], float], optional): Custom aggregation function to apply per group. Defaults to None.
         maximization (bool, optional): Whether the objective is being maximized. Defaults to False.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pl.DataFrame or pd.DataFrame: A DataFrame with aggregated performance statistics (mean, min, max, median, std, geometric_mean).
+        pl.DataFrame: A DataFrame with aggregated performance statistics (mean, min,
+            max, median, std, geometric_mean).
     """
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
@@ -41,11 +42,11 @@ def aggregate_convergence(
     if eval_max is None:
         eval_max = data[eval_var].max()
     x_values = get_sequence(eval_min, eval_max, 50, scale_log=True, cast_to_int=True)
-    group_variables = free_vars + [eval_var]
+    group_variables = [*by, eval_var]
     data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),
         x_values,
-        group_cols=["data_id"] + free_vars,
+        group_cols=["run_id", *by],
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
@@ -70,6 +71,4 @@ def aggregate_convergence(
         )
 
     dt_plot = data_aligned.group_by(*group_variables).agg(aggregations)
-    if return_as_pandas:
-        return dt_plot.sort(eval_var).to_pandas()
     return dt_plot.sort(eval_var)

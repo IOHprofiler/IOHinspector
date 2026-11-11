@@ -26,7 +26,7 @@ class TestGetAttractorNetwork(unittest.TestCase):
                     442,
                     481,
                 ],
-                "data_id": [1] * 13,
+                "run_id": [1] * 13,
             }
         )
         nodes, edges = get_attractor_network(
@@ -45,12 +45,12 @@ class TestGetAttractorNetwork(unittest.TestCase):
         self.assertIn("count", nodes.columns)
         self.assertIn("evals", nodes.columns)
         # Check that the first node matches the first stagnation point
-        self.assertEqual(nodes.iloc[0]["x1"], 0)
-        self.assertEqual(nodes.iloc[0]["x2"], 0)
-        self.assertEqual(nodes.iloc[0]["y"], 35)
-        self.assertEqual(nodes.iloc[-1]["x1"], 10)
-        self.assertEqual(nodes.iloc[-1]["x2"], 10)
-        self.assertEqual(nodes.iloc[-1]["y"], 10)
+        self.assertEqual(nodes["x1"][0], 0)
+        self.assertEqual(nodes["x2"][0], 0)
+        self.assertEqual(nodes["y"][0], 35)
+        self.assertEqual(nodes["x1"][-1], 10)
+        self.assertEqual(nodes["x2"][-1], 10)
+        self.assertEqual(nodes["y"][-1], 10)
         # Check that counts and evals are positive
         self.assertTrue((nodes["count"] > 0).all())
         self.assertTrue((nodes["evals"] > 0).all())
@@ -60,8 +60,8 @@ class TestGetAttractorNetwork(unittest.TestCase):
         self.assertTrue((edges["count"] > 0).all())
         self.assertTrue((edges["stag_length_avg"] > 0).all())
         # Check that start and end refer to valid node indices
-        self.assertTrue(edges["start"].isin(nodes.index).all())
-        self.assertTrue(edges["end"].isin(nodes.index).all())
+        self.assertTrue(edges["start"].is_in(range(nodes.height)).all())
+        self.assertTrue(edges["end"].is_in(range(nodes.height)).all())
 
 
 if __name__ == "__main__":

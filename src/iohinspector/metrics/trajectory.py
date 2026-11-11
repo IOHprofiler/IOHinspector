@@ -1,20 +1,20 @@
 import numpy as np
 import polars as pl
-import pandas as pd
-from typing import Iterable
-from iohinspector.align import align_data
+from typing import Sequence
+from .._upgrade import upgrade_hints
+from ..align import align_data
 
 
+@upgrade_hints
 def get_trajectory(
     data: pl.DataFrame,
     traj_length: int = None,
     min_fevals: int = 1,
     evaluation_variable: str = "evaluations",
     fval_variable: str = "raw_y",
-    free_variables: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     maximization: bool = False,
-    return_as_pandas: bool = True,
-) -> pl.DataFrame | pd.DataFrame:
+) -> pl.DataFrame:
     """Generate aligned performance trajectories for algorithm comparison over fixed evaluation sequences.
 
     Args:
@@ -23,12 +23,13 @@ def get_trajectory(
         min_fevals (int, optional): Starting evaluation number for the trajectory. Defaults to 1.
         evaluation_variable (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
         fval_variable (str, optional): Which column contains the function values. Defaults to "raw_y".
-        free_variables (Iterable[str], optional): Which columns to NOT aggregate over. Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): The columns to group by: runs columns or
+            descriptors. Defaults to ["algorithm_name"].
         maximization (bool, optional): Whether the performance metric is being maximized. Defaults to False.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pl.DataFrame or pd.DataFrame: A DataFrame with aligned trajectory data where each row corresponds to a specific evaluation and performance value.
+        pl.DataFrame: A DataFrame with aligned trajectory data where each row
+            corresponds to a specific evaluation and performance value.
     """
     if traj_length is None:
         max_fevals = data[evaluation_variable].max()
@@ -36,15 +37,12 @@ def get_trajectory(
         max_fevals = traj_length + min_fevals
     x_values = np.arange(min_fevals, max_fevals + 1)
 
-    data_aligned = align_data(
+    return align_data(
         data.cast({evaluation_variable: pl.Int64}),
         x_values,
-        group_cols=["data_id"] + free_variables,
+        group_cols=["run_id", *by],
         x_col=evaluation_variable,
         y_col=fval_variable,
         maximization=maximization,
         silence_warning=True,
     )
-    if return_as_pandas:
-        data_aligned = data_aligned.to_pandas()
-    return data_aligned

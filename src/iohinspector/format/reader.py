@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,7 +29,8 @@ class StoredDataset:
 
     ``positions`` is None when the dataset has no positions. Filters on
     ``function_id`` and ``dimension`` of ``trace`` and ``positions`` skip row groups.
-    ``run_columns(by)`` gives the columns to group runs by (D17).
+    ``run_columns(by)`` gives the columns to group runs by (D17). ``files`` keeps a
+    temporary folder alive (``iohinspector.convert.read_dataset``).
     """
 
     path: Path
@@ -38,6 +39,7 @@ class StoredDataset:
     descriptors: pl.LazyFrame
     trace: pl.LazyFrame
     positions: pl.LazyFrame | None
+    files: Any = field(default=None, repr=False, compare=False)
 
     @property
     def dataset_id(self) -> str:

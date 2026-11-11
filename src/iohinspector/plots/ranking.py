@@ -1,21 +1,23 @@
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 
 import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sbs
 
-from iohinspector.metrics.ranking import (
+from .._upgrade import upgrade_hints
+from ..metrics.ranking import (
     get_robustrank_changes,
     get_robustrank_over_time,
+    get_tournament_ratings,
 )
-from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
-from iohinspector.metrics import get_tournament_ratings
+from .utils import BasePlotArgs, _create_plot_args, _save_fig
 
 
+@upgrade_hints
 def plot_tournament_ranking(
     data,
-    alg_vars: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     fid_vars: Iterable[str] = ["function_name"],
     fval_var: str = "raw_y",
     nrounds: int = 25,
@@ -33,8 +35,9 @@ def plot_tournament_ranking(
 
     Args:
         data (pl.DataFrame): Input dataframe containing algorithm performance trajectory data.
-        alg_vars (Iterable[str], optional): Which columns contain the algorithm identifiers that will compete.
-            Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): Which columns contain the algorithm identifiers
+            that will
+            compete. Defaults to ["algorithm_name"]; the plot shows the first.
         fid_vars (Iterable[str], optional): Which columns contain the problem/function identifiers for competition.
             Defaults to ["function_name"].
         fval_var (str, optional): Which column contains the performance values. Defaults to "raw_y".
@@ -50,13 +53,13 @@ def plot_tournament_ranking(
             - All other BasePlotArgs parameters (xlim, ylim, xscale, yscale, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the ELO ratings
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            ELO ratings
             dataframe used to create the plot.
     """
     # candlestick plot based on average and volatility
-    dt_elo = get_tournament_ratings(
-        data, alg_vars, fid_vars, fval_var, nrounds, maximization
-    )
+    dt_elo = get_tournament_ratings(data, by, fid_vars, fval_var, nrounds, maximization)
+    pdf = dt_elo.to_pandas()
 
     plot_args = _create_plot_args(
         BasePlotArgs(
@@ -73,12 +76,12 @@ def plot_tournament_ranking(
     else:
         fig = None
 
-    sbs.pointplot(data=dt_elo, x=alg_vars[0], y="Rating", linestyle="none", ax=ax)
+    sbs.pointplot(data=pdf, x=by[0], y="Rating", linestyle="none", ax=ax)
 
     ax.errorbar(
-        dt_elo[alg_vars[0]],
-        dt_elo["Rating"],
-        yerr=dt_elo["Deviation"],
+        pdf[by[0]],
+        pdf["Rating"],
+        yerr=pdf["Deviation"],
         fmt="o",
         color="blue",
         alpha=0.6,
@@ -91,21 +94,6 @@ def plot_tournament_ranking(
     _save_fig(fig, file_name, plot_args)
 
     return ax, dt_elo
-
-
-def robustranking():
-    # to decide which plot(s) to use and what exact interface to define
-    raise NotImplementedError()
-
-
-def stats_comparison():
-    # heatmap or graph of statistical comparisons
-    raise NotImplementedError()
-
-
-def winnning_fraction_heatmap():
-    # nevergrad-like heatmap
-    raise NotImplementedError()
 
 
 def plot_robustrank_over_time(

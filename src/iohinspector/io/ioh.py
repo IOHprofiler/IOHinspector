@@ -360,7 +360,7 @@ def precision_entry(precision: str | None) -> dict[str, Any]:
 class DatFile:
     """A parsed ``.dat`` file. ``trace`` has ``run_index``, ``row``, ``evaluations``,
     ``raw_y`` and the extra columns under their source names, as text with
-    ``None`` as null (``typed`` makes the numeric ones float64)."""
+    ``None`` as null."""
 
     path: str
     lines: DataLines
@@ -369,13 +369,6 @@ class DatFile:
     #: Extra columns with a token that is not a number, with its line.
     text_columns: dict[str, int]
     header_mismatch: bool = False
-
-    def typed(self) -> pl.DataFrame:
-        """``trace`` with every extra column that holds only numbers as float64."""
-        extra = self.trace.columns[4:]
-        return self.trace.with_columns(
-            to_float(c) for c in extra if c not in self.text_columns
-        )
 
 
 def to_float(column: str) -> pl.Expr:
