@@ -16,6 +16,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from iohinspector.convert import convert
 from iohinspector.format import scan_dataset, validate_dataset
 from iohinspector.io import READERS, ReaderError, detect_format, read
 from iohinspector.io.coco import detect_coco, read_coco
@@ -494,45 +495,38 @@ def test_nested_archives(tmp_path):
         zf.writestr("inner.tgz", inner)
         zf.writestr("../escape.info", b"x")
         zf.writestr("README.txt", b"hello")
-    assert detect_coco(outer.parent)
-    result = read_coco(outer.parent, "arch")
-    assert set(result.runs["source_file"]) == {
+    manifest = convert(outer.parent, tmp_path / "ds")
+    assert manifest["reader"]["name"] == "coco"
+    runs = scan_dataset(tmp_path / "ds", warn=False).runs.collect()
+    assert set(runs["source_file"]) == {
         "outer.zip/inner.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"
     }
-    archives = {a["path"]: a.get("archive") for a in result.manifest["archives"]}
+    archives = {a["path"]: a.get("archive") for a in manifest["archives"]}
     assert archives == {"outer.zip": None, "outer.zip/inner.tgz": "outer.zip"}
-    sources = {s["path"]: s.get("archive") for s in result.manifest["sources"]}
+    sources = {s["path"]: s.get("archive") for s in manifest["sources"]}
     assert sources["outer.zip/inner.tgz/alg/bbobexp_f1.info"] == "outer.zip/inner.tgz"
-    skipped = [
-        w for w in result.manifest["warnings"] if w["code"] == "skipped_archive_member"
-    ]
+    skipped = [w for w in manifest["warnings"] if w["code"] == "skipped_archive_member"]
     assert len(skipped) == 2
-    archive = result.descriptors.filter(pl.col("key") == "archive")["value"].unique()
-    assert archive.to_list() == ["outer.zip"]
-    result.write(tmp_path / "ds")
-    assert validate_dataset(tmp_path / "ds").ok
 
 
 def test_archive_as_input(tmp_path):
     src = write_coco(tmp_path / "src", {"dat": DAT})
     path = tmp_path / "alg.tgz"
     path.write_bytes(_tgz(_folder_files(src, "alg/")))
-    assert detect_format(path) == "coco"
-    result = read_coco(path, "a")
-    assert set(result.runs["source_file"]) == {
-        "alg.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"
-    }
+    manifest = convert(path, tmp_path / "ds")
+    runs = scan_dataset(tmp_path / "ds", warn=False).runs.collect()
+    assert set(runs["source_file"]) == {"alg.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"}
     assert (
-        result.manifest["archives"][0]["sha256"]
+        manifest["archives"][0]["sha256"]
         == hashlib.sha256(path.read_bytes()).hexdigest()
     )
 
 
 def test_broken_archive_is_skipped(tmp_path):
-    write_coco(tmp_path, {"dat": DAT})
-    (tmp_path / "broken.zip").write_bytes(b"not a zip")
-    result = read_coco(tmp_path, "b")
-    assert "skipped_archive" in codes(result)
+    write_coco(tmp_path / "in", {"dat": DAT})
+    (tmp_path / "in" / "broken.zip").write_bytes(b"not a zip")
+    manifest = convert(tmp_path / "in", tmp_path / "ds")
+    assert "skipped_archive" in [w["code"] for w in manifest["warnings"]]
 
 
 def test_no_info_file(tmp_path):

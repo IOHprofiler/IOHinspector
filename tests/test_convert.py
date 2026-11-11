@@ -14,7 +14,7 @@ import pytest
 from iohinspector.cli import main
 from iohinspector.convert import ConvertError, PathPattern, convert, parse_tag
 from iohinspector.format import scan_dataset, validate_dataset
-from iohinspector.io import read_ioh
+from iohinspector.io import ReaderError, read_ioh
 
 TESTS = Path(__file__).resolve().parent
 IOH = TESTS / "io" / "fixtures" / "ioh040"
@@ -215,7 +215,7 @@ def test_custom_csv_needs_its_mapping(tmp_path):
 
 def test_unknown_input(tmp_path):
     (tmp_path / "notes.txt").write_text("hello\n")
-    with pytest.raises(ConvertError, match="no reader recognises"):
+    with pytest.raises(ReaderError, match="no reader recognises"):
         convert(tmp_path / "notes.txt", tmp_path / "ds")
     with pytest.raises(ConvertError, match="unknown format"):
         convert(IOH, tmp_path / "ds", format="sos")

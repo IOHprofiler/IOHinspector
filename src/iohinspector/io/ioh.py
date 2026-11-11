@@ -42,30 +42,31 @@ Quirks of the logger, each handled and recorded in the manifest:
 - Missing values of logged properties are written as ``None``; they are stored as
   null in extra trace columns. ``evaluations`` and ``raw_y`` must have values.
 """
-# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import polars as pl
 
-from ..format import descriptor_frame, file_entry, new_manifest, run_id
+from ..format import file_entry, run_id
 from .base import (
     NUMBER,
+    DataLines,
     ReaderError,
     ReadResult,
-    Renamer,
+    Tables,
     check_floats,
     check_integers,
-    parse_floats,
+    first_false,
+    is_number,
+    read_text,
     source_path,
+    split_lines,
 )
 
 READER_NAME = "ioh"
@@ -292,11 +293,7 @@ def _string_list(data: dict, key: str, path: Path) -> list[str] | None:
 def load_ioh_json(path: str | Path) -> IohJson:
     """Parse an IOHexperimenter JSON metadata file, repairing the logger's quirks."""
     path = Path(path)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        raise ReaderError(f"not UTF-8: {exc}", path) from exc
-    data, repairs = _parse_json_text(text, path)
+    data, repairs = _parse_json_text(read_text(path, str(path)), path)
     if not isinstance(data, dict):
         raise ReaderError("the top level is not an object", path)
     algorithm = _get(data, "algorithm", dict, path, "top level")
@@ -359,269 +356,143 @@ def precision_entry(precision: str | None) -> dict[str, Any]:
 
 
 @dataclass
-class DatRun:
-    """One run of a ``.dat`` file."""
-
-    header_line: int
-    rows: int
-    sha256: str
-
-
-@dataclass
 class DatFile:
     """A parsed ``.dat`` file. ``trace`` has ``run_index``, ``row``, ``evaluations``,
-    ``raw_y`` and the extra columns under their source names."""
+    ``raw_y`` and the extra columns under their source names, as text with
+    ``None`` as null (``typed`` makes the numeric ones float64)."""
 
     path: str
-    runs: list[DatRun]
+    lines: DataLines
     trace: pl.DataFrame
     positions: pl.DataFrame | None
-    #: Extra columns kept as text, with the first line that is not a number.
+    #: Extra columns with a token that is not a number, with its line.
     text_columns: dict[str, int]
     header_mismatch: bool = False
 
+    def typed(self) -> pl.DataFrame:
+        """``trace`` with every extra column that holds only numbers as float64."""
+        extra = self.trace.columns[4:]
+        return self.trace.with_columns(
+            to_float(c) for c in extra if c not in self.text_columns
+        )
 
-@dataclass
-class _Layout:
-    header: list[str]
-    properties: list[str]
-    positions: int
-    mismatch: bool
+
+def to_float(column: str) -> pl.Expr:
+    """A text column of number tokens (and nulls) as float64."""
+    return pl.col(column).str.to_lowercase().cast(pl.Float64)
 
 
 def _layout(
-    header: list[str],
-    attributes: list[str] | None,
-    dimension: int,
-    path: str,
-    line: int,
-) -> _Layout:
+    header: list[str], attributes: list[str] | None, dimension: int
+) -> tuple[list[str], int, bool]:
+    """The logged properties, the number of position columns, and whether the
+    header differs from ``attributes``. Raises ``ValueError`` for a bad header."""
     if tuple(header[: len(FLATFILE_META)]) == FLATFILE_META:
-        raise ReaderError(
-            "this is FlatFile output with meta data columns, not Analyzer output",
-            path,
-            line,
+        raise ValueError(
+            "this is FlatFile output with meta data columns, not Analyzer output"
         )
     xs = [f"x{i}" for i in range(dimension)]
-    mismatch = False
     if attributes is not None and header[: len(attributes)] == attributes:
-        n_attr = len(attributes)
-        props, rest = header[:n_attr], header[n_attr:]
+        props, rest = header[: len(attributes)], header[len(attributes) :]
         if rest and rest != xs:
-            raise ReaderError(
-                f"header columns {rest} are neither logged properties nor x0..x{dimension - 1}",
-                path,
-                line,
+            raise ValueError(
+                f"header columns {rest} are neither logged properties nor "
+                f"x0..x{dimension - 1}"
             )
+    elif dimension and len(header) >= dimension + 2 and header[-dimension:] == xs:
+        props, rest = header[:-dimension], xs
     else:
-        mismatch = attributes is not None
-        if dimension and len(header) >= dimension + 2 and header[-dimension:] == xs:
-            props, rest = header[:-dimension], xs
-        else:
-            props, rest = header, []
+        props, rest = header, []
     for required in ("evaluations", "raw_y"):
         if required not in props:
-            raise ReaderError(f"the header has no {required!r} column", path, line)
+            raise ValueError(f"the header has no {required!r} column")
     duplicates = sorted({p for p in props if props.count(p) > 1})
     if duplicates:
-        raise ReaderError(f"the header names {duplicates} more than once", path, line)
-    return _Layout(header, props, len(rest), mismatch)
+        raise ValueError(f"the header names {duplicates} more than once")
+    mismatch = attributes is not None and header[: len(attributes)] != attributes
+    return props, len(rest), mismatch
 
 
-@dataclass
-class _Lines:
-    """Data lines of a ``.dat`` file, normalised to single spaces."""
-
-    text: list[str] = field(default_factory=list)
-    numbers: list[int] = field(default_factory=list)
-    run_index: list[int] = field(default_factory=list)
-    row: list[int] = field(default_factory=list)
-
-
-def _split_lines(  # pylint: disable=too-many-locals
-    path: Path, display: str, attributes: list[str] | None, dimension: int
-):
-    try:
-        text = path.read_bytes().decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ReaderError(f"not UTF-8: {exc}", display) from exc
-    layout: _Layout | None = None
-    runs: list[DatRun] = []
-    hashes: list[Any] = []
-    lines = _Lines()
-    for number, raw in enumerate(text.split("\n"), 1):
-        tokens = raw.split()
-        if not tokens:
-            continue
-        if NUMBER.fullmatch(tokens[0]) is None:
-            layout = _header(tokens, layout, attributes, dimension, (display, number))
-            runs.append(DatRun(number, 0, ""))
-            hashes.append(hashlib.sha256())
-            continue
-        if layout is None:
-            raise ReaderError("data line before the first header line", display, number)
-        if len(tokens) != len(layout.header):
-            raise ReaderError(
-                _width_message(len(tokens), len(layout.header)), display, number
-            )
-        line = " ".join(tokens)
-        hashes[-1].update(line.encode("utf-8") + b"\n")
-        lines.text.append(line)
-        lines.numbers.append(number)
-        lines.run_index.append(len(runs) - 1)
-        lines.row.append(runs[-1].rows)
-        runs[-1].rows += 1
-    for run, digest in zip(runs, hashes):
-        run.sha256 = digest.hexdigest()
-    return layout, runs, lines
-
-
-def _header(
-    tokens: list[str],
-    layout: _Layout | None,
-    attributes: list[str] | None,
-    dimension: int,
-    where: tuple[str, int],
-) -> _Layout:
-    """The layout from the first header line; later headers must repeat it."""
-    if layout is None:
-        return _layout(tokens, attributes, dimension, *where)
-    if tokens != layout.header:
-        raise ReaderError(
-            f"header {' '.join(tokens)!r} differs from the first header "
-            f"{' '.join(layout.header)!r}",
-            *where,
-        )
-    return layout
-
-
-def _width_message(got: int, want: int) -> str:
-    message = f"{got} fields, but the header has {want}"
-    if got == want - 1:
+def _check_widths(lines: DataLines, width: int, display: str) -> None:
+    bad = lines.frame.filter(pl.col("width") != width)
+    if bad.is_empty():
+        return
+    got = bad["width"][0]
+    message = f"{got} fields, but the header has {width}"
+    if got == width - 1:
         message += (
             ". This is the shape of IOHexperimenter's FlatFile separator bug (a run "
             "number glued to the first value), which cannot be undone reliably; log "
             "the data again with a fixed IOHexperimenter"
         )
-    return message
+    raise ReaderError(message, display, bad["line"][0])
 
 
-def parse_dat(  # pylint: disable=too-many-locals
+def _is_header(_line: str, tokens: list[str]) -> bool:
+    return NUMBER.fullmatch(tokens[0]) is None
+
+
+def parse_dat(
     path: str | Path,
     *,
     display: str | None = None,
     dimension: int = 0,
     attributes: list[str] | None = None,
-    text_columns: Iterable[str] = (),
 ) -> DatFile:
     """Parse an Analyzer ``.dat`` file.
 
     ``attributes`` is the JSON's list of logged properties; header columns after
     them named ``x0`` ... ``x(dimension-1)`` are positions. ``display`` names the
-    file in errors (default: ``path``). Extra columns are float64, with ``None``
-    as null; a column with other tokens is kept as text, as are the columns named
-    in ``text_columns``.
+    file in errors (default: ``path``). Every run must repeat the first header.
     """
     path = Path(path)
     display = display or str(path)
-    layout, runs, lines = _split_lines(path, display, attributes, dimension)
-    if layout is None:
-        return DatFile(display, [], _empty_trace(), None, {})
-    names = layout.properties + [f"x{i}" for i in range(layout.positions)]
-    width = len(names)
-    if lines.text:
-        split = (
-            pl.Series("l", lines.text)
-            .str.split_exact(" ", width - 1)
-            .struct.rename_fields([f"c{i}" for i in range(width)])
-            .struct.unnest()
-        )
-    else:
-        split = pl.DataFrame(
-            {f"c{i}": [] for i in range(width)},
-            schema={f"c{i}": pl.String for i in range(width)},
-        )
-    keys = {
-        "run_index": pl.Series("run_index", lines.run_index, dtype=pl.Int64),
-        "row": pl.Series("row", lines.row, dtype=pl.Int64),
-    }
-    columns, text = _property_columns(
-        split, layout.properties, lines.numbers, display, set(text_columns)
-    )
-    trace = pl.DataFrame({**keys, **columns})
-    positions = None
-    if layout.positions:
-        offset = len(layout.properties)
-        positions = pl.DataFrame(
-            {
-                **keys,
-                **{
-                    f"x{i}": check_floats(
-                        split[f"c{offset + i}"], lines.numbers, display, f"x{i}"
-                    )
-                    for i in range(layout.positions)
-                },
-            }
-        )
-    return DatFile(display, runs, trace, positions, text, layout.mismatch)
-
-
-def _property_columns(
-    split: pl.DataFrame,
-    properties: list[str],
-    numbers: Sequence[int],
-    display: str,
-    force_text: set[str],
-) -> tuple[dict[str, pl.Series], dict[str, int]]:
-    """``evaluations``, ``raw_y`` and the extra columns, in that order."""
-    index = {name: i for i, name in enumerate(properties)}
-    columns = {
-        "evaluations": check_integers(
-            split[f"c{index['evaluations']}"], numbers, display, "evaluations"
-        ),
-        "raw_y": check_floats(split[f"c{index['raw_y']}"], numbers, display, "raw_y"),
-    }
-    text: dict[str, int] = {}
-    for i, name in enumerate(properties):
-        if name not in columns:
-            columns[name] = _extra_column(
-                split[f"c{i}"], name, numbers, force_text, text
+    lines = split_lines(read_text(path, display), display, _is_header)
+    if not lines.headers:
+        return DatFile(display, lines, _EMPTY, None, {})
+    number, text = lines.headers[0]
+    header = text.split()
+    try:
+        props, n_x, mismatch = _layout(header, attributes, dimension)
+    except ValueError as exc:
+        raise ReaderError(str(exc), display, number) from exc
+    for number, text in lines.headers[1:]:
+        if text.split() != header:
+            raise ReaderError(
+                f"header {' '.join(text.split())!r} differs from the first header "
+                f"{' '.join(header)!r}",
+                display,
+                number,
             )
-    return columns, text
-
-
-def _extra_column(
-    tokens: pl.Series,
-    name: str,
-    numbers: Sequence[int],
-    force_text: set[str],
-    text: dict[str, int],
-) -> pl.Series:
-    """float64 with ``None`` as null, or the tokens as text when some token is not
-    a number (its line goes into ``text``) or the column is in ``force_text``."""
-    values = None if name in force_text else parse_floats(tokens, name, NO_VALUE)
-    if values is not None:
-        return values
-    numeric = tokens.str.contains(f"^(?:{NUMBER.pattern})$") | (tokens == NO_VALUE)
-    first = (~numeric).arg_true()
-    if not first.is_empty():
-        text[name] = numbers[int(first[0])]
-    return (
-        pl.select(pl.when(tokens == NO_VALUE).then(None).otherwise(tokens))
-        .to_series()
-        .alias(name)
+    _check_widths(lines, len(header), display)
+    columns = lines.tokens(len(header))
+    tokens = dict(zip(props, columns))
+    numbers = lines.frame["line"].to_list()
+    keys = lines.frame.select("run_index", "row")
+    extra = [c for c in props if c not in ("evaluations", "raw_y")]
+    trace = keys.with_columns(
+        check_integers(tokens["evaluations"], numbers, display, "evaluations"),
+        check_floats(tokens["raw_y"], numbers, display, "raw_y"),
+        *(tokens[c].replace(NO_VALUE, None).alias(c) for c in extra),
     )
+    text_columns = {}
+    for name in extra:
+        i = first_false(is_number(tokens[name]) | (tokens[name] == NO_VALUE))
+        if i is not None:
+            text_columns[name] = numbers[i]
+    positions = None
+    if n_x:
+        xs = columns[len(props) :]
+        positions = keys.with_columns(
+            check_floats(x, numbers, display, f"x{i}") for i, x in enumerate(xs)
+        )
+    return DatFile(display, lines, trace, positions, text_columns, mismatch)
 
 
-def _empty_trace() -> pl.DataFrame:
-    return pl.DataFrame(
-        schema={
-            "run_index": pl.Int64,
-            "row": pl.Int64,
-            "evaluations": pl.Int64,
-            "raw_y": pl.Float64,
-        }
-    )
+_EMPTY = pl.DataFrame(
+    schema={"run_index": pl.Int64, "row": pl.Int64}
+    | {"evaluations": pl.Int64, "raw_y": pl.Float64}
+)
 
 
 def infer_triggers(
@@ -684,31 +555,14 @@ def detect_ioh(path: str | Path) -> bool:
 
 
 @dataclass
-class _Builder:  # pylint: disable=too-many-instance-attributes
-    """Collects the tables while the files are read."""
+class _Reader:
+    """Reads the JSON files and their ``.dat`` files into ``tables``."""
 
-    dataset_id: str
+    tables: Tables
     root: Path
-    runs: list[dict[str, Any]] = field(default_factory=list)
-    descriptors: list[tuple[int, str, Any, str]] = field(default_factory=list)
-    traces: list[pl.DataFrame] = field(default_factory=list)
-    positions: list[pl.DataFrame] = field(default_factory=list)
-    sources: list[dict[str, Any]] = field(default_factory=list)
-    warnings: list[dict[str, str]] = field(default_factory=list)
-    renamer: Renamer = field(default_factory=Renamer)
+    #: Extra trace columns and whether every file holds only numbers in them.
+    numeric: dict[str, bool] = field(default_factory=dict)
     limited_precision: int = 0
-
-    def warn(self, code: str, message: str, source: str | None = None) -> None:
-        entry = {"code": code, "message": message}
-        if source is not None:
-            entry["source"] = source
-        self.warnings.append(entry)
-
-
-def _ioh_jsons(source: Path) -> list[Path]:
-    if source.is_dir():
-        return [p for p in sorted(source.rglob("*.json")) if p.is_file()]
-    return [source]
 
 
 def read_ioh(
@@ -722,174 +576,160 @@ def read_ioh(
     ``source`` is a JSON file or a folder, searched recursively for JSON files;
     JSON files that are not IOHexperimenter metadata are skipped with a
     ``skipped_file`` warning. Source paths are relative to ``root``, by default
-    the folder itself or the JSON file's folder.
+    the folder itself or the JSON file's folder. A column kept as text in one
+    ``.dat`` file is text in all.
     """
     source = Path(source)
     if not source.exists():
         raise FileNotFoundError(f"{source} not found")
-    root_path = (
-        Path(root)
-        if root is not None
-        else (source if source.is_dir() else source.parent)
-    )
-    builder = _Builder(dataset_id, root_path)
-    metas: list[IohJson] = []
-    for path in _ioh_jsons(source):
-        if not is_ioh_json(path):
-            if source.is_dir():
-                builder.warn(
-                    "skipped_file",
-                    "not IOHexperimenter metadata",
-                    source_path(path, root_path),
+    root_path = Path(root) if root else (source if source.is_dir() else source.parent)
+    reader = _Reader(Tables(dataset_id), root_path)
+    metas = _metas(source, reader)
+    named = _named_dats(metas, root_path)
+    for meta in metas:
+        _add_json(meta, reader)
+    if source.is_dir():
+        for path in sorted(source.rglob("*.dat")):
+            display = source_path(path, root_path)
+            if display not in named:
+                reader.tables.warn(
+                    "unreferenced_data_file",
+                    "no JSON metadata names this file; not read",
+                    display,
                 )
-                continue
+    if reader.limited_precision:
+        reader.tables.warn(
+            "limited_precision",
+            f"{reader.limited_precision} data file(s) were written with %.10f "
+            "(positions with %f): values below 5e-11 are stored as 0, and nothing "
+            "was corrected",
+        )
+    result = reader.tables.result(READER_NAME)
+    numeric = [c for c, ok in reader.numeric.items() if ok]
+    result.lazy_trace = result.lazy_trace.with_columns(map(to_float, numeric))
+    return result
+
+
+def _metas(source: Path, reader: _Reader) -> list[IohJson]:
+    paths = sorted(source.rglob("*.json")) if source.is_dir() else [source]
+    metas = []
+    for path in paths:
+        if is_ioh_json(path):
+            metas.append(load_ioh_json(path))
+        elif source.is_dir():
+            if path.is_file():
+                display = source_path(path, reader.root)
+                reader.tables.warn(
+                    "skipped_file", "not IOHexperimenter metadata", display
+                )
+        else:
             raise ReaderError("not an IOHexperimenter JSON metadata file", path)
-        metas.append(load_ioh_json(path))
     if not metas:
         raise ReaderError("no IOHexperimenter JSON metadata found", source)
-    dats = _read_dats(metas, builder)
-    for meta in metas:
-        _add_json(meta, dats, builder)
-    if source.is_dir():
-        _unreferenced(source, dats, builder)
-    if builder.limited_precision:
-        builder.warn(
-            "limited_precision",
-            f"{builder.limited_precision} data file(s) were written with %.10f (positions "
-            "with %f): values below 5e-11 are stored as 0, and nothing was corrected",
-        )
-    return _result(builder)
+    return metas
 
 
-def _read_dats(metas: list[IohJson], builder: _Builder) -> dict[str, DatFile | None]:
-    """Parse every ``.dat`` file once; a column kept as text anywhere is text everywhere."""
-    targets: dict[str, tuple[Path, IohJson, IohScenario]] = {}
+def _named_dats(metas: list[IohJson], root: Path) -> set[str]:
+    named: set[str] = set()
     for meta in metas:
         for scen in meta.scenarios:
-            local = meta.path.parent / scen.path
-            display = source_path(local, builder.root)
-            if display in targets:
+            display = source_path(meta.path.parent / scen.path, root)
+            if display in named:
                 raise ReaderError(f"{display} is named twice", meta.path)
-            targets[display] = (local, meta, scen)
-    dats: dict[str, DatFile | None] = {}
-    for display, (local, meta, scen) in targets.items():
-        dats[display] = (
-            parse_dat(
-                local,
-                display=display,
-                dimension=scen.dimension,
-                attributes=meta.attributes,
-            )
-            if local.is_file()
-            else None
-        )
-    text = {name for d in dats.values() if d is not None for name in d.text_columns}
-    for display, dat in dats.items():
-        if dat is None:
-            continue
-        floats = [
-            n for n in text if n in dat.trace.columns and n not in dat.text_columns
-        ]
-        if floats:
-            local, meta, scen = targets[display]
-            dats[display] = parse_dat(
-                local,
-                display=display,
-                dimension=scen.dimension,
-                attributes=meta.attributes,
-                text_columns=text,
-            )
-    return dats
+            named.add(display)
+    return named
 
 
-def _add_json(
-    meta: IohJson, dats: dict[str, DatFile | None], builder: _Builder
-) -> None:
-    # #lizard forgives  (one pass over the JSON scenarios; splitting adds no clarity)
-    json_path = source_path(meta.path, builder.root)
+def _add_json(meta: IohJson, reader: _Reader) -> None:
+    tables = reader.tables
+    json_path = source_path(meta.path, reader.root)
     logger = {"name": LOGGER_NAME, "version": meta.version}
-    builder.sources.append(
+    tables.sources.append(
         file_entry(meta.path, json_path, kind=JSON_KIND, logger=logger)
     )
     if meta.repairs:
-        builder.warn("json_repaired", "; ".join(meta.repairs), json_path)
-    precision = precision_entry(meta.precision)
-    keys = _key_names(meta, json_path, builder.renamer)
+        tables.warn("json_repaired", "; ".join(meta.repairs), json_path)
+    entry = {"kind": DAT_KIND, "logger": logger}
+    entry["precision"] = precision_entry(meta.precision)
+    keys = _key_names(meta, json_path, tables)
     for scen in meta.scenarios:
-        display = source_path(meta.path.parent / scen.path, builder.root)
-        dat = dats[display]
-        entry: dict[str, Any] = {
-            "kind": DAT_KIND,
-            "logger": logger,
-            "precision": precision,
-        }
-        if dat is None:
-            builder.sources.append(
+        local = meta.path.parent / scen.path
+        display = source_path(local, reader.root)
+        dat = None
+        if local.is_file():
+            dat = parse_dat(
+                local,
+                display=display,
+                dimension=scen.dimension,
+                attributes=meta.attributes,
+            )
+            _dat_source(dat, local, meta, (json_path, entry), reader)
+            if len(dat.lines.rows) != len(scen.runs):
+                tables.warn(
+                    "run_count_mismatch",
+                    f"{len(dat.lines.rows)} run(s) in the data file, "
+                    f"{len(scen.runs)} in {json_path}; runs are matched in order",
+                    display,
+                )
+        else:
+            tables.sources.append(
                 {"path": display, "sha256": None, "bytes": None, **entry}
             )
-            builder.warn(
+            tables.warn(
                 "missing_data_file", f"named in {json_path} but not found", display
             )
-            dat_runs = 0
-        else:
-            entry["data_rows"] = dat.trace.height
-            triggers = infer_triggers(dat.trace, meta.maximization)
-            if triggers is not None:
-                entry["triggers"] = triggers
-            builder.sources.append(
-                file_entry(meta.path.parent / scen.path, display, **entry)
-            )
-            if precision == DEFAULT_PRECISION:
-                builder.limited_precision += 1
-            if dat.header_mismatch:
-                builder.warn(
-                    "header_mismatch",
-                    f"the header differs from the attributes in {json_path}",
-                    display,
-                )
-            for name, line in sorted(dat.text_columns.items()):
-                builder.warn(
-                    "text_column",
-                    f"column {name!r} is kept as text: line {line} is not a number",
-                    display,
-                )
-            dat_runs = len(dat.runs)
-        if dat_runs != len(scen.runs) and dat is not None:
-            builder.warn(
-                "run_count_mismatch",
-                f"{dat_runs} run(s) in the data file, {len(scen.runs)} in {json_path}; "
-                "runs are matched in order",
-                display,
-            )
-        _add_runs(meta, scen, dat, display, keys, builder)
+        ids = _add_runs(meta, scen, dat, display, keys, tables)
+        if dat is not None and dat.trace.height:
+            _add_frames(dat, ids, reader)
+
+
+def _dat_source(
+    dat: DatFile,
+    local: Path,
+    meta: IohJson,
+    json_entry: tuple[str, dict[str, Any]],
+    reader: _Reader,
+) -> None:
+    """The source entry and warnings of a parsed ``.dat`` file."""
+    (json_path, entry), tables, display = json_entry, reader.tables, dat.path
+    fields = dict(entry, data_rows=dat.trace.height)
+    triggers = infer_triggers(dat.trace, meta.maximization)
+    if triggers is not None:
+        fields["triggers"] = triggers
+    tables.sources.append(file_entry(local, display, **fields))
+    if entry["precision"] == DEFAULT_PRECISION:
+        reader.limited_precision += 1
+    if dat.header_mismatch:
+        tables.warn(
+            "header_mismatch",
+            f"the header differs from the attributes in {json_path}",
+            display,
+        )
+    for name, line in sorted(dat.text_columns.items()):
+        tables.warn(
+            "text_column",
+            f"column {name!r} is kept as text: line {line} is not a number",
+            display,
+        )
 
 
 def _key_names(
-    meta: IohJson, json_path: str, renamer: Renamer
+    meta: IohJson, json_path: str, tables: Tables
 ) -> dict[tuple[str, str], str]:
     """Descriptor keys per ``(origin, source name)``, renamed where they clash."""
     taken: set[str] = set(ALGORITHM_KEYS) | set(BEST_KEYS)
     names: dict[tuple[str, str], str] = {}
+    runs = [r for scen in meta.scenarios for r in scen.runs]
     for origin, keys in (
         ("experiment", [k for k, _ in meta.experiment_attributes]),
-        (
-            "run",
-            meta.run_attribute_names
-            + [k for r in _all_runs(meta) for k, _ in r.attributes],
-        ),
+        ("run", meta.run_attribute_names + [k for r in runs for k, _ in r.attributes]),
     ):
         for key in keys:
-            if (origin, key) in names:
-                continue
-            new = renamer.descriptor_key(key, taken, origin, json_path)
-            names[(origin, key)] = new
-            taken.add(new)
+            if (origin, key) not in names:
+                new = tables.renamer.descriptor_key(key, taken, origin, json_path)
+                names[(origin, key)] = new
+                taken.add(new)
     return names
-
-
-def _all_runs(meta: IohJson) -> Iterable[IohRun]:
-    for scen in meta.scenarios:
-        yield from scen.runs
 
 
 def _add_runs(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -898,15 +738,15 @@ def _add_runs(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     dat: DatFile | None,
     display: str,
     keys: dict[tuple[str, str], str],
-    builder: _Builder,
-) -> None:
-    n_dat = 0 if dat is None else len(dat.runs)
+    tables: Tables,
+) -> dict[int, int]:
+    """Add the runs of one scenario; returns the run id of each run index."""
+    hashes = [] if dat is None else dat.lines.sha256
     ids: dict[int, int] = {}
-    for index in range(max(n_dat, len(scen.runs))):
-        rid = run_id(builder.dataset_id, display, index)
-        ids[index] = rid
+    for index in range(max(len(hashes), len(scen.runs))):
+        rid = ids[index] = run_id(tables.dataset_id, display, index)
         info = scen.runs[index] if index < len(scen.runs) else None
-        builder.runs.append(
+        tables.runs.append(
             {
                 "run_id": rid,
                 "suite": meta.suite,
@@ -920,16 +760,11 @@ def _add_runs(  # pylint: disable=too-many-arguments,too-many-positional-argumen
                 "n_objectives": 1,
                 "source_file": display,
                 "source_run_index": index,
-                "source_rows_sha256": dat.runs[index].sha256
-                if index < n_dat and dat
-                else None,
+                "source_rows_sha256": hashes[index] if index < len(hashes) else None,
             }
         )
-        builder.descriptors.extend(_run_descriptors(rid, meta, info, keys))
-    if dat is not None and dat.trace.height:
-        builder.traces.append(_with_run_ids(dat.trace, ids, display, builder.renamer))
-        if dat.positions is not None:
-            builder.positions.append(_with_run_ids(dat.positions, ids, display, None))
+        tables.descriptors.extend(_run_descriptors(rid, meta, info, keys))
+    return ids
 
 
 def _run_descriptors(
@@ -956,86 +791,21 @@ def _run_descriptors(
     return out
 
 
-def _with_run_ids(
-    frame: pl.DataFrame, ids: dict[int, int], display: str, renamer: Renamer | None
-) -> pl.DataFrame:
-    frame = frame.with_columns(
-        run_id=pl.col("run_index").replace_strict(ids, return_dtype=pl.Int64)
-    ).drop("run_index")
-    if renamer is None:
-        return frame.select("run_id", pl.exclude("run_id"))
-    fixed = ["run_id", "row", "evaluations", "raw_y"]
+def _add_frames(dat: DatFile, ids: dict[int, int], reader: _Reader) -> None:
+    """Add the trace (extra columns renamed where reserved) and positions."""
+    run = pl.col("run_index").replace_strict(ids, return_dtype=pl.Int64)
+    trace = dat.trace.select(run.alias("run_id"), pl.exclude("run_index"))
+    taken = set(trace.columns[:4])
     renames = {}
-    taken = set(fixed)
-    for name in frame.columns:
-        if name in fixed:
-            continue
-        new = renamer.trace_column(name, taken, display)
+    for name in trace.columns[4:]:
+        new = reader.tables.renamer.trace_column(name, taken, dat.path)
         taken.add(new)
-        if new != name:
-            renames[name] = new
-    return frame.rename(renames).select(
-        fixed + [c for c in frame.rename(renames).columns if c not in fixed]
-    )
-
-
-def _unreferenced(
-    source: Path, dats: dict[str, DatFile | None], builder: _Builder
-) -> None:
-    for path in sorted(source.rglob("*.dat")):
-        display = source_path(path, builder.root)
-        if display not in dats:
-            builder.warn(
-                "unreferenced_data_file",
-                "no JSON metadata names this file; not read",
-                display,
-            )
-
-
-def _result(builder: _Builder) -> ReadResult:
-    manifest = new_manifest(
-        builder.dataset_id,
-        READER_NAME,
-        sources=builder.sources,
-        warnings=builder.warnings,
-        renamed_columns=builder.renamer.records,
-    )
-    runs = (
-        pl.DataFrame(builder.runs, schema=_RUNS_INPUT, orient="row")
-        if builder.runs
-        else pl.DataFrame(schema=_RUNS_INPUT)
-    )
-    trace = (
-        pl.concat(builder.traces, how="diagonal")
-        if builder.traces
-        else _empty_trace()
-        .drop("run_index")
-        .insert_column(0, pl.Series("run_id", [], pl.Int64))
-    )
-    positions = (
-        pl.concat(builder.positions, how="diagonal") if builder.positions else None
-    )
-    return ReadResult(
-        manifest=manifest,
-        runs=runs,
-        trace=trace,
-        descriptors=descriptor_frame(builder.descriptors),
-        positions=positions,
-    )
-
-
-_RUNS_INPUT = {
-    "run_id": pl.Int64,
-    "suite": pl.String,
-    "function_id": pl.Int32,
-    "function_name": pl.String,
-    "instance": pl.Int32,
-    "dimension": pl.Int32,
-    "maximization": pl.Boolean,
-    "evals_used": pl.Int64,
-    "best_y": pl.Float64,
-    "n_objectives": pl.Int32,
-    "source_file": pl.String,
-    "source_run_index": pl.Int64,
-    "source_rows_sha256": pl.String,
-}
+        renames[name] = new
+        numeric = name not in dat.text_columns
+        reader.numeric[new] = reader.numeric.get(new, True) and numeric
+    reader.tables.add("trace", trace.rename(renames))
+    if dat.positions is not None:
+        reader.tables.add(
+            "positions",
+            dat.positions.select(run.alias("run_id"), pl.exclude("run_index")),
+        )

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .convert import ConvertError, convert
 from .format import FormatError, ManifestError
-from .io import CONVERTERS, READERS, ReaderError
+from .io import READERS, ReaderError
 from .io.custom_csv import MappingError
 from .verify import verify
 
@@ -43,7 +43,7 @@ def _parser() -> argparse.ArgumentParser:
     conv.add_argument("dataset", help="the dataset folder to write")
     conv.add_argument(
         "--format",
-        choices=[*READERS, *CONVERTERS],
+        choices=list(READERS),
         help="the input format (default: detected)",
     )
     conv.add_argument("--mapping", help="column mapping (JSON file) for custom-csv")

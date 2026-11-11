@@ -4,8 +4,9 @@ import random
 import polars as pl
 import pytest
 
-from iohinspector.format import FormatError, scan_dataset, validate_dataset
-from iohinspector.io import CONVERTERS, convert_custom_csv
+from iohinspector.convert import convert
+from iohinspector.format import scan_dataset, validate_dataset
+from iohinspector.io import READERS, ReaderError, read_custom_csv
 from iohinspector.io._csv import MappingError
 from iohinspector.io.custom_csv import load_mapping, validate_mapping
 
@@ -25,6 +26,10 @@ MAPPING = {
     "trace_columns": ["sigma", "label"],
 }
 HEADER = "alg,fid,dim,seed,popsize,evals,f,sigma,label\n"
+
+
+def convert_custom_csv(source, output, mapping):
+    return convert(source, output, mapping=mapping)
 
 
 def make_rows(seed=0, n_runs=6):
@@ -69,7 +74,7 @@ def source(tmp_path):
 
 
 def test_registered():
-    assert CONVERTERS["custom-csv"] is convert_custom_csv
+    assert READERS["custom-csv"].read is read_custom_csv
 
 
 def test_long_format_values_and_counts(tmp_path, source):
@@ -336,7 +341,7 @@ def test_data_errors_name_file_and_line(tmp_path, line, message):
     if message is None:
         convert_custom_csv(path, tmp_path / "ds", mapping)
         return
-    with pytest.raises(FormatError, match=message):
+    with pytest.raises(ReaderError, match=message):
         convert_custom_csv(path, tmp_path / "ds", mapping)
 
 
@@ -347,7 +352,7 @@ def test_run_level_column_must_be_constant(tmp_path):
     ]
     path, mapping = bad(tmp_path, lines)
     with pytest.raises(
-        FormatError, match=r"bad.csv:3: column 'popsize' is '21', but '20' in line 2"
+        ReaderError, match=r"bad.csv:3: column 'popsize' is '21', but '20' in line 2"
     ):
         convert_custom_csv(path, tmp_path / "ds", mapping)
 
@@ -355,13 +360,13 @@ def test_run_level_column_must_be_constant(tmp_path):
 def test_ragged_row_and_empty(tmp_path):
     path = tmp_path / "r.csv"
     path.write_text(HEADER + "A,1,5\n")
-    with pytest.raises(FormatError, match="r.csv:2: expected 9 fields"):
+    with pytest.raises(ReaderError, match="r.csv:2: expected 9 fields"):
         convert_custom_csv(path, tmp_path / "ds", MAPPING)
     path.write_text(HEADER)
-    with pytest.raises(FormatError, match="no data rows"):
+    with pytest.raises(ReaderError, match="no data rows"):
         convert_custom_csv(path, tmp_path / "ds", MAPPING)
     path.write_text("")
-    with pytest.raises(FormatError, match="file is empty"):
+    with pytest.raises(ReaderError, match="file is empty"):
         convert_custom_csv(path, tmp_path / "ds", MAPPING)
 
 
@@ -378,7 +383,7 @@ def test_positions_must_match_dimension(tmp_path):
             "maximization": {"constant": False},
         },
     }
-    with pytest.raises(FormatError, match="dimension 2, but positions lists 1"):
+    with pytest.raises(ReaderError, match="dimension 2, but positions lists 1"):
         convert_custom_csv(path, tmp_path / "ds", mapping)
 
 

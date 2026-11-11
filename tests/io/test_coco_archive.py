@@ -21,8 +21,8 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from iohinspector.format import validate_dataset
-from iohinspector.io.coco import read_coco
+from iohinspector.convert import convert
+from iohinspector.format import scan_dataset
 
 REPO = Path(__file__).resolve().parents[2]
 CACHE = Path(os.environ.get("COCO_ARCHIVE_CACHE", REPO / ".cache" / "coco-archive"))
@@ -74,13 +74,15 @@ def count(content: bytes) -> tuple[int, int]:
 @pytest.mark.parametrize("archive", ARCHIVES)
 def test_archive_reads_losslessly(archive, tmp_path):
     path = CACHE / archive
-    result = read_coco(path, "archive-sample")
+    manifest = convert(path, tmp_path / "ds", dataset_id="archive-sample")
+    dataset = scan_dataset(tmp_path / "ds", warn=False)
+    runs_df, trace = dataset.runs.collect(), dataset.trace.collect()
     files = members(path.read_bytes(), path.name)
-    sources = {s["path"]: s for s in result.manifest["sources"]}
+    sources = {s["path"]: s for s in manifest["sources"]}
     read = {p: c for p, c in files.items() if p in sources}
     assert read, "no data file read"
-    runs = Counter(result.runs["source_file"])
-    flagged = _rows_per_file(result)
+    runs = Counter(runs_df["source_file"])
+    flagged = _rows_per_file(runs_df, trace)
     for name, content in read.items():
         headers, rows = count(content)
         assert sources[name]["data_rows"] == rows, name
@@ -88,16 +90,14 @@ def test_archive_reads_losslessly(archive, tmp_path):
         if name in runs:  # the run's primary file
             assert runs[name] >= headers, name
     unread = sorted(set(files) - set(sources))
-    warned = {w.get("source") for w in result.manifest.get("warnings", [])}
+    warned = {w.get("source") for w in manifest.get("warnings", [])}
     assert set(unread) <= warned
-    result.write(tmp_path / "ds")
-    assert validate_dataset(tmp_path / "ds").ok
 
 
-def _rows_per_file(result) -> Counter:
+def _rows_per_file(runs: pl.DataFrame, trace: pl.DataFrame) -> Counter:
     """Trace rows per data file, from ``logged_in`` (or, for stems with one data
     file, the run's source file) and the stem of the run's source file."""
-    trace = result.trace.join(result.runs.select("run_id", "source_file"), on="run_id")
+    trace = trace.join(runs.select("run_id", "source_file"), on="run_id")
     own = pl.col("source_file").str.extract(r"\.([a-z]+)$")
     logged = pl.col("logged_in") if "logged_in" in trace.columns else pl.lit(None)
     kinds = (
