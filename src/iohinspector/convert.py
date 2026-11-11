@@ -131,7 +131,7 @@ def _compile_pattern(pattern: str) -> tuple[re.Pattern[str], list[tuple[str, str
     parts: list[str] = []
     fields: list[tuple[str, str]] = []
     for token in re.split(r"(\{[^{}]*\}|\*)", pattern.strip("/")):
-        if token == "*":
+        if token == "*":  # nosec B105  # a glob token, not a credential
             parts.append("[^/]*")
         elif token.startswith("{") and token.endswith("}"):
             key, kind = _key_and_type(token[1:-1], where)
@@ -266,7 +266,7 @@ def _csv_file(staged: _Staged, name: str) -> tuple[Path, str]:
     return files[0], files[0].relative_to(path).as_posix()
 
 
-def _run_format(  # pylint: disable=too-many-arguments
+def _run_format(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     staged: _Staged,
     output: Path,
     name: str,

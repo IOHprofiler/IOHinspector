@@ -64,7 +64,7 @@ class Mismatch:
 
 
 @dataclass
-class VerifyReport:
+class VerifyReport:  # pylint: disable=too-many-instance-attributes
     """The result of ``verify``. ``ok`` is true when nothing differs."""
 
     source: str
@@ -189,7 +189,7 @@ def _trace_aggregates(dataset: Path, runs: pl.DataFrame) -> pl.DataFrame:
 
 
 @dataclass
-class _State:
+class _State:  # pylint: disable=too-many-instance-attributes
     report: VerifyReport
     manifest: dict[str, Any]
     runs: pl.DataFrame
