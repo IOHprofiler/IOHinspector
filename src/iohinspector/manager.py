@@ -47,7 +47,9 @@ class DataManager:
 
         ``options`` go to ``iohinspector.convert.convert``: ``format`` (default:
         detected), ``mapping`` for custom CSV, ``dataset_id`` (default: the name of
-        ``path``), ``tags`` and ``tags_from_path``.
+        ``path``), ``tags`` and ``tags_from_path``. Source warnings, such as
+        limited precision, are not shown; they are in each dataset's
+        ``manifest["warnings"]``.
         """
         self._add(read_dataset(path, **options))
 
@@ -58,7 +60,7 @@ class DataManager:
 
     def add_dataset(self, path: str | os.PathLike[str]) -> None:
         """Add a converted dataset folder (``iohinspector convert``)."""
-        self._add(scan_dataset(path))
+        self._add(scan_dataset(path, warn=False))
 
     def _add(self, dataset: StoredDataset) -> None:
         if any(d.dataset_id == dataset.dataset_id for d in self.datasets):

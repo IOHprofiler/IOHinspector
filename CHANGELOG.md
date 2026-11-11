@@ -27,6 +27,7 @@ One data model and one way to load and use data. The outward API stays close to
 | `add_json(file)`, `add_coco_info(file)` | `add_folder(file)` |
 | `add_data_set`, `extend_overview` | `add_folder` or `add_dataset` |
 | adding the same folder twice duplicated it | fails; pass `dataset_id=` for a second copy |
+| source warnings (such as limited precision) shown on every load | not shown; they are in each dataset's `manifest["warnings"]` |
 | `data_sets` (old `Dataset` objects) | `datasets` (format v1 `StoredDataset`s) |
 | `select(data_ids, ...)`, positional | `select(run_ids=...)`, keyword-only |
 | `select(experiment_attributes=[(key, value)])` | `select(key=[value])`: any runs column or descriptor |

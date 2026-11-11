@@ -10,7 +10,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from iohinspector.format import DatasetWarning, scan_dataset, validate_dataset
+from iohinspector.format import scan_dataset, validate_dataset
 from iohinspector.io import READERS, ReaderError, detect_format, read
 from iohinspector.io.ioh import infer_triggers, load_ioh_json, parse_dat, read_ioh
 
@@ -464,8 +464,7 @@ def test_manager_columns_with_positions():
     from iohinspector import DataManager
 
     manager = DataManager()
-    with pytest.warns(DatasetWarning):
-        manager.add_folder(str(ROOT / "io" / "fixtures" / "ioh040" / "attributes"))
+    manager.add_folder(str(ROOT / "io" / "fixtures" / "ioh040" / "attributes"))
     df = manager.load(monotonic=False)
     assert df.height == 12
     assert df.columns[:4] == ["run_id", "evaluations", "raw_y", "sigma"]

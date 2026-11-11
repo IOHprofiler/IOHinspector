@@ -44,6 +44,15 @@ def test_add_folder_ioh_and_coco():
         assert len(m.datasets) == 1
 
 
+def test_source_warnings_are_kept_but_not_shown():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        m = DataManager()
+        m.add_folder(FOLDERS[0])
+    codes = [w["code"] for w in m.datasets[0].manifest.get("warnings", [])]
+    assert codes == ["limited_precision"]
+
+
 def test_add_a_json_file():
     json_file = os.path.join(FOLDERS[0], "IOHprofiler_f1_Sphere.json")
     m = one(json_file)

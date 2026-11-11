@@ -88,7 +88,7 @@ def get_data_ecdf(
                 if dt.is_numeric() or dt == pl.Boolean
                 else pl.lit(None, dtype=dt).alias(c)
                 for c, dt in dt_ecdf.schema.items()
-                if c not in keys
+                if c not in keys and c != "run_id"
             ]
         )
         .sort(eval_var)

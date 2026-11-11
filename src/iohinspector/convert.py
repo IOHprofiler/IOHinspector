@@ -253,13 +253,14 @@ def convert(  # pylint: disable=too-many-arguments
 
 
 def read_dataset(  # pylint: disable=consider-using-with
-    source: str | os.PathLike[str], **options: Any
+    source: str | os.PathLike[str], *, warn: bool = False, **options: Any
 ) -> StoredDataset:
     """Read ``source`` (a file, folder or archive) as a dataset, without keeping it.
 
     ``options`` are those of ``convert``. The dataset is converted to a temporary
     folder, removed when the returned object is, so it behaves exactly like a
-    converted dataset opened with ``scan_dataset``.
+    converted dataset opened with ``scan_dataset``. The manifest's warnings are
+    issued only with ``warn``; they stay in ``manifest["warnings"]`` either way.
     """
     files = tempfile.TemporaryDirectory(
         prefix="iohinspector-", ignore_cleanup_errors=True
@@ -267,7 +268,7 @@ def read_dataset(  # pylint: disable=consider-using-with
     path = Path(files.name) / "dataset"
     try:
         convert(source, path, **options)
-        return dataclasses.replace(scan_dataset(path), files=files)
+        return dataclasses.replace(scan_dataset(path, warn=warn), files=files)
     except BaseException:
         files.cleanup()
         raise
