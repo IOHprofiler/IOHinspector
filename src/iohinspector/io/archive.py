@@ -20,11 +20,12 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 from ..format import check_source_path, file_entry
 from .base import source_path
@@ -152,32 +153,33 @@ def _member_path(archive: str, name: str) -> str | None:
 def _extract(local: Path, dest: Path) -> list[tuple[str, Path | None]]:
     """Extract every member that is a regular file into ``dest`` (numbered, as
     names may clash). Returns ``(name, path)`` per member that is not a folder,
-    with a None path for the others."""
+    with a None path for links and other members that are not regular files."""
     out: list[tuple[str, Path | None]] = []
-    for name, content in _members(local):
-        if content is None:
-            out.append((name, None))
-            continue
-        target = dest / str(len(out))
-        with content, open(target, "wb") as fh:
-            shutil.copyfileobj(content, fh)
-        out.append((name, target))
-    return out
-
-
-def _members(local: Path) -> Iterator[tuple[str, IO[bytes] | None]]:
-    """``(name, content)`` of each member that is not a folder; the content is
-    None for links and other members that are not regular files."""
     if zipfile.is_zipfile(local):
         with zipfile.ZipFile(local) as archive:
             for info in archive.infolist():
-                mode = (info.external_attr >> 16) & 0o170000
+                regular = (info.external_attr >> 16) & 0o170000 in (0, 0o100000)
                 if not info.is_dir():
-                    regular = mode in (0, 0o100000)
-                    yield info.filename, archive.open(info) if regular else None
-        return
+                    opener = partial(archive.open, info) if regular else None
+                    out.append(_save(info.filename, opener, dest / str(len(out))))
+        return out
     with tarfile.open(local, mode="r:*") as archive:
         for member in archive:
             if not member.isdir():
-                regular = member.isfile()
-                yield member.name, archive.extractfile(member) if regular else None
+                opener = (
+                    partial(archive.extractfile, member) if member.isfile() else None
+                )
+                out.append(_save(member.name, opener, dest / str(len(out))))
+    return out
+
+
+def _save(
+    name: str, opener: Callable[[], Any] | None, target: Path
+) -> tuple[str, Path | None]:
+    """``(name, target)`` with the member's content copied to ``target``, or
+    ``(name, None)`` when there is no content to open."""
+    if opener is None:
+        return name, None
+    with opener() as content, open(target, "wb") as fh:
+        shutil.copyfileobj(content, fh)
+    return name, target

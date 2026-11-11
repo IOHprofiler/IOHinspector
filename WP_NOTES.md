@@ -7,8 +7,12 @@ Status: in progress
 
 - step 1-2 (first pass): one reader table and a shared base; archives and streaming (see Decisions)
 
+- step 3 (first pass): functions split below pylint/lizard limits (no new suppressions beyond two
+  class-level ones), shared `input_root`; duplicate tests merged (ioh/COCO defect tests that repeated
+  test_ioh/test_coco, COCO archive tests moved to one convert test of unsafe/broken archives)
+
 ## Next step
-Trim ioh.py (JSON half) and the tests in tests/io (step 3); measure memory on the largest COCO archive.
+Final snapshot comparison, line counts, notes cleanup; then hand back to the controller.
 
 ## Inventory (step 1)
 Before: io/ had 5,023 lines in 14 modules. Duplicated jobs, now one implementation each:
@@ -46,6 +50,10 @@ Before: io/ had 5,023 lines in 14 modules. Duplicated jobs, now one implementati
   `.positions` collect for in-memory use. The CSV reader reads its file once (was three passes).
 - CSV data errors are `ReaderError` (was `FormatError`); one message changed in precedence: a bad `budget`
   token in Nevergrad files is reported as the run field (`budget: '10.5' is not an integer`).
+- Memory (bbob sample of the COCO archive, 13 archives, 2.6 M trace rows, 2.4 M position rows):
+  reading peaks at 438 MB (was 1,008 MB); the whole convert still peaks at about 1.55 GB, old and new,
+  because `format.writer` dominates (memory_limit 256 MB per table, positions with up to 40 columns).
+  The writer is outside this package; follow-up if convert must use less.
 - Byte-identical check: a scratch script converts 53 inputs (all non-legacy fixtures, CSV samples,
   archives, tags, and a 24-archive sample of the COCO data archive) before and after.
 

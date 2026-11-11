@@ -179,9 +179,11 @@ def _finish(
     output: Path,
     stage: Staged,
     options: dict[str, Any],
-    records: list[tuple[int, str, Any, str]],
+    tags: tuple[Sequence[tuple[str, Any]], PathPattern | None],
 ) -> dict[str, Any]:
     """Add the tags, the archives and the convert options to the written dataset."""
+    runs = pl.read_parquet(output / "runs.parquet", columns=["run_id", "source_file"])
+    records = _tag_records(runs, *tags)
     if records:
         update_descriptors(output, records, origin=None)
     manifest = read_manifest(output, warn=False)
@@ -226,24 +228,21 @@ def convert(  # pylint: disable=too-many-arguments
     if output.exists() and not overwrite:
         raise FileExistsError(f"{output} exists; pass overwrite=True to replace it")
     dataset_id = check_dataset_id(dataset_id or default_dataset_id(source))
-    parsed = [parse_tag(t) if isinstance(t, str) else tuple(t) for t in tags]
+    parsed = [parse_tag(t) if isinstance(t, str) else (t[0], t[1]) for t in tags]
     pattern = PathPattern(tags_from_path) if tags_from_path else None
     with staged(source) as stage:
         name = _choose_format(stage.path, format, mapping)
         extra = {} if mapping is None else {"mapping": mapping}
-        result = READERS[name].read(stage.path, dataset_id, **extra)
-        result.write(output, overwrite=overwrite)
+        READERS[name].read(stage.path, dataset_id, **extra).write(
+            output, overwrite=overwrite
+        )
         options: dict[str, Any] = {"format": name, "input": Path(source).name}
         if parsed:
             options["tags"] = [f"{k}={v}" for k, v in parsed]
-        if tags_from_path:
-            options["tags_from_path"] = tags_from_path
+        if pattern is not None:
+            options["tags_from_path"] = pattern.pattern
         try:
-            runs = pl.read_parquet(
-                output / "runs.parquet", columns=["run_id", "source_file"]
-            )
-            records = _tag_records(runs, parsed, pattern)  # type: ignore[arg-type]
-            return _finish(output, stage, options, records)
+            return _finish(output, stage, options, (parsed, pattern))
         except Exception:
             shutil.rmtree(output, ignore_errors=True)
             raise

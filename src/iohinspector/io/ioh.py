@@ -63,6 +63,7 @@ from .base import (
     check_floats,
     check_integers,
     first_false,
+    input_root,
     is_number,
     read_text,
     source_path,
@@ -384,36 +385,52 @@ def to_float(column: str) -> pl.Expr:
 
 def _layout(
     header: list[str], attributes: list[str] | None, dimension: int
-) -> tuple[list[str], int, bool]:
-    """The logged properties, the number of position columns, and whether the
-    header differs from ``attributes``. Raises ``ValueError`` for a bad header."""
+) -> tuple[list[str], int]:
+    """The logged properties and the number of position columns of a header.
+    Raises ``ValueError`` for a bad header."""
     if tuple(header[: len(FLATFILE_META)]) == FLATFILE_META:
         raise ValueError(
             "this is FlatFile output with meta data columns, not Analyzer output"
         )
+    props, rest = _positions(header, attributes, dimension)
+    missing = [c for c in ("evaluations", "raw_y") if c not in props]
+    duplicates = sorted({p for p in props if props.count(p) > 1})
+    if missing:
+        raise ValueError(f"the header has no {missing[0]!r} column")
+    if duplicates:
+        raise ValueError(f"the header names {duplicates} more than once")
+    return props, len(rest)
+
+
+def _positions(
+    header: list[str], attributes: list[str] | None, dimension: int
+) -> tuple[list[str], list[str]]:
+    """The header split into logged properties and position columns."""
     xs = [f"x{i}" for i in range(dimension)]
     if attributes is not None and header[: len(attributes)] == attributes:
-        props, rest = header[: len(attributes)], header[len(attributes) :]
+        rest = header[len(attributes) :]
         if rest and rest != xs:
             raise ValueError(
                 f"header columns {rest} are neither logged properties nor "
                 f"x0..x{dimension - 1}"
             )
-    elif dimension and len(header) >= dimension + 2 and header[-dimension:] == xs:
-        props, rest = header[:-dimension], xs
-    else:
-        props, rest = header, []
-    for required in ("evaluations", "raw_y"):
-        if required not in props:
-            raise ValueError(f"the header has no {required!r} column")
-    duplicates = sorted({p for p in props if props.count(p) > 1})
-    if duplicates:
-        raise ValueError(f"the header names {duplicates} more than once")
-    mismatch = attributes is not None and header[: len(attributes)] != attributes
-    return props, len(rest), mismatch
+        return header[: len(attributes)], rest
+    if dimension and len(header) >= dimension + 2 and header[-dimension:] == xs:
+        return header[:-dimension], xs
+    return header, []
 
 
-def _check_widths(lines: DataLines, width: int, display: str) -> None:
+def _check_lines(lines: DataLines, header: list[str], display: str) -> None:
+    """Every header repeats the first, and every data line has its width."""
+    for number, text in lines.headers[1:]:
+        if text.split() != header:
+            raise ReaderError(
+                f"header {' '.join(text.split())!r} differs from the first header "
+                f"{' '.join(header)!r}",
+                display,
+                number,
+            )
+    width = len(header)
     bad = lines.frame.filter(pl.col("width") != width)
     if bad.is_empty():
         return
@@ -445,27 +462,27 @@ def parse_dat(
     them named ``x0`` ... ``x(dimension-1)`` are positions. ``display`` names the
     file in errors (default: ``path``). Every run must repeat the first header.
     """
-    path = Path(path)
     display = display or str(path)
-    lines = split_lines(read_text(path, display), display, _is_header)
+    lines = split_lines(read_text(Path(path), display), display, _is_header)
     if not lines.headers:
         return DatFile(display, lines, _EMPTY, None, {})
     number, text = lines.headers[0]
     header = text.split()
     try:
-        props, n_x, mismatch = _layout(header, attributes, dimension)
+        props, n_x = _layout(header, attributes, dimension)
     except ValueError as exc:
         raise ReaderError(str(exc), display, number) from exc
-    for number, text in lines.headers[1:]:
-        if text.split() != header:
-            raise ReaderError(
-                f"header {' '.join(text.split())!r} differs from the first header "
-                f"{' '.join(header)!r}",
-                display,
-                number,
-            )
-    _check_widths(lines, len(header), display)
-    columns = lines.tokens(len(header))
+    _check_lines(lines, header, display)
+    dat = _typed(lines, props, n_x, display)
+    dat.header_mismatch = (
+        attributes is not None and header[: len(attributes)] != attributes
+    )
+    return dat
+
+
+def _typed(lines: DataLines, props: list[str], n_x: int, display: str) -> DatFile:
+    """The trace, text columns and positions of checked data lines."""
+    columns = lines.tokens(len(props) + n_x)
     tokens = dict(zip(props, columns))
     numbers = lines.frame["line"].to_list()
     keys = lines.frame.select("run_index", "row")
@@ -482,11 +499,11 @@ def parse_dat(
             text_columns[name] = numbers[i]
     positions = None
     if n_x:
-        xs = columns[len(props) :]
         positions = keys.with_columns(
-            check_floats(x, numbers, display, f"x{i}") for i, x in enumerate(xs)
+            check_floats(x, numbers, display, f"x{i}")
+            for i, x in enumerate(columns[len(props) :])
         )
-    return DatFile(display, lines, trace, positions, text_columns, mismatch)
+    return DatFile(display, lines, trace, positions, text_columns)
 
 
 _EMPTY = pl.DataFrame(
@@ -579,24 +596,20 @@ def read_ioh(
     the folder itself or the JSON file's folder. A column kept as text in one
     ``.dat`` file is text in all.
     """
-    source = Path(source)
-    if not source.exists():
-        raise FileNotFoundError(f"{source} not found")
-    root_path = Path(root) if root else (source if source.is_dir() else source.parent)
+    source, root_path = input_root(source, root)
     reader = _Reader(Tables(dataset_id), root_path)
     metas = _metas(source, reader)
     named = _named_dats(metas, root_path)
     for meta in metas:
         _add_json(meta, reader)
-    if source.is_dir():
-        for path in sorted(source.rglob("*.dat")):
-            display = source_path(path, root_path)
-            if display not in named:
-                reader.tables.warn(
-                    "unreferenced_data_file",
-                    "no JSON metadata names this file; not read",
-                    display,
-                )
+    for path in sorted(source.rglob("*.dat")) if source.is_dir() else []:
+        display = source_path(path, root_path)
+        if display not in named:
+            reader.tables.warn(
+                "unreferenced_data_file",
+                "no JSON metadata names this file; not read",
+                display,
+            )
     if reader.limited_precision:
         reader.tables.warn(
             "limited_precision",
@@ -611,19 +624,16 @@ def read_ioh(
 
 
 def _metas(source: Path, reader: _Reader) -> list[IohJson]:
+    if not source.is_dir() and not is_ioh_json(source):
+        raise ReaderError("not an IOHexperimenter JSON metadata file", source)
     paths = sorted(source.rglob("*.json")) if source.is_dir() else [source]
     metas = []
-    for path in paths:
+    for path in (p for p in paths if p.is_file()):
         if is_ioh_json(path):
             metas.append(load_ioh_json(path))
-        elif source.is_dir():
-            if path.is_file():
-                display = source_path(path, reader.root)
-                reader.tables.warn(
-                    "skipped_file", "not IOHexperimenter metadata", display
-                )
         else:
-            raise ReaderError("not an IOHexperimenter JSON metadata file", path)
+            display = source_path(path, reader.root)
+            reader.tables.warn("skipped_file", "not IOHexperimenter metadata", display)
     if not metas:
         raise ReaderError("no IOHexperimenter JSON metadata found", source)
     return metas
@@ -649,8 +659,6 @@ def _add_json(meta: IohJson, reader: _Reader) -> None:
     )
     if meta.repairs:
         tables.warn("json_repaired", "; ".join(meta.repairs), json_path)
-    entry = {"kind": DAT_KIND, "logger": logger}
-    entry["precision"] = precision_entry(meta.precision)
     keys = _key_names(meta, json_path, tables)
     for scen in meta.scenarios:
         local = meta.path.parent / scen.path
@@ -663,7 +671,7 @@ def _add_json(meta: IohJson, reader: _Reader) -> None:
                 dimension=scen.dimension,
                 attributes=meta.attributes,
             )
-            _dat_source(dat, local, meta, (json_path, entry), reader)
+            _dat_source(dat, local, meta, json_path, reader)
             if len(dat.lines.rows) != len(scen.runs):
                 tables.warn(
                     "run_count_mismatch",
@@ -673,7 +681,7 @@ def _add_json(meta: IohJson, reader: _Reader) -> None:
                 )
         else:
             tables.sources.append(
-                {"path": display, "sha256": None, "bytes": None, **entry}
+                {"path": display, "sha256": None, "bytes": None, **_dat_entry(meta)}
             )
             tables.warn(
                 "missing_data_file", f"named in {json_path} but not found", display
@@ -683,21 +691,26 @@ def _add_json(meta: IohJson, reader: _Reader) -> None:
             _add_frames(dat, ids, reader)
 
 
+def _dat_entry(meta: IohJson) -> dict[str, Any]:
+    """The source entry fields every ``.dat`` file of ``meta`` has."""
+    return {
+        "kind": DAT_KIND,
+        "logger": {"name": LOGGER_NAME, "version": meta.version},
+        "precision": precision_entry(meta.precision),
+    }
+
+
 def _dat_source(
-    dat: DatFile,
-    local: Path,
-    meta: IohJson,
-    json_entry: tuple[str, dict[str, Any]],
-    reader: _Reader,
+    dat: DatFile, local: Path, meta: IohJson, json_path: str, reader: _Reader
 ) -> None:
     """The source entry and warnings of a parsed ``.dat`` file."""
-    (json_path, entry), tables, display = json_entry, reader.tables, dat.path
-    fields = dict(entry, data_rows=dat.trace.height)
+    tables, display = reader.tables, dat.path
+    fields = dict(_dat_entry(meta), data_rows=dat.trace.height)
     triggers = infer_triggers(dat.trace, meta.maximization)
     if triggers is not None:
         fields["triggers"] = triggers
     tables.sources.append(file_entry(local, display, **fields))
-    if entry["precision"] == DEFAULT_PRECISION:
+    if fields["precision"] == DEFAULT_PRECISION:
         reader.limited_precision += 1
     if dat.header_mismatch:
         tables.warn(

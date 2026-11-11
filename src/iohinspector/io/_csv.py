@@ -268,15 +268,17 @@ def read_csv(  # pylint: disable=too-many-arguments
     if not reader.runs:
         raise ReaderError("the file has no data rows", name)
     function_ids = reader.finish(origin)
-    tables = reader.tables
-    tables.sources.append(file_entry(path, name, kind=reader_name, data_rows=reader.n))
-    extra = {"function_ids": function_ids} if function_ids else None
-    result = tables.result(
-        reader_name, reader_options=dict(reader_options or {}), extra=extra
+    reader.tables.sources.append(
+        file_entry(path, name, kind=reader_name, data_rows=reader.n)
     )
-    kinds = {reader.extra_names[c]: t.kind(int64=True) for c, t in reader.types.items()}
+    result = reader.tables.result(
+        reader_name,
+        reader_options=dict(reader_options or {}),
+        extra={"function_ids": function_ids} if function_ids else None,
+    )
     result.lazy_trace = result.lazy_trace.with_columns(
-        _cast(n, k) for n, k in kinds.items()
+        _cast(reader.extra_names[c], t.kind(int64=True))
+        for c, t in reader.types.items()
     )
     return result
 
@@ -305,6 +307,18 @@ def _rows(
         raise ReaderError(str(exc), name) from exc
 
 
+def _descriptor_columns(
+    m: CsvMapping, header: list[str], field_cols: list[str]
+) -> list[str]:
+    """The columns kept as descriptors: the mapping's list, or for ``"rest"``
+    every column not used otherwise, plus the ``run_by`` columns that are."""
+    if m.descriptors != "rest":
+        return list(m.descriptors)
+    used = {m.evaluations, m.value, *field_cols}
+    rest = used | set(m.trace_columns) | set(m.positions)
+    return [h for h in header if h not in rest or (h in m.run_by and h in used)]
+
+
 class _CsvReader:  # pylint: disable=too-many-instance-attributes
     """Reads the rows of one CSV file with a mapping into ``tables``."""
 
@@ -316,12 +330,7 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
         self.col = {h: i for i, h in enumerate(header)}
         m = mapping
         field_cols = [s.column for s in m.fields.values() if s.column]
-        if m.descriptors == "rest":
-            used = {m.evaluations, m.value, *field_cols, *m.trace_columns, *m.positions}
-            keep = {h for h in header if h not in used} | set(m.run_by)
-            self.descriptor_cols = [h for h in header if h in keep]
-        else:
-            self.descriptor_cols = list(m.descriptors)
+        self.descriptor_cols = _descriptor_columns(m, header, field_cols)
         self.n_field_cols = len(field_cols)
         self.attr_idx = [self.col[c] for c in field_cols + self.descriptor_cols]
         self.key_idx = [self.col[c] for c in m.run_by]
@@ -510,6 +519,6 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
             )
         tokens = run.attrs[self.n_field_cols :]
         for c, kind, token in zip(self.descriptor_cols, kinds, tokens):
-            if token != "":
+            if token:
                 value = parse_token(token, kind)
                 out.append((run.rid, self.descriptor_keys[c], value, origin))

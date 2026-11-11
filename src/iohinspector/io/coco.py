@@ -58,6 +58,7 @@ from .base import (
     check_floats,
     check_integers,
     first_line,
+    input_root,
     read_text,
     source_path,
     split_lines,
@@ -296,10 +297,7 @@ def read_coco(
     paths are relative to ``root``, by default the folder itself or the file's
     folder.
     """
-    source = Path(source)
-    if not source.exists():
-        raise FileNotFoundError(f"{source} not found")
-    root_path = Path(root) if root else (source if source.is_dir() else source.parent)
+    source, root_path = input_root(source, root)
     reader = _Reader(Tables(dataset_id), root_path)
     infos = _read_infos(source, reader)
     if not infos:

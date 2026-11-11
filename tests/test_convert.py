@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import tarfile
@@ -107,6 +108,32 @@ def test_nested_archives_in_a_folder(tmp_path):
     assert any(p.startswith("plain/") and a is None for p, a in sources.items())
     nested = [p for p, a in sources.items() if a == "outer.tar.gz/sub/inner.zip"]
     assert nested and all(p.startswith("outer.tar.gz/sub/inner.zip/") for p in nested)
+
+
+def test_unsafe_members_and_broken_archives_are_skipped(tmp_path):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        link = tarfile.TarInfo("alg/evil")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        tar.addfile(link)
+    folder = tmp_path / "in"
+    shutil.copytree(IOH / "f_zero", folder / "plain")
+    with zipfile.ZipFile(folder / "outer.zip", "w") as zf:
+        zf.writestr("inner.tgz", buf.getvalue())
+        zf.writestr("../escape.info", b"x")
+    (folder / "broken.zip").write_bytes(b"not a zip")
+    manifest = convert(folder, tmp_path / "ds")
+    warned = sorted(
+        (w["code"], w["source"])
+        for w in manifest["warnings"]
+        if w["code"].startswith("skipped_archive")
+    )
+    assert warned == [
+        ("skipped_archive", "broken.zip"),
+        ("skipped_archive_member", "outer.zip"),
+        ("skipped_archive_member", "outer.zip/inner.tgz"),
+    ]
 
 
 def test_tags_and_path_tags(tmp_path):

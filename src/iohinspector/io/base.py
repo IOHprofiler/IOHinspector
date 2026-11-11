@@ -103,8 +103,63 @@ class Reader:
     read: Callable[..., ReadResult]
 
 
+class Renamer:
+    """Renames source names that the format reserves or that are already taken.
+
+    A clash gets ``<name>_<suffix>``, then ``<name>_<suffix>2`` and so on. Every
+    rename is recorded once per (source, table) for ``manifest.renamed_columns``.
+    """
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, str]] = []
+
+    def descriptor_key(
+        self, key: str, taken: Iterable[str], suffix: str, source: str
+    ) -> str:
+        return self.rename(
+            key,
+            set(taken),
+            (suffix, source, "descriptors"),
+            lambda k: descriptor_key_problem(k) is not None,
+        )
+
+    def trace_column(self, name: str, taken: Iterable[str], source: str) -> str:
+        return self.rename(
+            name, set(taken), ("logged", source, "trace"), is_reserved_trace_name
+        )
+
+    def rename(
+        self,
+        name: str,
+        taken: set[str],
+        where: tuple[str, str, str],
+        reserved: Callable[[str], bool],
+    ) -> str:
+        """``name``, or its first free ``<name>_<suffix>[n]``; ``where`` is
+        ``(suffix, source, table)``."""
+        if not reserved(name) and name not in taken:
+            return name
+        suffix, source, table = where
+        n = 1
+        new = f"{name}_{suffix}"
+        while reserved(new) or new in taken:
+            n += 1
+            new = f"{name}_{suffix}{n}"
+        record = {"from": name, "to": new, "source": source, "table": table}
+        if record not in self.records:
+            self.records.append(record)
+        return new
+
+
+def _scratch() -> Any:  # pylint: disable=consider-using-with
+    """A temporary folder, removed when the object that holds it is collected."""
+    return tempfile.TemporaryDirectory(
+        prefix="iohinspector-", ignore_cleanup_errors=True
+    )
+
+
 @dataclass
-class Tables:
+class Tables:  # pylint: disable=too-many-instance-attributes
     """What a reader collects while it reads its files one by one.
 
     Run rows and descriptors stay in memory; each trace or positions frame is
@@ -116,12 +171,8 @@ class Tables:
     descriptors: list[tuple[int, str, Any, str]] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[dict[str, str]] = field(default_factory=list)
-    renamer: Renamer = field(default_factory=lambda: Renamer())
-    files: Any = field(
-        default_factory=lambda: tempfile.TemporaryDirectory(
-            prefix="iohinspector-", ignore_cleanup_errors=True
-        )
-    )
+    renamer: Renamer = field(default_factory=Renamer)
+    files: Any = field(default_factory=_scratch)
     parts: dict[str, list[Path]] = field(
         default_factory=lambda: {"trace": [], "positions": []}
     )
@@ -163,10 +214,25 @@ class Tables:
         return pl.concat(parts, how="diagonal") if parts else None
 
 
-_EMPTY_TRACE = {"run_id": pl.Int64, "row": pl.Int64} | {
+_EMPTY_TRACE = {
+    "run_id": pl.Int64,
+    "row": pl.Int64,
     "evaluations": pl.Int64,
     "raw_y": pl.Float64,
 }
+
+
+def input_root(
+    source: str | os.PathLike[str], root: str | os.PathLike[str] | None
+) -> tuple[Path, Path]:
+    """The input and the folder its source paths are relative to: ``root``, or
+    the input itself when it is a folder, else its folder."""
+    source = Path(source)
+    if not source.exists():
+        raise FileNotFoundError(f"{source} not found")
+    if root:
+        return source, Path(root)
+    return source, source if source.is_dir() else source.parent
 
 
 def source_path(file: Path, root: Path) -> str:
@@ -261,11 +327,15 @@ def split_lines(
             for key, value in zip(cols, (len(rows) - 1, rows[-1], number, len(tokens))):
                 cols[key].append(value)
             rows[-1] += 1
-    frame = pl.DataFrame(
-        {k: pl.Series(v, dtype=pl.Int64) for k, v in cols.items()}
-        | {"text": pl.Series(lines, dtype=pl.String)}
+    return DataLines(
+        headers,
+        rows,
+        [d.hexdigest() for d in digests],
+        pl.DataFrame(
+            {k: pl.Series(v, dtype=pl.Int64) for k, v in cols.items()}
+            | {"text": pl.Series(lines, dtype=pl.String)}
+        ),
     )
-    return DataLines(headers, rows, [d.hexdigest() for d in digests], frame)
 
 
 # --------------------------------------------------------------------------- tokens
@@ -310,53 +380,3 @@ def check_integers(
             f"column {column!r}: {tokens[i]} does not fit in int64", path, lines[i]
         )
     return values.alias(column)
-
-
-class Renamer:
-    """Renames source names that the format reserves or that are already taken.
-
-    A clash gets ``<name>_<suffix>``, then ``<name>_<suffix>2`` and so on. Every
-    rename is recorded once per (source, table) for ``manifest.renamed_columns``.
-    """
-
-    def __init__(self) -> None:
-        self.records: list[dict[str, str]] = []
-
-    def descriptor_key(
-        self, key: str, taken: Iterable[str], suffix: str, source: str
-    ) -> str:
-        return self.rename(
-            key,
-            set(taken),
-            (suffix, source, "descriptors"),
-            lambda k: descriptor_key_problem(k) is not None,
-        )
-
-    def trace_column(
-        self, name: str, taken: Iterable[str], source: str, suffix: str = "logged"
-    ) -> str:
-        return self.rename(
-            name, set(taken), (suffix, source, "trace"), is_reserved_trace_name
-        )
-
-    def rename(
-        self,
-        name: str,
-        taken: set[str],
-        where: tuple[str, str, str],
-        reserved: Callable[[str], bool],
-    ) -> str:
-        """``name``, or its first free ``<name>_<suffix>[n]``; ``where`` is
-        ``(suffix, source, table)``."""
-        if not reserved(name) and name not in taken:
-            return name
-        suffix, source, table = where
-        n = 1
-        new = f"{name}_{suffix}"
-        while reserved(new) or new in taken:
-            n += 1
-            new = f"{name}_{suffix}{n}"
-        record = {"from": name, "to": new, "source": source, "table": table}
-        if record not in self.records:
-            self.records.append(record)
-        return new
