@@ -1,18 +1,30 @@
 # WP I25: Reader consolidation: one lean io package
 Branch: wp/I25-io-consolidation
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 0: extdata golden fixture converted to format v1 with the legacy reader; legacy reader, docs and tests removed
+- steps 1-2, 6: one reader table and a shared base; archives opened in one place; readers stream (see Decisions)
+- step 3: functions split below pylint/lizard limits (two class-level suppressions), shared `input_root`;
+  duplicate tests merged (ioh/COCO defect tests that repeated test_ioh/test_coco; COCO archive tests moved
+  to one convert test of unsafe and broken archives)
+- step 4: convert outputs of 53 inputs byte-identical before and after (below)
+- step 5: line counts (below)
 
-- step 1-2 (first pass): one reader table and a shared base; archives and streaming (see Decisions)
+## Line counts (step 5)
+| | before | after |
+|---|---:|---:|
+| `src/iohinspector/io` | 5,023 (14 modules) | 3,251 (10 modules) |
+| of which the legacy reader | 1,234 | 0 |
+| `tests/io` | 3,199 | 2,309 |
+| `src/iohinspector/convert.py` | 382 | 248 |
+| `src/iohinspector/verify/_scan.py` | 246 | 241 |
+| `tests/test_convert.py` + `tests/test_verify.py` | 548 | 576 |
 
-- step 3 (first pass): functions split below pylint/lizard limits (no new suppressions beyond two
-  class-level ones), shared `input_root`; duplicate tests merged (ioh/COCO defect tests that repeated
-  test_ioh/test_coco, COCO archive tests moved to one convert test of unsafe/broken archives)
+Net against main: `src` +1,393 / -3,304 lines, `tests` (without fixtures) +130 / -893, `docs` +11 / -119.
 
 ## Next step
-Final snapshot comparison, line counts, notes cleanup; then hand back to the controller.
+Controller: push, open the PR, wait for CI and Codacy. Then delete this file.
 
 ## Inventory (step 1)
 Before: io/ had 5,023 lines in 14 modules. Duplicated jobs, now one implementation each:
@@ -48,9 +60,17 @@ Before: io/ had 5,023 lines in 14 modules. Duplicated jobs, now one implementati
 - Streaming (step 6): `base.Tables` writes each file's trace/positions frame to a temporary Arrow file;
   `ReadResult.lazy_trace` / `lazy_positions` scan them and the writer streams them. `ReadResult.trace` and
   `.positions` collect for in-memory use. The CSV reader reads its file once (was three passes).
+- API: `convert_nevergrad` / `convert_custom_csv` (write a dataset) became `read_nevergrad(source,
+  dataset_id)` / `read_custom_csv(source, dataset_id, mapping)` (return a `ReadResult`), like `read_ioh`
+  and `read_coco`; `iohinspector.convert.convert` writes. A CSV reader given a folder reads its only CSV
+  file (was in `convert`). Unreleased API (I08/I09), so no deprecation shims.
+- `--tag` values use the format's number rules (`parse_token`, shared with CSV): `1_000` or `infinity`
+  are no longer accepted as int/float tags.
+- COCO header key `archive` is no longer renamed to `archive_experiment` (the key was reserved for the
+  removed descriptor).
 - CSV data errors are `ReaderError` (was `FormatError`); one message changed in precedence: a bad `budget`
   token in Nevergrad files is reported as the run field (`budget: '10.5' is not an integer`).
-- Memory (bbob sample of the COCO archive, 13 archives, 2.6 M trace rows, 2.4 M position rows):
+- Memory (the `bbob` part of the COCO archive sample, 15 archives, 2.6 M trace rows, 2.4 M position rows):
   reading peaks at 438 MB (was 1,008 MB); the whole convert still peaks at about 1.55 GB, old and new,
   because `format.writer` dominates (memory_limit 256 MB per table, positions with up to 40 columns).
   The writer is outside this package; follow-up if convert must use less.
