@@ -3,6 +3,7 @@
 This document provides a comprehensive reference of all functions available in the IOHinspector package, organized by module.
 
 ## Table of Contents
+- [Loading data: DataManager](#loading-data-datamanager)
 - [Metrics Functions](#metrics-functions)
   - [AOCC (Area Over Convergence Curve)](#aocc)
   - [Attractor Network](#attractor-network)
@@ -25,6 +26,29 @@ This document provides a comprehensive reference of all functions available in t
   - [Ranking Plots](#ranking-plots)
   - [Single Run Plots](#single-run-plots)
   - [Plot Utils](#plot-utils)
+
+---
+
+## Loading data: DataManager
+
+`DataManager` is the one way in. It holds datasets of format v1 (`docs/format.md`) and
+shows them as four polars LazyFrames: `runs`, `descriptors`, `trace` and `positions`.
+Runs are keyed by `run_id`, a stable hash. All metrics and plots return polars
+DataFrames; call `.to_pandas()` for pandas.
+
+- `add_folder(path, **options)`: a file, folder or archive in any format
+  (IOHexperimenter, COCO, Nevergrad; custom CSV with `mapping=`). `options` are those
+  of `iohinspector.convert.convert`, such as `dataset_id`, `tags` and `tags_from_path`.
+- `add_folders(paths)`, and `add_dataset(path)` for a folder written by
+  `iohinspector convert`.
+- `overview`: one row per run, with the runs columns and every descriptor.
+- `select(function_ids=, algorithms=, dimensions=, instances=, run_ids=, **columns)`:
+  a new manager with the runs whose values are in the lists; `columns` names any other
+  runs column or descriptor, such as `suite=["BBOB"]`.
+- `functions`, `algorithms`, `dimensions`, `instances`, `descriptor_keys`, `n_runs`.
+- `load(monotonic=True, include_meta_data=False, include_columns=None, x_values=None)`:
+  the trace as one DataFrame, with the positions `x0` ... and, on request, the
+  overview columns.
 
 ---
 
@@ -62,20 +86,20 @@ Generate attractor network analysis from optimization algorithm trajectory data.
 - `epsilon (float, optional)`: Distance threshold below which positions are considered identical. Defaults to 0.0001.
 
 **Returns:**
-- `tuple[pd.DataFrame, pd.DataFrame]`: Two dataframes containing the nodes and edges of the attractor network.
+- `tuple[pl.DataFrame, pl.DataFrame]`: Two dataframes containing the nodes and edges of the attractor network.
 
 ---
 
 ### ECDF
 
-#### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", free_vars=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True, turbo=True)`
+#### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True, turbo=True)`
 Generate Empirical Cumulative Distribution Function (ECDF) data for performance analysis.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
 - `fval_var (str, optional)`: Which column contains the function/performance values. Defaults to "raw_y".
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
-- `free_vars (Iterable[str], optional)`: Which columns contain the grouping variables. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `maximization (bool, optional)`: Whether the optimization problem is maximization. Defaults to False.
 - `f_min (float, optional)`: Minimum function value bound. If None, uses data minimum. Defaults to None.
 - `f_max (float, optional)`: Maximum function value bound. If None, uses data maximum. Defaults to None.
@@ -87,7 +111,7 @@ Generate Empirical Cumulative Distribution Function (ECDF) data for performance 
 - `turbo (bool, optional)`: Whether to use optimized computation. Defaults to True.
 
 **Returns:**
-- `pd.DataFrame`: DataFrame containing ECDF data with evaluation points and cumulative probabilities.
+- `pl.DataFrame`: DataFrame containing ECDF data with evaluation points and cumulative probabilities.
 
 ---
 
@@ -108,7 +132,7 @@ Generate discretized EAF data for single-objective optimization analysis.
 **Returns:**
 - `pl.DataFrame`: DataFrame with discretized EAF data for visualization.
 
-#### `get_eaf_data(data, eval_var="evaluations", eval_min=1, eval_max=None, scale_eval_log=True, return_as_pandas=True)`
+#### `get_eaf_data(data, eval_var="evaluations", eval_min=1, eval_max=None, scale_eval_log=True)`
 Generate Empirical Attainment Function data for algorithm performance analysis.
 
 **Args:**
@@ -117,10 +141,9 @@ Generate Empirical Attainment Function data for algorithm performance analysis.
 - `eval_min (int, optional)`: Minimum evaluation bound. Defaults to 1.
 - `eval_max (int, optional)`: Maximum evaluation bound. If None, uses data maximum. Defaults to None.
 - `scale_eval_log (bool, optional)`: Whether evaluations should be log-scaled. Defaults to True.
-- `return_as_pandas (bool, optional)`: Whether to return results as pandas DataFrame. Defaults to True.
 
 **Returns:**
-- `pl.DataFrame | pd.DataFrame`: DataFrame containing EAF data with evaluation points and performance values.
+- `pl.DataFrame`: DataFrame containing EAF data with evaluation points and performance values.
 
 #### `get_eaf_pareto_data(data, obj1_var, obj2_var)`
 Generate EAF data for multi-objective optimization in Pareto space.
@@ -131,7 +154,7 @@ Generate EAF data for multi-objective optimization in Pareto space.
 - `obj2_var (str)`: Which column contains the second objective values.
 
 **Returns:**
-- `pd.DataFrame`: DataFrame containing EAF data in Pareto space with attainment probabilities.
+- `pl.DataFrame`: DataFrame containing EAF data in Pareto space with attainment probabilities.
 
 #### `get_eaf_diff_data(data1, data2, obj1_var, obj2_var)`
 Calculate EAF differences between two algorithm datasets for comparative analysis.
@@ -143,20 +166,20 @@ Calculate EAF differences between two algorithm datasets for comparative analysi
 - `obj2_var (str)`: Which column contains the second objective values.
 
 **Returns:**
-- `pd.DataFrame`: DataFrame containing EAF differences with statistical significance indicators.
+- `pl.DataFrame`: DataFrame containing EAF differences with statistical significance indicators.
 
 ---
 
 ### Fixed Budget
 
-#### `aggregate_convergence(data, eval_var="evaluations", fval_var="raw_y", free_vars=["algorithm_name"], eval_min=None, eval_max=None, maximization=False)`
+#### `aggregate_convergence(data, eval_var="evaluations", fval_var="raw_y", by=["algorithm_name"], eval_min=None, eval_max=None, maximization=False)`
 Aggregate algorithm performance data for fixed-budget convergence analysis.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
 - `fval_var (str, optional)`: Which column contains the function/objective values. Defaults to "raw_y".
-- `free_vars (Iterable[str], optional)`: Which columns contain the grouping variables. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `eval_min (float, optional)`: Minimum evaluation bound. If None, uses data minimum. Defaults to None.
 - `eval_max (float, optional)`: Maximum evaluation bound. If None, uses data maximum. Defaults to None.
 - `maximization (bool, optional)`: Whether the optimization problem is maximization. Defaults to False.
@@ -168,14 +191,14 @@ Aggregate algorithm performance data for fixed-budget convergence analysis.
 
 ### Fixed Target
 
-#### `aggregate_running_time(data, eval_var="evaluations", fval_var="raw_y", free_vars=["algorithm_name"], f_min=None, f_max=None, scale_f_log=True, eval_max=None, maximization=False)`
+#### `aggregate_running_time(data, eval_var="evaluations", fval_var="raw_y", by=["algorithm_name"], f_min=None, f_max=None, scale_f_log=True, eval_max=None, maximization=False)`
 Aggregate Expected Running Time (ERT) data for fixed-target performance analysis.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
 - `fval_var (str, optional)`: Which column contains the function/objective values. Defaults to "raw_y".
-- `free_vars (Iterable[str], optional)`: Which columns contain the grouping variables. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `f_min (float, optional)`: Minimum function value bound for target range. If None, uses data minimum. Defaults to None.
 - `f_max (float, optional)`: Maximum function value bound for target range. If None, uses data maximum. Defaults to None.
 - `scale_f_log (bool, optional)`: Whether function values should be log-scaled for target sampling. Defaults to True.
@@ -198,7 +221,7 @@ Extract 2D Pareto front data from multi-objective optimization results.
 - `obj2_var (str, optional)`: Which column contains the second objective values. Defaults to "F2".
 
 **Returns:**
-- `pd.DataFrame`: DataFrame containing only the Pareto-optimal solutions for visualization.
+- `pl.DataFrame`: DataFrame containing only the Pareto-optimal solutions for visualization.
 
 #### `get_indicator_over_time_data(data, indicator, obj_vars=["raw_y", "F2"], eval_min=1, eval_max=50_000, scale_eval_log=True, eval_steps=50)`
 Calculate multi-objective quality indicator values over evaluation time.
@@ -213,25 +236,25 @@ Calculate multi-objective quality indicator values over evaluation time.
 - `eval_steps (int, optional)`: Number of evaluation points to sample. Defaults to 50.
 
 **Returns:**
-- `pd.DataFrame`: DataFrame with indicator values calculated at different evaluation points.
+- `pl.DataFrame`: DataFrame with indicator values calculated at different evaluation points.
 
 ---
 
 ### Ranking
 
-#### `get_tournament_ratings(data, alg_vars=["algorithm_name"], fid_vars=["function_name"], fval_var="raw_y", nrounds=25, maximization=False)`
+#### `get_tournament_ratings(data, by=["algorithm_name"], fid_vars=["function_name"], fval_var="raw_y", nrounds=25, maximization=False)`
 Calculate ELO ratings from tournament-style algorithm competition.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing algorithm performance data across multiple problems.
-- `alg_vars (Iterable[str], optional)`: Which columns contain the algorithm identifiers. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `fid_vars (Iterable[str], optional)`: Which columns contain the problem/function identifiers. Defaults to ["function_name"].
 - `fval_var (str, optional)`: Which column contains the performance values. Defaults to "raw_y".
 - `nrounds (int, optional)`: Number of tournament rounds to simulate. Defaults to 25.
 - `maximization (bool, optional)`: Whether the performance should be maximized. Defaults to False.
 
 **Returns:**
-- `pd.DataFrame`: DataFrame with ELO ratings and deviations for each algorithm.
+- `pl.DataFrame`: DataFrame with ELO ratings and deviations for each algorithm.
 
 #### `get_robustrank_over_time(data, obj_vars, evals, indicator)`
 Generate robust ranking data for algorithms at specific evaluation timesteps.
@@ -272,13 +295,13 @@ Generate heatmap data for single algorithm run search space exploration analysis
 - `var_maxs (Iterable[float], optional)`: Maximum bounds for the search space variables. Defaults to [5].
 
 **Returns:**
-- `pd.DataFrame`: DataFrame formatted for heatmap visualization of search space exploration.
+- `pl.DataFrame`: DataFrame formatted for heatmap visualization of search space exploration.
 
 ---
 
 ### Trajectory
 
-#### `get_trajectory(data, traj_length=None, min_fevals=1, evaluation_variable="evaluations", fval_variable="raw_y", free_variables=["algorithm_name"], maximization=False, return_as_pandas=True)`
+#### `get_trajectory(data, traj_length=None, min_fevals=1, evaluation_variable="evaluations", fval_variable="raw_y", by=["algorithm_name"], maximization=False)`
 Generate aligned performance trajectories for algorithm comparison over fixed evaluation sequences.
 
 **Args:**
@@ -287,12 +310,11 @@ Generate aligned performance trajectories for algorithm comparison over fixed ev
 - `min_fevals (int, optional)`: Starting evaluation number for the trajectory. Defaults to 1.
 - `evaluation_variable (str, optional)`: Which column contains the evaluation numbers. Defaults to "evaluations".
 - `fval_variable (str, optional)`: Which column contains the function values. Defaults to "raw_y".
-- `free_variables (Iterable[str], optional)`: Which columns to NOT aggregate over. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `maximization (bool, optional)`: Whether the performance metric is being maximized. Defaults to False.
-- `return_as_pandas (bool, optional)`: Whether to return results as pandas DataFrame. Defaults to True.
 
 **Returns:**
-- `pl.DataFrame | pd.DataFrame`: DataFrame with aligned trajectory data where each row corresponds to a specific evaluation and performance value.
+- `pl.DataFrame`: DataFrame with aligned trajectory data where each row corresponds to a specific evaluation and performance value.
 
 ---
 
@@ -376,7 +398,7 @@ Creates a network graph where nodes represent attractors (stable points) in the 
 - `plot_args (dict | AttractorNetworkPlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, tuple[pd.DataFrame, pd.DataFrame]]`: The matplotlib axes object and a tuple containing two dataframes with the nodes and edges of the attractor network.
+- `tuple[matplotlib.axes.Axes, tuple[pl.DataFrame, pl.DataFrame]]`: The matplotlib axes object and a tuple containing two dataframes with the nodes and edges of the attractor network.
 
 **Example:**
 ```python
@@ -410,7 +432,7 @@ ax, (nodes_df, edges_df) = plot_attractor_network(
 
 ### ECDF Plots
 
-#### `plot_ecdf(data, fval_var="raw_y", eval_var="evaluations", free_vars=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True, *, ax=None, file_name=None, plot_args=None)`
+#### `plot_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True, *, ax=None, file_name=None, plot_args=None)`
 Plot Empirical Cumulative Distribution Function (ECDF) based on Empirical Attainment Functions.
 
 Creates line plots showing the cumulative probability of achieving different performance levels at various evaluation budgets, allowing comparison between algorithms or configurations.
@@ -419,7 +441,7 @@ Creates line plots showing the cumulative probability of achieving different per
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
 - `fval_var (str, optional)`: Which column contains the function/performance values. Defaults to "raw_y".
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
-- `free_vars (Iterable[str], optional)`: Which columns contain the grouping variables for distinguishing between different lines in the plot. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `maximization (bool, optional)`: Whether the optimization problem is maximization. Defaults to False.
 - `f_min (int, optional)`: Minimum function value bound. If None, uses data minimum. Defaults to None.
 - `f_max (int, optional)`: Maximum function value bound. If None, uses data maximum. Defaults to None.
@@ -433,7 +455,7 @@ Creates line plots showing the cumulative probability of achieving different per
 - `plot_args (dict | LinePlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the processed dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the processed dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -525,7 +547,7 @@ Creates a heatmap visualization showing the probability of attaining different c
 - `plot_args (dict | HeatmapPlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the EAF dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the EAF dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -573,7 +595,7 @@ Creates a heatmap visualization showing the statistical differences in attainmen
 - `plot_args (dict | HeatmapPlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the EAF differences dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the EAF differences dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -614,7 +636,7 @@ ax, data = plot_eaf_diffs(
 
 ### Fixed Budget Plots
 
-#### `plot_single_function_fixed_budget(data, eval_var="evaluations", fval_var="raw_y", free_vars=["algorithm_name"], eval_min=None, eval_max=None, maximization=False, measures=["geometric_mean"], *, ax=None, file_name=None, plot_args=None)`
+#### `plot_single_function_fixed_budget(data, eval_var="evaluations", fval_var="raw_y", by=["algorithm_name"], eval_min=None, eval_max=None, maximization=False, measures=["geometric_mean"], *, ax=None, file_name=None, plot_args=None)`
 Create a fixed-budget convergence plot showing algorithm performance over evaluation budgets.
 
 Visualizes how different algorithms converge by plotting aggregate performance measures (geometric mean, median, etc.) against evaluation budgets, allowing direct comparison of convergence behavior across algorithms.
@@ -623,7 +645,7 @@ Visualizes how different algorithms converge by plotting aggregate performance m
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
 - `fval_var (str, optional)`: Which column contains the function/objective values. Defaults to "raw_y".
-- `free_vars (Iterable[str], optional)`: Which columns contain the grouping variables for distinguishing between different lines in the plot. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `eval_min (float, optional)`: Minimum evaluation bound for the plot. If None, uses data minimum. Defaults to None.
 - `eval_max (float, optional)`: Maximum evaluation bound for the plot. If None, uses data maximum. Defaults to None.
 - `maximization (bool, optional)`: Whether the optimization problem is maximization. Defaults to False.
@@ -665,7 +687,7 @@ ax, data = plot_single_function_fixed_budget(
 
 ### Fixed Target Plots
 
-#### `plot_single_function_fixed_target(data, eval_var="evaluations", fval_var="raw_y", free_vars=["algorithm_name"], f_min=None, f_max=None, scale_f_log=True, eval_max=None, maximization=False, measures=["ERT"], *, ax=None, file_name=None, plot_args=None)`
+#### `plot_single_function_fixed_target(data, eval_var="evaluations", fval_var="raw_y", by=["algorithm_name"], f_min=None, f_max=None, scale_f_log=True, eval_max=None, maximization=False, measures=["ERT"], *, ax=None, file_name=None, plot_args=None)`
 Create a fixed-target plot showing Expected Running Time (ERT) analysis for algorithm performance.
 
 Visualizes how much computational budget (evaluations) algorithms need to reach specific target performance levels, allowing comparison of algorithm efficiency across different difficulty targets.
@@ -674,7 +696,7 @@ Visualizes how much computational budget (evaluations) algorithms need to reach 
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
 - `fval_var (str, optional)`: Which column contains the function/objective values. Defaults to "raw_y".
-- `free_vars (Iterable[str], optional)`: Which columns contain the grouping variables for distinguishing between different lines in the plot. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `f_min (float, optional)`: Minimum function value bound for target range. If None, uses data minimum. Defaults to None.
 - `f_max (float, optional)`: Maximum function value bound for target range. If None, uses data maximum. Defaults to None.
 - `scale_f_log (bool, optional)`: Whether function values should be log-scaled for target sampling. Defaults to True.
@@ -718,7 +740,7 @@ ax, data = plot_single_function_fixed_target(
 
 ### Multi-Objective Plots
 
-#### `plot_paretofronts_2d(data, obj1_var="raw_y", obj2_var="F2", free_var="algorithm_name", *, ax=None, file_name=None, plot_args=None)`
+#### `plot_paretofronts_2d(data, obj1_var="raw_y", obj2_var="F2", by=["algorithm_name"], *, ax=None, file_name=None, plot_args=None)`
 Visualize 2D Pareto fronts for multi-objective optimization algorithms.
 
 Creates a scatter plot showing the non-dominated solutions (Pareto fronts) achieved by different algorithms in a two-objective space, allowing visual comparison of algorithm performance and trade-off quality.
@@ -727,13 +749,13 @@ Creates a scatter plot showing the non-dominated solutions (Pareto fronts) achie
 - `data (pl.DataFrame)`: Input dataframe containing multi-objective optimization trajectory data.
 - `obj1_var (str, optional)`: Which column contains the first objective values. Defaults to "raw_y".
 - `obj2_var (str, optional)`: Which column contains the second objective values. Defaults to "F2".
-- `free_var (str, optional)`: Which column contains the grouping variable for distinguishing between different algorithms/categories. Defaults to "algorithm_name".
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `ax (matplotlib.axes._axes.Axes, optional)`: Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
 - `file_name (str, optional)`: Path to save the plot. If None, plot is not saved. Defaults to None.
 - `plot_args (dict | ScatterPlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the Pareto front dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the Pareto front dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -764,7 +786,7 @@ ax, data = plot_paretofronts_2d(
 
 *Example 2D Pareto fronts visualization showing non-dominated solutions achieved by different algorithms in objective space.*
 
-#### `plot_indicator_over_time(data, obj_vars=["raw_y", "F2"], indicator=None, free_var="algorithm_name", eval_min=1, eval_max=50_000, scale_eval_log=True, eval_steps=50, *, ax=None, file_name=None, plot_args=None)`
+#### `plot_indicator_over_time(data, obj_vars=["raw_y", "F2"], indicator=None, by=["algorithm_name"], eval_min=1, eval_max=50_000, scale_eval_log=True, eval_steps=50, *, ax=None, file_name=None, plot_args=None)`
 Plot the anytime performance of multi-objective quality indicators over evaluation budgets.
 
 Creates line plots showing how quality indicators (like hypervolume, IGD, etc.) evolve over the course of algorithm runs, enabling comparison of convergence behavior and solution quality improvement across different algorithms.
@@ -773,7 +795,7 @@ Creates line plots showing how quality indicators (like hypervolume, IGD, etc.) 
 - `data (pl.DataFrame)`: Input dataframe containing multi-objective optimization trajectory data.
 - `obj_vars (Iterable[str], optional)`: Which columns contain the objective values for indicator calculation. Defaults to ["raw_y", "F2"].
 - `indicator (object, optional)`: Quality indicator object from iohinspector.indicators module. Defaults to None.
-- `free_var (str, optional)`: Which column contains the grouping variable for distinguishing between different algorithms. Defaults to "algorithm_name".
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `eval_min (int, optional)`: Minimum evaluation bound for the time axis. Defaults to 1.
 - `eval_max (int, optional)`: Maximum evaluation bound for the time axis. Defaults to 50_000.
 - `scale_eval_log (bool, optional)`: Whether the evaluation axis should be log-scaled. Defaults to True.
@@ -783,7 +805,7 @@ Creates line plots showing how quality indicators (like hypervolume, IGD, etc.) 
 - `plot_args (dict | LinePlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the indicator performance dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the indicator performance dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -806,7 +828,7 @@ igdp_indicator = IGDPlus(reference_set = ref_set)
 
 ax, data = plot_indicator_over_time(
     df, ['obj1', 'obj2'], igdp_indicator, 
-    eval_min=10, eval_max=2000, eval_steps=50, free_var='algorithm_name',
+    eval_min=10, eval_max=2000, eval_steps=50, by=['algorithm_name'],
     file_name="example_plots/indicator_over_time.png"
 )
 ```
@@ -821,14 +843,14 @@ ax, data = plot_indicator_over_time(
 
 ### Ranking Plots
 
-#### `plot_tournament_ranking(data, alg_vars=["algorithm_name"], fid_vars=["function_name"], fval_var="raw_y", nrounds=25, maximization=False, *, ax=None, file_name=None, plot_args=None)`
+#### `plot_tournament_ranking(data, by=["algorithm_name"], fid_vars=["function_name"], fval_var="raw_y", nrounds=25, maximization=False, *, ax=None, file_name=None, plot_args=None)`
 Plot ELO ratings from tournament-style algorithm competition across multiple problems.
 
 Creates a point plot with error bars showing ELO ratings calculated from pairwise algorithm competitions. In each round, all algorithms compete against each other on every function, with performance samples determining winners and ELO rating updates.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing algorithm performance trajectory data.
-- `alg_vars (Iterable[str], optional)`: Which columns contain the algorithm identifiers that will compete. Defaults to ["algorithm_name"].
+- `by (Sequence[str], optional)`: The columns to group by: runs columns or descriptors. Defaults to ["algorithm_name"].
 - `fid_vars (Iterable[str], optional)`: Which columns contain the problem/function identifiers for competition. Defaults to ["function_name"].
 - `fval_var (str, optional)`: Which column contains the performance values. Defaults to "raw_y".
 - `nrounds (int, optional)`: Number of tournament rounds to simulate. Defaults to 25.
@@ -838,7 +860,7 @@ Creates a point plot with error bars showing ELO ratings calculated from pairwis
 - `plot_args (dict | BasePlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the ELO ratings dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the ELO ratings dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -974,7 +996,7 @@ Create a heatmap visualization showing search space exploration patterns in a si
 Visualizes how an optimization algorithm explores the search space over time by showing the density of evaluations across different variable dimensions and evaluation budgets, revealing search patterns and exploration behavior.
 
 **Args:**
-- `data (pl.DataFrame)`: Input dataframe containing trajectory data from a single algorithm run. Must contain data for exactly one run (unique data_id).
+- `data (pl.DataFrame)`: Input dataframe containing trajectory data from a single algorithm run. Must contain data for exactly one run (one run_id).
 - `vars (Iterable[str])`: Which columns contain the decision/search space variables to visualize.
 - `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
 - `var_mins (Iterable[float], optional)`: Minimum bounds for the search space variables. Should be same length as vars. Defaults to [-5].
@@ -984,7 +1006,7 @@ Visualizes how an optimization algorithm explores the search space over time by 
 - `plot_args (dict | HeatmapPlotArgs, optional)`: Plot styling arguments. Defaults to None.
 
 **Returns:**
-- `tuple[matplotlib.axes.Axes, pd.DataFrame]`: The matplotlib axes object and the processed heatmap dataframe used to create the plot.
+- `tuple[matplotlib.axes.Axes, pl.DataFrame]`: The matplotlib axes object and the processed heatmap dataframe used to create the plot.
 
 **Example:**
 ```python
@@ -996,7 +1018,8 @@ from iohinspector import (
 manager = DataManager()
 manager.add_folder("SO_Data")
 
-df = manager.select(function_ids=[1], data_ids=[1], algorithms=["RandomSearch"]).load(True, True)
+run = manager.select(function_ids=[1], algorithms=["RandomSearch"]).overview["run_id"][0]
+df = manager.select(run_ids=[run]).load(True, True)
 
 ax, data = plot_heatmap_single_run(
     df,

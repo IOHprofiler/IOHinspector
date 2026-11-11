@@ -8,9 +8,12 @@ Status: in progress
   `data.py` is a stub; metrics, plots, indicators and `align` on `run_id`, `by`,
   polars; tests updated; notebooks updated and running; `examples/parquet` removed.
 
+- step 4: `CHANGELOG.md` (every rename and removal), README, `FUNCTION_REFERENCE.md`;
+  notebooks re-executed (stored outputs match; stderr outputs dropped, they held local
+  paths); `pyproject.toml` version 0.1.0 for the tag.
+
 ## Next step
-Step 4: `CHANGELOG.md`, README, `FUNCTION_REFERENCE.md`; re-execute the notebooks so
-their stored outputs match; line counts.
+Step 5: lean pass over the changed modules; line counts; final notes.
 
 ## Baseline
 - `src/iohinspector`: 11,873 lines of Python; `tests`: 9,259 lines.

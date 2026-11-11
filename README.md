@@ -17,7 +17,7 @@ IOHinspector is a work-in-progress, and as such some features might be incomplet
 
 ## Features
 
-- **Data Processing**: Efficient import and process benchmark data. We currently only support the file structure from [IOHexperimenter](https://github.com/IOHprofiler/IOHexperimenter), but this will be expanded in future releases. By utlizing polars and the meta-data split, large sets of data can be handled efficiently.  
+- **Data Processing**: Efficient import and processing of benchmark data from [IOHexperimenter](https://github.com/IOHprofiler/IOHexperimenter), COCO, Nevergrad and CSV files (with a column mapping). Data is read into one model of four tables (runs, descriptors, trace and positions), which can also be stored as Parquet with `iohinspector convert`. By utilizing polars and this split, large sets of data can be handled efficiently.  
 - **Analysis**: Perform in-depth analyses of single- and multi-objective optimization results. For the multi-objective scenario, a variety of performance indicators are supported (hypervolume, igd+, R2, epsilon), each with the option to flexibly change reference points/set as required. 
 - **Visualization**: Create informative plots to better understand the optimization process. This included standard fixed-budget and fixed-target plots, EAF and ECDF visualization and more. 
 
@@ -45,9 +45,13 @@ manager.add_folders(data_folders)
 selection = manager.select(function_ids=[1], algorithms=['algorithm_A', 'algorithm_B'])
 df = selection.load(monotonic=True, include_meta_data=True)
 
-# Creating an ECDF plot
-plot_ecdf(df)
+# Creating an ECDF plot, one line per algorithm
+plot_ecdf(df, by=["algorithm_name"])
 ```
+
+`add_folder` takes a file, a folder or an archive in any supported format. Every metric and plot groups its results with `by`, a list of columns: any column of `manager.overview`, such as `algorithm_name`, `function_id` or a descriptor of the runs. Results are polars DataFrames; call `.to_pandas()` if you prefer pandas.
+
+Upgrading from 0.0.x? See [CHANGELOG.md](CHANGELOG.md): `free_vars` is now `by`, `return_as_pandas` is gone, and runs are identified by `run_id`.
 
 ![ecdf](image.png)
 

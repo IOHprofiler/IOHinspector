@@ -1,0 +1,73 @@
+# Changelog
+
+## 0.1.0
+
+One data model and one way to load and use data. The outward API stays close to
+0.0.x; what changed fails at once with a message that says how to upgrade.
+
+### Data model
+
+- Data is held as the four tables of dataset format v1 (`docs/format.md`): `runs`,
+  `descriptors`, `trace` and `positions`. `DataManager` shows them as polars
+  LazyFrames (`manager.runs`, `manager.descriptors`, `manager.trace`,
+  `manager.positions`).
+- Runs are keyed by `run_id`, a stable hash of the dataset id, the source file and the
+  run's index in it. The process-global `data_id` counter is gone, so ids no longer
+  depend on what was loaded before. `run_id` is no longer 1, 2, ... per file; that
+  number is the overview column `source_run_index` (from 0).
+- Columns have the format's types: `run_id` int64; `function_id`, `instance` and
+  `dimension` int32. `evaluations` stays UInt64 in `load()`.
+
+### DataManager
+
+| 0.0.x | 0.1.0 |
+|---|---|
+| `add_folder(folder)` (IOHexperimenter JSON and COCO) | `add_folder(path, **options)`: a file, folder or archive in any format (IOHexperimenter, COCO, Nevergrad, custom CSV with `mapping=`); options as for `iohinspector convert` |
+| — | `add_dataset(path)`: a dataset folder written by `iohinspector convert` |
+| `add_json(file)`, `add_coco_info(file)` | `add_folder(file)` |
+| `add_data_set`, `extend_overview` | `add_folder` or `add_dataset` |
+| adding the same folder twice duplicated it | fails; pass `dataset_id=` for a second copy |
+| `data_sets` (old `Dataset` objects) | `datasets` (format v1 `StoredDataset`s) |
+| `select(data_ids, ...)`, positional | `select(run_ids=...)`, keyword-only |
+| `select(experiment_attributes=[(key, value)])` | `select(key=[value])`: any runs column or descriptor |
+| `select(data_attributes=...)` | removed |
+| `select_indexes(idxs)` | `select(run_ids=...)` |
+| `functions`, `algorithms`: tuples of `Function` / `Algorithm` objects, with repeats | sorted tuples of function ids and algorithm names |
+| `dimensions`, `instances` | sorted tuples |
+| `experiment_attributes` | `descriptor_keys`; the values are `overview` columns |
+| `data_attributes` | `manager.trace.collect_schema().names()` |
+| `overview`: `data_id`, ..., `evals`, attributes renamed with `_exp_attr` / `_run_attr` | `run_id`, `algorithm_name`, `algorithm_info`, every runs column (`evals` is `evals_used`) and every descriptor; clashing names are renamed by the reader (for example `instance_experiment`) |
+| `load(...)`: `data_id`, `run_id` (per file) | `load(...)`: same arguments; `run_id` first, positions `x0` ... joined; a logged property named like a position is renamed (`x0_logged`) |
+
+### Removed
+
+- `iohinspector.data` and its classes `Dataset`, `Scenario`, `Run`, `Function`,
+  `Algorithm`, `Solution` and `METADATA_SCHEMA`; use `DataManager`, or
+  `iohinspector.format.scan_dataset` for a converted dataset.
+- The reader internals that `from iohinspector import *` leaked (`IohJson`,
+  `load_ioh_json`, `parse_dat`, `parse_coco_dat`, `merge_files`, ...); they stay in
+  `iohinspector.io`. The star import now gives only the names in `__all__`.
+- Reading `.parquet` files placed next to IOHexperimenter `.dat` files; convert the
+  data with `iohinspector convert` and use `add_dataset`.
+- `indicators.anytime.NonDominated`; use `indicators.NonDominated`.
+- Placeholders that only raised `NotImplementedError`:
+  `plot_multi_function_fixed_target`, `plot_multi_function_fixed_budget`,
+  `plots.ranking.robustranking`, `stats_comparison`, `winnning_fraction_heatmap`.
+
+### Metrics and plots
+
+| 0.0.x | 0.1.0 |
+|---|---|
+| `free_vars=` (`aggregate_running_time`, `aggregate_convergence`, `get_data_ecdf`, `get_aocc`, `plot_ecdf`, `plot_single_function_fixed_target`, `plot_single_function_fixed_budget`) | `by=` |
+| `free_variables=` (`get_trajectory`) | `by=` |
+| `alg_vars=` (`get_tournament_ratings`, `plot_tournament_ranking`) | `by=` (`fid_vars` stays) |
+| `free_var="..."` (`plot_paretofronts_2d`, `plot_indicator_over_time`) | `by=["..."]` |
+| `return_as_pandas=` (every metric) | removed; results are polars, call `.to_pandas()` |
+| plots return pandas frames | plots return the polars frame they drew |
+| frames grouped on `data_id` (`align_data`, `turbo_align`, `add_indicator`, EAF, attractor network, single-run heatmap) | grouped on `run_id` |
+| `get_discritized_eaf_single_objective`: pandas, `eaf_target` as index | polars, `eaf_target` as first column, one column per evaluation value |
+| `get_attractor_network`: pandas nodes and edges | polars; a node's number is its row number |
+
+A removed keyword argument raises `TypeError`, and a frame with a `data_id` column
+but no `run_id` raises `ValueError`, each with the upgrade hint. The numbers the
+metrics compute are unchanged.
