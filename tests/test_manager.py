@@ -184,3 +184,20 @@ def test_removed_module_names_fail_with_a_hint():
         from iohinspector.data import Scenario  # noqa: F401
     with pytest.raises(AttributeError, match="has no attribute"):
         iohinspector.nothing_like_this
+
+
+def test_metrics_fail_with_a_hint():
+    import polars as pl
+
+    from iohinspector import aggregate_running_time, get_eaf_data, plot_ecdf
+
+    old = pl.DataFrame({"evaluations": [1, 2], "raw_y": [2.0, 1.0], "data_id": [1, 1]})
+    new = old.rename({"data_id": "run_id"}).with_columns(algorithm_name=pl.lit("A"))
+    with pytest.raises(ValueError, match="'data_id' was removed.*run_id"):
+        aggregate_running_time(old)
+    with pytest.raises(TypeError, match="'free_vars' was removed.*by="):
+        aggregate_running_time(new, free_vars=["algorithm_name"])
+    with pytest.raises(TypeError, match="'return_as_pandas' was removed.*to_pandas"):
+        get_eaf_data(new, return_as_pandas=False)
+    with pytest.raises(ValueError, match="'data_id' was removed"):
+        plot_ecdf(new, by=["data_id"])

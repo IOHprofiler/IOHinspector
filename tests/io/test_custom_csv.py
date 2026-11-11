@@ -436,3 +436,16 @@ def test_extra_trace_column_types(tmp_path):
     assert t.schema["b"] == pl.Boolean and t["b"].to_list() == [True, False]
     assert t.schema["s"] == pl.String and t["s"].to_list() == ["a", None]
     assert t["huge"].to_list() == ["12345678901234567890", "2"]
+
+
+def test_data_manager_reads_csv_with_mapping(source):
+    from iohinspector import DataManager
+
+    path, runs, _ = source
+    manager = DataManager()
+    manager.add_folder(path, mapping=MAPPING)
+    assert manager.n_runs == len(runs)
+    assert manager.algorithms == ("A", "B")
+    df = manager.select(algorithms=["A"]).load(monotonic=False, include_meta_data=True)
+    assert set(df["algorithm_name"]) == {"A"}
+    assert {"seed", "popsize", "sigma", "label"} <= set(df.columns)

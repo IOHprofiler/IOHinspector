@@ -1,19 +1,38 @@
 # WP I26: One data model and user API
 Branch: wp/I26-one-data-model
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1: inventory (this file)
 - steps 2-3: `_upgrade.py`; `DataManager` on the four tables; `read_dataset`;
   `data.py` is a stub; metrics, plots, indicators and `align` on `run_id`, `by`,
   polars; tests updated; notebooks updated and running; `examples/parquet` removed.
-
 - step 4: `CHANGELOG.md` (every rename and removal), README, `FUNCTION_REFERENCE.md`;
   notebooks re-executed (stored outputs match; stderr outputs dropped, they held local
   paths); `pyproject.toml` version 0.1.0 for the tag.
 
+- step 5: tests for `add_folder` with a CSV mapping and for the metric upgrade hints;
+  old-vs-new comparison of the metrics; line counts; these notes.
+
 ## Next step
-Step 5: lean pass over the changed modules; line counts; final notes.
+Review (D6: dvermetten, it touches metric code). **HUMAN:** tag 0.1.0 after merge.
+
+## Result
+- Lines of Python: `src/iohinspector` 11,873 -> 11,412 (-461); `tests` 9,259 -> 9,009
+  (-250). The data model (`data.py` + `manager.py`) went from 873 to 252 lines, plus
+  93 for the shared upgrade hints (`_upgrade.py`).
+- `pytest -q`: 650 passed, 3 skipped, 2 xfailed (13 s; was 26 s), notebooks and README
+  included; also with polars 1.33.1 and 1.44.
+- Public API: `from iohinspector import *` gives 43 names (was 120 with the leaks).
+  Before: `DataManager` over `data.Dataset`/`Scenario`/`Run` objects, `data_id`,
+  `free_vars`/`free_variables`/`free_var`/`alg_vars`, `return_as_pandas` (pandas by
+  default). After: `DataManager` over the four format v1 tables (`add_folder` any
+  format, `add_dataset`, `select(**any column)`, `load`), `run_id`, `by` everywhere,
+  polars everywhere; removed names fail with a hint.
+- Metric outputs: the same numbers as before on `examples/SO_Data` and three
+  `tests/test_data` folders for `aggregate_running_time`, `aggregate_convergence`,
+  `get_data_ecdf` (both alignments), `get_trajectory`, `get_eaf_data` and `get_aocc`
+  (old code vs new, same groups, ids dropped). Existing metric tests keep their values.
 
 ## Baseline
 - `src/iohinspector`: 11,873 lines of Python; `tests`: 9,259 lines.
@@ -117,4 +136,16 @@ imports. After I26 the package defines `__all__` at every level.
   of the output.
 
 ## Open questions / Blocked
-- none yet
+- robustranking pairs runs of different algorithms by their number (0.0.8: the run's
+  index in its file). Kept, as a run number per algorithm in data order. Is pairing by
+  index intended (D6)?
+- `get_data_ecdf` averages every numeric column per group, so its output has a
+  meaningless mean `run_id` (0.0.8: mean `data_id`). Dropping it changes the output;
+  left for I12.
+- Two alignment paths remain, `align_data` (deprecated, handles non-monotone data)
+  and `turbo_align`; merging them is I10's job.
+- `add_folder` on IOHexperimenter data always issues the manifest's
+  `limited_precision` `DatasetWarning` (the logger writes `%.10f`). Correct but noisy
+  in notebooks; silence it in `DataManager`?
+- `StoredDataset.run_columns(by)` overlaps with `DataManager.overview`; kept for the
+  website, which works on one `StoredDataset`.
