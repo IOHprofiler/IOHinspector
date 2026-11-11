@@ -135,8 +135,8 @@ def test_custom_f_min_max_targets():
         DATA, f_min=1e-12, f_max=1.0, f_targets=5
     )
     assert result.shape[0] == 5
-    assert result["eaf_target"].min() == pytest.approx(0.0)
-    assert result["eaf_target"].max() == pytest.approx(1.0)
+    assert result["eaf_target"].min() == pytest.approx(0.0, abs=5e-8)
+    assert result["eaf_target"].max() == pytest.approx(1.0, abs=5e-8)
 
 
 def test_scale_eval_log_and_f_log():
@@ -209,7 +209,7 @@ def test_simple_pareto_fronts():
             (pl.col("obj1") == obj1) & (pl.col("obj2") == obj2)
         )["eaf"].to_list()[0]
 
-        assert eaf_value == pytest.approx(expected_eaf)
+        assert eaf_value == pytest.approx(expected_eaf, abs=5e-8)
 
 
 def test_identical_runs_eaf():

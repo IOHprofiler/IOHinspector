@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import sys
 import traceback
 import warnings
 from contextlib import redirect_stdout
@@ -45,7 +44,6 @@ def test_notebook(notebook):
                 )
 
 
-@pytest.mark.skipif(sys.version_info < (3, 7), reason="python version > 3.7")
 def test_python_readme():
     fname = os.path.join(BASE_DIR, "README.md")
     assert os.path.isfile(fname)

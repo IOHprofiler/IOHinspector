@@ -79,4 +79,4 @@ def test_single_row():
     )
     result = aggregate_convergence(single_df)
     assert len(result) == 1
-    assert result["mean"][0] == pytest.approx(42.0)
+    assert result["mean"][0] == pytest.approx(42.0, abs=5e-8)

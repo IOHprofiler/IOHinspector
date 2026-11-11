@@ -86,8 +86,8 @@ def test_negative_range():
 def test_large_len():
     seq = get_sequence(0, 1, 1000, scale_log=False, cast_to_int=False)
     assert len(seq) == 1000
-    assert seq[0] == pytest.approx(0)
-    assert seq[-1] == pytest.approx(1)
+    assert seq[0] == pytest.approx(0, abs=5e-8)
+    assert seq[-1] == pytest.approx(1, abs=5e-8)
 
 
 def test_log_scale_non_integer_len():

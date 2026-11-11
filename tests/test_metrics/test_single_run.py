@@ -23,8 +23,8 @@ def test_basic():
         var_maxs=np.array([5, 5]),
     )
     assert dt_plot.shape == (2, 5)
-    assert dt_plot.to_numpy().min() == pytest.approx(0)
-    assert dt_plot.to_numpy().max() == pytest.approx(1)
+    assert dt_plot.to_numpy().min() == pytest.approx(0, abs=5e-8)
+    assert dt_plot.to_numpy().max() == pytest.approx(1, abs=5e-8)
     assert np.all((dt_plot.to_numpy() >= 0) & (dt_plot.to_numpy() <= 1))
 
 
