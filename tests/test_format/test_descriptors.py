@@ -252,6 +252,15 @@ def test_mixed_value_types_under_one_key(tmp_path):
     assert standalone.height == len(ids)
 
 
+def test_int_and_float_values_of_one_key_read_as_float():
+    table = descriptor_frame(
+        [(1, "pc", 0, "algorithm"), (2, "pc", 0.5, "algorithm"), (3, "mu", 10, "run")]
+    )
+    col = descriptor_columns(table, ["pc", "mu"]).sort("run_id").collect()
+    assert col.schema["pc"] == pl.Float64 and col.schema["mu"] == pl.Int64
+    assert col["pc"].to_list() == [0.0, 0.5, None]
+
+
 def _file_digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 

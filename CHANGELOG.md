@@ -17,6 +17,8 @@ One data model and one way to load and use data. The outward API stays close to
   number is the overview column `source_run_index` (from 0).
 - Columns have the format's types: `run_id` int64; `function_id`, `instance` and
   `dimension` int32. `evaluations` stays UInt64 in `load()`.
+- A descriptor that is an int in some runs and a float in others (a parameter such as
+  `0` and `0.5`) is a float64 column; other mixes of types stay text.
 
 ### DataManager
 
