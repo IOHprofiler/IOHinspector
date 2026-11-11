@@ -146,7 +146,6 @@ def test_reader_table_and_detection(tmp_path):
     assert detect_format(INFO) == "coco"
     assert detect_coco(FIXTURE)
     assert not detect_coco(ROOT / "io" / "fixtures" / "ioh040")
-    assert not detect_coco(ROOT / "golden" / "fixtures" / "extdata")
     assert not detect_coco(tmp_path)
     assert read(FIXTURE, "x").runs.height == 15
 
@@ -386,18 +385,26 @@ def test_folder_header_and_unreferenced_files(tmp_path):
 
 def test_other_info_files_are_skipped(tmp_path):
     write_coco(tmp_path, {"dat": DAT})
-    (tmp_path / "legacy.info").write_text(
-        "suite = 'PBO', funcId = 1, DIM = 16, algId = 'ea'\n%\n"
-        "data_f1/IOHprofiler_f1_DIM16.dat, 1:10|16\n"
-    )
-    (tmp_path / "data_f1" / "IOHprofiler_f1_DIM16.dat").write_text(
-        '"function evaluation" "current f(x)"\n1 16\n'
-    )
+    (tmp_path / "notes.info").write_text("free text, not a COCO header\n")
     result = read_coco(tmp_path, "s")
     assert result.runs.height == 2
     assert "skipped_file" in codes(result)
     with pytest.raises(ReaderError, match="not a COCO"):
-        read_coco(tmp_path / "legacy.info", "s")
+        read_coco(tmp_path / "notes.info", "s")
+
+
+def test_legacy_ioh_profiler_is_refused(tmp_path):
+    (tmp_path / "legacy.info").write_text(
+        "suite = 'PBO', funcId = 1, DIM = 16, algId = 'ea'\n%\n"
+        "data_f1/IOHprofiler_f1_DIM16.dat, 1:10|16\n"
+    )
+    (tmp_path / "data_f1").mkdir()
+    (tmp_path / "data_f1" / "IOHprofiler_f1_DIM16.dat").write_text(
+        '"function evaluation" "current f(x)"\n1 16\n'
+    )
+    for call in (detect_coco, lambda p: read_coco(p, "s")):
+        with pytest.raises(ReaderError, match="legacy IOHprofiler format"):
+            call(tmp_path)
 
 
 @pytest.mark.parametrize(

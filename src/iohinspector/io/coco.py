@@ -85,8 +85,11 @@ def _first_line(path: Path) -> str:
 
 def _coco_data(local: Path) -> bool | None:
     """Whether a data file looks like COCO's: its first line is a ``%`` line.
-    None when it starts with data, so that the ``.info`` header decides."""
+    None when it starts with data, so that the ``.info`` header decides. Legacy
+    IOHprofiler data (a quoted ``"function evaluation"`` header) is refused."""
     line = _first_line(local).strip()
+    if line.startswith('"function evaluation"'):
+        raise ReaderError("legacy IOHprofiler format is not supported", local)
     if line.startswith("%"):
         return True
     tokens = line.split()

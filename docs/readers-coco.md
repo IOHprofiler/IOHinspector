@@ -82,7 +82,7 @@ The runs of a data file start at its header lines (`% f evaluations …` or `% f
 
 ## Merging the data files
 
-All data files of a stem are read and must hold the same number of runs, otherwise the reader fails. Rows are merged under the identical-row rule (`iohinspector.io.merge`, the same rule and columns as the legacy reader): a row that two files log for the same evaluation of a run is stored once when every column, position included, is identical (NaN equals NaN). Otherwise both rows are kept. Nothing is merged within one file. When a stem has more than one file, two trace columns describe the merge:
+All data files of a stem are read and must hold the same number of runs, otherwise the reader fails. Rows are merged under the identical-row rule (`iohinspector.io.merge`): a row that two files log for the same evaluation of a run is stored once when every column, position included, is identical (NaN equals NaN). Otherwise both rows are kept. Nothing is merged within one file. When a stem has more than one file, two trace columns describe the merge:
 
 - `logged_in`: the kinds that hold the row, joined by `+` in the order `dat`, `tdat`, `rdat`, for example `dat+tdat`;
 - `merge_conflict`: true for every row of an evaluation that the files log with different values. A `merge_conflict` warning counts them per stem.

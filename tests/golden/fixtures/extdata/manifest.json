@@ -1,0 +1,151 @@
+{
+  "counts": {
+    "descriptors_rows": 60,
+    "runs": 30,
+    "trace_rows": 1386
+  },
+  "created": "2026-11-11T10:08:31Z",
+  "dataset_id": "extdata",
+  "descriptors": {
+    "algorithm_info": {
+      "distinct": 1,
+      "examples": [
+        "ONE_PLUS_LAMDA_EA"
+      ],
+      "origins": [
+        "algorithm"
+      ],
+      "runs": 30,
+      "types": [
+        "string"
+      ]
+    },
+    "algorithm_name": {
+      "distinct": 1,
+      "examples": [
+        "ONE_PLUS_LAMDA_EA"
+      ],
+      "origins": [
+        "algorithm"
+      ],
+      "runs": 30,
+      "types": [
+        "string"
+      ]
+    }
+  },
+  "extra": {
+    "convert": {
+      "format": "ioh-legacy",
+      "input": "extdata"
+    }
+  },
+  "format": "iohinspector-dataset",
+  "format_version": "1.0",
+  "reader": {
+    "name": "ioh-legacy",
+    "version": "0.0.8"
+  },
+  "sources": [
+    {
+      "bytes": 335,
+      "kind": "ioh-legacy-info",
+      "path": "ONE_PLUS_LAMDA_EA/IOHprofiler_f1_i1.info",
+      "sha256": "eeebf18aa9920ffd835f991ed335212667cd8571a8293406ec4aa4a000653ee7"
+    },
+    {
+      "bytes": 327,
+      "kind": "ioh-legacy-info",
+      "path": "ONE_PLUS_LAMDA_EA_ws/IOHprofiler_fbla_i1.info",
+      "sha256": "b9a428d77a72f2c4e09bc8c84171b9cb98b3a3759935a29b03fec95dd0c0c842"
+    },
+    {
+      "bytes": 333,
+      "kind": "ioh-legacy-info",
+      "path": "ONE_PLUS_LAMDA_EA_ws/IOHprofiler_fblubb_i1.info",
+      "sha256": "7b9ad41fc0ebb39263d12ebbaf0789717a91701b040119d1447e675dd730a761"
+    },
+    {
+      "bytes": 35082,
+      "data_rows": 462,
+      "kind": "ioh-legacy-dat",
+      "path": "ONE_PLUS_LAMDA_EA/data_f1/IOHprofiler_f1_DIM100_i1.dat",
+      "precision": {
+        "digits": 5,
+        "notation": "scientific"
+      },
+      "sha256": "08e307f696cd96e6fcc0c4a63d202c62cb5de3c7bd05ae8767224f529afc7949",
+      "triggers": [
+        {
+          "kind": "improvement",
+          "params": {
+            "inferred": true
+          }
+        }
+      ]
+    },
+    {
+      "bytes": 35082,
+      "data_rows": 462,
+      "kind": "ioh-legacy-dat",
+      "path": "ONE_PLUS_LAMDA_EA_ws/data_fbla/IOHprofiler_fbla_DIM100_i1.dat",
+      "precision": {
+        "digits": 5,
+        "notation": "scientific"
+      },
+      "sha256": "08e307f696cd96e6fcc0c4a63d202c62cb5de3c7bd05ae8767224f529afc7949",
+      "triggers": [
+        {
+          "kind": "improvement",
+          "params": {
+            "inferred": true
+          }
+        }
+      ]
+    },
+    {
+      "bytes": 35082,
+      "data_rows": 462,
+      "kind": "ioh-legacy-dat",
+      "path": "ONE_PLUS_LAMDA_EA_ws/data_fblubb/IOHprofiler_fblubb_DIM100_i1.dat",
+      "precision": {
+        "digits": 5,
+        "notation": "scientific"
+      },
+      "sha256": "08e307f696cd96e6fcc0c4a63d202c62cb5de3c7bd05ae8767224f529afc7949",
+      "triggers": [
+        {
+          "kind": "improvement",
+          "params": {
+            "inferred": true
+          }
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "code": "function_ids_assigned",
+      "message": "function ids assigned to funcId values that are not integers: 'bla' = 2, 'blubb' = 3"
+    },
+    {
+      "code": "maximization_inferred",
+      "message": "the header does not say the direction; maximisation is assumed as in IOHanalyzer (minimisation when the suite name contains bbob)",
+      "source": "ONE_PLUS_LAMDA_EA/IOHprofiler_f1_i1.info"
+    },
+    {
+      "code": "maximization_inferred",
+      "message": "the header does not say the direction; maximisation is assumed as in IOHanalyzer (minimisation when the suite name contains bbob)",
+      "source": "ONE_PLUS_LAMDA_EA_ws/IOHprofiler_fbla_i1.info"
+    },
+    {
+      "code": "maximization_inferred",
+      "message": "the header does not say the direction; maximisation is assumed as in IOHanalyzer (minimisation when the suite name contains bbob)",
+      "source": "ONE_PLUS_LAMDA_EA_ws/IOHprofiler_fblubb_i1.info"
+    }
+  ],
+  "writer": {
+    "name": "iohinspector",
+    "version": "0.0.8"
+  }
+}

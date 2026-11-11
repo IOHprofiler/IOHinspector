@@ -17,7 +17,6 @@ The format is detected unless `--format` names it:
 | Format | Input | Detected |
 |---|---|---|
 | `ioh` | IOHexperimenter JSON + `.dat` | yes |
-| `ioh-legacy` | legacy IOHprofiler `.info` + `.dat`/`.cdat`/`.tdat`/`.idat` | yes |
 | `coco` | COCO `.info` + `.dat`/`.tdat`/`.rdat` | yes |
 | `nevergrad-csv` | one Nevergrad CSV file (`.csv` or `.csv.gz`) | yes, by its columns |
 | `custom-csv` | one CSV file with a column mapping ([CSV readers](readers-csv.md)) | only with `--mapping` |
@@ -56,14 +55,13 @@ How the scanner reads each file kind (`sources[].kind`):
 | Kind | Run starts at | Evaluations | Value |
 |---|---|---|---|
 | `ioh-dat` | a line whose first token is not a number | column `evaluations` | column `raw_y` |
-| `ioh-legacy-dat`, `-cdat`, `-tdat`, `-idat` | a line whose first token is not a number | column 1 | column 2 |
 | `coco-dat`, `-tdat`, `-rdat` | a `%` line naming the columns (`% f evaluations ...`, `% function evaluation ...`); other `%` lines are comments | column 1 | column 3 (best Δf) |
 | `nevergrad-csv` | every row | `budget` | `loss` |
 | `custom-csv` | a new value of the mapping's `run_by` columns (every row without them) | the mapping's `evaluations` | the mapping's `value` |
 
-Metadata files (`ioh-json`, `ioh-legacy-info`, `coco-info`) are checked by their sha256 only. A kind that is not in the table is listed as not verified, and its runs' trace rows are then reported as not belonging to a verified source run.
+Metadata files (`ioh-json`, `coco-info`) are checked by their sha256 only. A kind that is not in the table is listed as not verified, and its runs' trace rows are then reported as not belonging to a verified source run.
 
-Legacy and COCO loggers write one run set to several files, which the readers merge (`logged_in` names the files that hold a row). A data file's rows in the trace are those whose `logged_in` names its kind (its file name suffix), or all rows of its own runs when `logged_in` is null. Each file is compared on its own; the line hash is compared for the run's own `source_file` only.
+COCO loggers write one run set to several files, which the reader merges (`logged_in` names the files that hold a row). A data file's rows in the trace are those whose `logged_in` names its kind (its file name suffix), or all rows of its own runs when `logged_in` is null. Each file is compared on its own; the line hash is compared for the run's own `source_file` only.
 
 Files in the input that the manifest does not list are reported (`unlisted_files`) but do not fail the check: readers record the files they skip as manifest warnings.
 

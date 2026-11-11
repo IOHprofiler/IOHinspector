@@ -39,7 +39,7 @@ class TextLayout:
     ``evaluations`` and ``value`` are column positions, or names looked up in the
     header. With ``coco``, only ``%`` lines that name the columns start a run and
     other ``%`` lines are comments; otherwise every line whose first token is not
-    a number starts a run. ``family`` files (legacy and COCO) log the runs of one
+    a number starts a run. ``family`` files (COCO's) log the runs of one
     run set in several files with one stem, merged in the trace (``logged_in``).
     """
 
@@ -63,21 +63,16 @@ class CsvLayout:
 
 Layout = TextLayout | CsvLayout
 
-_LEGACY = TextLayout(0, 1, family=True)
 _COCO = TextLayout(0, 2, coco=True, family=True)
 KINDS: dict[str, Layout] = {
     "ioh-dat": TextLayout("evaluations", "raw_y"),
-    "ioh-legacy-dat": _LEGACY,
-    "ioh-legacy-cdat": _LEGACY,
-    "ioh-legacy-tdat": _LEGACY,
-    "ioh-legacy-idat": _LEGACY,
     "coco-dat": _COCO,
     "coco-tdat": _COCO,
     "coco-rdat": _COCO,
     "nevergrad-csv": CsvLayout("budget", "loss"),
 }
 #: Kinds whose files hold metadata only: their sha256 is checked, nothing else.
-METADATA_KINDS = ("ioh-json", "ioh-legacy-info", "coco-info")
+METADATA_KINDS = ("ioh-json", "coco-info")
 
 
 def custom_csv_layout(manifest: Mapping[str, Any]) -> CsvLayout | None:

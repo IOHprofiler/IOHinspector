@@ -19,8 +19,6 @@ from iohinspector.convert import convert
 from iohinspector.verify import verify
 from iohinspector.verify._scan import KINDS, METADATA_KINDS
 
-from .io.legacy_writer import LegacySet
-
 TESTS = Path(__file__).resolve().parent
 GOLDEN = TESTS / "golden" / "fixtures"
 CUSTOM_MAPPING = {
@@ -38,12 +36,6 @@ CUSTOM_MAPPING = {
 pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 
 
-def _legacy_family(folder: Path) -> Path:
-    runs = [[9.0, 7.0, 7.5, 3.0, 3.0, 1.0, 2.0], [5.0, 6.0, 4.0, 4.0, 0.0, 0.5, 0.0]]
-    LegacySet(runs, kinds=("dat", "cdat", "tdat", "idat")).write(folder)
-    return folder
-
-
 def _custom_csv(folder: Path) -> Path:
     folder.mkdir(parents=True)
     rows = ["alg,seed,evals,f"]
@@ -58,8 +50,6 @@ CORPUS = {
     "ioh040": lambda tmp: _copy(TESTS / "io" / "fixtures" / "ioh040", tmp),
     "ioh0322": lambda tmp: _copy(TESTS / "io" / "fixtures" / "ioh0322", tmp),
     "ioh040_max": lambda tmp: _copy(GOLDEN / "ioh040_max", tmp),
-    "extdata": lambda tmp: _copy(GOLDEN / "extdata", tmp),
-    "legacy_family": lambda tmp: _legacy_family(tmp / "legacy"),
     "coco": lambda tmp: _copy(TESTS / "test_coco_data", tmp),
     "coco_old": lambda tmp: _copy(GOLDEN / "coco_old", tmp),
     "nevergrad": lambda tmp: _copy(TESTS / "io" / "data" / "nevergrad_sample.csv", tmp),
@@ -95,10 +85,10 @@ def test_corpus_verifies(tmp_path, name):
         assert report.rows == trace.height
 
 
-def test_legacy_family_compares_every_file(tmp_path):
-    source, ds = _convert("legacy_family", tmp_path)
+def test_coco_family_compares_every_file(tmp_path):
+    source, ds = _convert("coco_old", tmp_path)
     report = verify(source, ds)
-    assert report.files == 4
+    assert report.files == 4  # .dat and .tdat of two dimensions
     assert "logged_in" in pl.read_parquet(ds / "trace.parquet").columns
 
 

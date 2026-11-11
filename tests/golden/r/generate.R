@@ -398,8 +398,12 @@ run_fixture <- function(set, dsl, par_pen = c(1, 10)) {
 
 # ---- fixtures ----------------------------------------------------------------------------------
 sets <- c("ioh040_min", "ioh040_max", "ioh040_cons", "ioh040_pos", "extdata", "coco")
+# fixtures/extdata is a format v1 dataset (WP I25); IOHanalyzer reads its own copy of the logs
+fixture_dir <- function(set) {
+  if (set == "extdata") system.file("extdata", package = "IOHanalyzer") else file.path(fix_dir, set)
+}
 for (set in sets) {
-  dsl <- suppressMessages(DataSetList(file.path(fix_dir, set)))
+  dsl <- suppressMessages(DataSetList(fixture_dir(set)))
   run_fixture(set, dsl)
 }
 

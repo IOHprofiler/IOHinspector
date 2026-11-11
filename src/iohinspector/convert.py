@@ -3,8 +3,7 @@
 ``convert`` brings the two reader tables of ``iohinspector.io`` together:
 
 - ``READERS``: readers that detect their input and return a ``ReadResult``
-  (IOHexperimenter, legacy IOHprofiler, and each reader added later by its
-  ``READERS`` line);
+  (IOHexperimenter and COCO);
 - ``CONVERTERS``: streaming CSV converters that write the dataset themselves.
   Nevergrad files are detected by their columns; custom CSV needs a column
   mapping (``mapping``), so it is used only when a mapping is given.
