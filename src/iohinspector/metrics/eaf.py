@@ -1,11 +1,13 @@
-from iohinspector.align import align_data, turbo_align
-from iohinspector.metrics import transform_fval, get_sequence
 import numpy as np
-import pandas as pd
 import polars as pl
 from moocore import eaf, eafdiff
 
+from .._upgrade import upgrade_hints
+from ..align import align_data
+from .utils import get_sequence, transform_fval
 
+
+@upgrade_hints
 def get_discritized_eaf_single_objective(
     data: pl.DataFrame,
     fval_var: str = "raw_y",
@@ -19,8 +21,7 @@ def get_discritized_eaf_single_objective(
     f_max=1e2,
     scale_f_log: bool = True,
     f_targets=101,
-    return_as_pandas: bool = True,
-) -> pd.DataFrame | pl.DataFrame:
+) -> pl.DataFrame:
     """Generate discretized EAF data for single-objective optimization problems.
 
     Args:
@@ -36,10 +37,10 @@ def get_discritized_eaf_single_objective(
         f_max (float, optional): Maximum function value for scaling. Defaults to 1e2.
         scale_f_log (bool, optional): Whether to use logarithmic scaling for function values. Defaults to True.
         f_targets (int, optional): Number of function value targets to generate. Defaults to 101.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame: A DataFrame with discretized EAF data for single-objective problems.
+        pl.DataFrame: The discretized EAF: an ``eaf_target`` column and one column per
+            evaluation value (named by its value), sorted by ``eaf_target``.
     """
 
     if eval_values is None:
@@ -51,9 +52,7 @@ def get_discritized_eaf_single_objective(
             eval_min, eval_max, eval_targets, scale_log=scale_eval_log, cast_to_int=True
         )
 
-    dt_aligned = turbo_align(
-        data, eval_values, x_col=eval_var, y_col=fval_var, output="long"
-    )
+    dt_aligned = align_data(data, eval_values, x_col=eval_var, y_col=fval_var)
     dt_aligned = transform_fval(
         dt_aligned,
         lb=f_min,
@@ -61,25 +60,24 @@ def get_discritized_eaf_single_objective(
         scale_log=scale_f_log,
         fval_var=fval_var,
     )
-    targets = np.linspace(0, 1, f_targets)
-    dt_targets = pd.DataFrame(targets, columns=["eaf_target"])
+    targets = pl.DataFrame({"eaf_target": np.linspace(0, 1, f_targets)})
+    merged = targets.join(dt_aligned.select(eval_var, "eaf"), how="cross")
+    merged = merged.with_columns(ps=pl.col("eaf_target") <= pl.col("eaf"))
+    return (
+        merged.sort(eval_var)
+        .pivot(on=eval_var, index="eaf_target", values="ps", aggregate_function="mean")
+        .sort("eaf_target")
+    )
 
-    dt_merged = dt_targets.merge(dt_aligned[[eval_var, "eaf"]].to_pandas(), how="cross")
-    dt_merged["ps"] = dt_merged["eaf_target"] <= dt_merged["eaf"]
-    dt_discr = dt_merged.pivot_table(index="eaf_target", columns=eval_var, values="ps")
-    if return_as_pandas:
-        return dt_discr
-    return pl.from_pandas(dt_discr)
 
-
+@upgrade_hints
 def get_eaf_data(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     eval_min: int = None,
     eval_max: int = None,
     scale_eval_log: bool = True,
-    return_as_pandas: bool = True,
-) -> pd.DataFrame | pl.DataFrame:
+) -> pl.DataFrame:
     """Generate aligned EAF data for visualization and analysis.
 
     Args:
@@ -88,10 +86,9 @@ def get_eaf_data(
         eval_min (int, optional): Minimum evaluation value. If None, uses minimum from data.
         eval_max (int, optional): Maximum evaluation value. If None, uses maximum from data.
         scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to True.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame or pl.DataFrame: A DataFrame with aligned EAF data.
+        pl.DataFrame: A DataFrame with aligned EAF data.
     """
 
     if eval_min is None:
@@ -100,48 +97,48 @@ def get_eaf_data(
         eval_max = data[eval_var].max()
 
     evals = get_sequence(eval_min, eval_max, 50, scale_eval_log, True).astype("uint64")
-    long = turbo_align(data, evals, output="long")
-
-    if return_as_pandas:
-        return long.to_pandas()
-    return long
+    return align_data(data, evals)
 
 
+def _points(data: pl.DataFrame, obj1_var: str, obj2_var: str) -> np.ndarray:
+    """The objective values and a run number (1, 2, ...) per row, for moocore."""
+    run = pl.col("run_id").rank("dense").alias("run")
+    return data.select(obj1_var, obj2_var, run).to_numpy()
+
+
+@upgrade_hints
 def get_eaf_pareto_data(
     data: pl.DataFrame,
     obj1_var: str,
     obj2_var: str,
-    return_as_pandas: bool = True,
-) -> pd.DataFrame | pl.DataFrame:
+) -> pl.DataFrame:
     """Generate EAF data for multi-objective optimization problems using Pareto fronts.
 
     Args:
         data (pl.DataFrame): The data object containing multi-objective optimization data.
         obj1_var (str): Name of the column containing first objective values.
         obj2_var (str): Name of the column containing second objective values.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame or pl.DataFrame: A DataFrame with EAF data including objective values and EAF percentiles.
+        pl.DataFrame: A DataFrame with EAF data including objective values and EAF
+            percentiles.
     """
-    data_to_process = np.array(data[[obj1_var, obj2_var, "data_id"]])
-    eaf_data = eaf(data_to_process[:, :-1], data_to_process[:, -1])
-    eaf_data_df = pd.DataFrame(eaf_data)
-    eaf_data_df.columns = [obj1_var, obj2_var, "eaf"]
+    points = _points(data, obj1_var, obj2_var)
+    eaf_data = eaf(points[:, :-1], points[:, -1])
+    eaf_data_df = pl.DataFrame(
+        eaf_data, schema=[obj1_var, obj2_var, "eaf"], orient="row"
+    )
     # scale EAF values from percentages to proportions
-    eaf_data_df["eaf"] = eaf_data_df["eaf"].astype(float) / 100.0
-    if return_as_pandas:
-        return eaf_data_df
-    return pl.from_pandas(eaf_data_df)
+    return eaf_data_df.with_columns(pl.col("eaf").cast(pl.Float64) / 100.0)
 
 
+@upgrade_hints
 def get_eaf_diff_data(
     data1: pl.DataFrame,
     data2: pl.DataFrame,
     obj1_var: str,
     obj2_var: str,
-    return_as_pandas: bool = True,
-) -> pd.DataFrame | pl.DataFrame:
+) -> pl.DataFrame:
     """Calculate EAF difference data between two multi-objective optimization datasets.
 
     Args:
@@ -149,26 +146,18 @@ def get_eaf_diff_data(
         data2 (pl.DataFrame): Second dataset containing multi-objective optimization data.
         obj1_var (str): Name of the column containing first objective values.
         obj2_var (str): Name of the column containing second objective values.
-        return_as_pandas (bool, optional): Whether to return results as pandas DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame or pl.DataFrame: A DataFrame with EAF difference rectangles and difference values.
+        pl.DataFrame: A DataFrame with EAF difference rectangles and difference values.
     """
-    x = np.array(data1[[obj1_var, obj2_var, "data_id"]])
-    y = np.array(data2[[obj1_var, obj2_var, "data_id"]])
+    x = _points(data1, obj1_var, obj2_var)
+    y = _points(data2, obj1_var, obj2_var)
     if np.array_equal(
         np.sort(x.view(np.void), axis=0), np.sort(y.view(np.void), axis=0)
     ):
         cols = ["x_min", "y_min", "x_max", "y_max", "eaf_diff"]
-        empty_df = pl.DataFrame({c: [] for c in cols})
-        if return_as_pandas:
-            return empty_df.to_pandas()
-        return empty_df
+        return pl.DataFrame({c: [] for c in cols})
     eaf_diff_rect = eafdiff(x, y, rectangles=True)
-    eaf_diff_df = pl.DataFrame(
+    return pl.DataFrame(
         eaf_diff_rect, schema=["x_min", "y_min", "x_max", "y_max", "eaf_diff"]
     )
-
-    if return_as_pandas:
-        return eaf_diff_df.to_pandas()
-    return eaf_diff_df

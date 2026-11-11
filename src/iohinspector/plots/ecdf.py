@@ -2,16 +2,18 @@ import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sbs
 import polars as pl
-from typing import Iterable, Optional
-from iohinspector.metrics import get_data_ecdf
-from iohinspector.plots.utils import LinePlotArgs, _create_plot_args, _save_fig
+from typing import Iterable, Optional, Sequence
+from .._upgrade import upgrade_hints
+from ..metrics import get_data_ecdf
+from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
 
 
+@upgrade_hints
 def plot_ecdf(
     data: pl.DataFrame,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
-    free_vars: Iterable[str] = ["algorithm_name"],
+    by: Sequence[str] = ("algorithm_name",),
     maximization: bool = False,
     f_min: int = None,
     f_max: int = None,
@@ -34,8 +36,9 @@ def plot_ecdf(
         data (pl.DataFrame): Input dataframe containing optimization algorithm trajectory data.
         fval_var (str, optional): Which column contains the function/performance values. Defaults to "raw_y".
         eval_var (str, optional): Which column contains the evaluation counts. Defaults to "evaluations".
-        free_vars (Iterable[str], optional): Which columns contain the grouping variables for distinguishing
-            between different lines in the plot. Defaults to ["algorithm_name"].
+        by (Sequence[str], optional): The columns whose values tell the lines apart:
+            runs
+            columns or descriptors. Defaults to ["algorithm_name"].
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
         f_min (int, optional): Minimum function value bound. If None, uses data minimum. Defaults to None.
         f_max (int, optional): Maximum function value bound. If None, uses data maximum. Defaults to None.
@@ -58,7 +61,8 @@ def plot_ecdf(
             - All other LinePlotArgs parameters (xlim, ylim, grid, legend, fontsize, etc.).
 
     Returns:
-        tuple[matplotlib.axes.Axes, pd.DataFrame]: The matplotlib axes object and the processed
+        tuple[matplotlib.axes.Axes, pl.DataFrame]: The matplotlib axes object and the
+            processed
             dataframe used to create the plot.
     """
 
@@ -66,7 +70,7 @@ def plot_ecdf(
         data,
         fval_var=fval_var,
         eval_var=eval_var,
-        free_vars=free_vars,
+        by=by,
         maximization=maximization,
         f_min=f_min,
         f_max=f_max,
@@ -75,7 +79,6 @@ def plot_ecdf(
         eval_max=eval_max,
         eval_min=eval_min,
         scale_eval_log=scale_eval_log,
-        turbo=True,
     )
 
     plot_args = _create_plot_args(
@@ -89,23 +92,18 @@ def plot_ecdf(
         plot_args,
     )
 
-    dt_plot.sort_values(free_vars)
+    fig = None
     if ax is None:
         fig, ax = plt.subplots(figsize=plot_args.figsize)
 
-    if len(free_vars) == 1:
-        hue_arg = free_vars[0]
-        style_arg = free_vars[0]
-    else:
-        style_arg = free_vars[0]
-        hue_arg = dt_plot[free_vars[1:]].apply(tuple, axis=1)
-
+    by = list(by)
+    pdf = dt_plot.to_pandas()
     sbs.lineplot(
-        dt_plot,
+        pdf,
         x=eval_var,
         y="eaf",
-        style=style_arg,
-        hue=hue_arg,
+        style=by[0],
+        hue=_hue(pdf, by[1:] or by),
         palette=plot_args.line_colors,
         ax=ax,
     )

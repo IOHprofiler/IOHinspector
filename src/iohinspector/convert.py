@@ -14,9 +14,11 @@ file (origin ``path``). ``docs/convert-verify.md`` describes both.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 import shutil
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,8 +27,10 @@ from typing import Any
 import polars as pl
 
 from .format import (
+    StoredDataset,
     check_dataset_id,
     read_manifest,
+    scan_dataset,
     update_descriptors,
     write_manifest,
 )
@@ -246,3 +250,25 @@ def convert(  # pylint: disable=too-many-arguments
         except Exception:
             shutil.rmtree(output, ignore_errors=True)
             raise
+
+
+def read_dataset(  # pylint: disable=consider-using-with
+    source: str | os.PathLike[str], *, warn: bool = False, **options: Any
+) -> StoredDataset:
+    """Read ``source`` (a file, folder or archive) as a dataset, without keeping it.
+
+    ``options`` are those of ``convert``. The dataset is converted to a temporary
+    folder, removed when the returned object is, so it behaves exactly like a
+    converted dataset opened with ``scan_dataset``. The manifest's warnings are
+    issued only with ``warn``; they stay in ``manifest["warnings"]`` either way.
+    """
+    files = tempfile.TemporaryDirectory(
+        prefix="iohinspector-", ignore_cleanup_errors=True
+    )
+    path = Path(files.name) / "dataset"
+    try:
+        convert(source, path, **options)
+        return dataclasses.replace(scan_dataset(path, warn=warn), files=files)
+    except BaseException:
+        files.cleanup()
+        raise

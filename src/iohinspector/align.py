@@ -1,128 +1,76 @@
-import warnings
-from typing import Iterable
+"""Alignment of runs on a grid of evaluations or of function values."""
 
-import polars as pl
+from collections.abc import Iterable, Sequence
+
 import numpy as np
+import polars as pl
+
+from ._upgrade import removed_names, upgrade_hints
+
+__all__ = ["align_data"]
+__getattr__ = removed_names(__name__)
 
 
-def align_data(
-    df: pl.DataFrame,
-    evals: Iterable[int | float],
-    group_cols: Iterable[str] = ("data_id",),
-    x_col: str = "evaluations",
-    y_col: str = "raw_y",
-    output: str = "long",
-    maximization: bool = False,
-    silence_warning: bool = False,
-) -> pl.DataFrame:
-    """Align data based on function evaluation counts
-
-    Args:
-        df (pl.DataFrame): DataFrame containing at minimum x, y and group columns specified in further parameters
-        evals (Iterable[int]): list containing the function evaluation values at which to align
-        group_cols (Iterable[str]): columns to use for grouping
-        x_col (str, optional): function evaluation column Defaults to 'evaluations'.
-        y_col (str, optional): function value column. Defaults to 'raw_y'.
-        output (str, optional): whether to return a long or wide dataframe as output. Defaults to 'long'.
-        maximization (bool, optional): whether the data comes from maximization or minimization. Defaults to False (minimization).
-        silence_warning (bool, optional): whether to silence the deprication warning
-
-    Returns:
-        pl.DataFrame: Alligned DataFrame
-    """
-    if not silence_warning:
-        warnings.warn("turbo_align is favoured over this function", DeprecationWarning)
-
-    evals_df = pl.DataFrame({x_col: evals})
-
-    def merge_asof_group(group):
-        fval_col = x_col
-        if x_col == "evaluations":
-            fval_col = y_col
-
-        if maximization:
-            group = group.with_columns(group[fval_col].cum_max().alias(fval_col))
-        else:
-            group = group.with_columns(group[fval_col].cum_min().alias(fval_col))
-
-        if x_col != "evaluations" and maximization:
-            merged = evals_df.join_asof(
-                group.sort(x_col), on=x_col, strategy="forward"
-            ).fill_null(np.inf)
-        else:
-            merged = evals_df.join_asof(
-                group.sort(x_col), on=x_col, strategy="backward"
-            ).fill_null(np.inf)
-
-        for col in group_cols:
-            merged = merged.with_columns(pl.lit(group[col][0]).alias(col))
-        return merged
-
-    result_df = df.group_by(*group_cols).map_groups(merge_asof_group)
-
-    if output == "long":
-        return result_df
-
-    pivot_df = result_df.pivot(index=x_col, on=group_cols, values=y_col)
-    return pivot_df
-
-
-def turbo_align(
+@upgrade_hints
+def align_data(  # pylint: disable=too-many-arguments
     df: pl.DataFrame,
     x_values: Iterable[int | float],
+    group_cols: Sequence[str] = ("run_id",),
     x_col: str = "evaluations",
     y_col: str = "raw_y",
     output: str = "long",
     maximization: bool = False,
-):
-    """Align data based on function evaluation counts (fast
+) -> pl.DataFrame:
+    """Align every run (a group of ``group_cols``) on the values ``x_values``.
 
-    Note:
-        Assumes the data is monotonic!
-        Assumes data_id is present -> i.e. data comes from manager
+    Fixed budget (``x_col`` is ``"evaluations"``): ``y_col`` becomes the
+    best-so-far value of each run, and each run gets the value it had at each
+    evaluation in ``x_values``. Fixed target (``x_col`` is a function value
+    column): ``x_col`` becomes the best-so-far value, and each run gets the
+    ``y_col`` (evaluations) at which it first reached each target. A value that
+    does not exist yet (before the first evaluation, or a target never reached) is
+    ``inf``. Works in one join for all runs.
 
     Args:
-        df (pl.DataFrame): DataFrame containing at minimum x, y and group columns specified in further parameters
-        evals (Iterable[int]): list containing the function evaluation values at which to align
-        x_col (str, optional): function evaluation column Defaults to 'evaluations'.
-        y_col (str, optional): function value column. Defaults to 'raw_y'.
-        output (str, optional): whether to return a long or wide dataframe as output. Defaults to 'long'.
-        maximization (bool, optional): whether the data comes from maximization or minimization. Defaults to False (minimization).
+        df: at least ``x_col``, ``y_col`` and ``group_cols``, in evaluation order.
+        x_values: the evaluations, or function values, to align on.
+        group_cols: the columns that identify a run.
+        x_col: the column to align on.
+        y_col: the column to read at each aligned value.
+        output: ``"long"``, or ``"wide"`` for one column per run.
+        maximization: whether larger function values are better.
 
     Returns:
-        pl.DataFrame: Alligned DataFrame
+        pl.DataFrame: one row per run and value of ``x_values`` (long), or one row
+            per value of ``x_values`` and one column per run (wide).
     """
-
-    data_ids = df["data_id"].unique()
-
-    x_vals = pl.DataFrame(
-        {
-            x_col: np.repeat(x_values, len(data_ids)),
-            "data_id": np.tile(data_ids, len(x_values)),
-        },
-        schema={x_col: df[x_col].dtype, "data_id": df["data_id"].dtype},
+    group_cols = list(dict.fromkeys(group_cols))
+    fval = y_col if x_col == "evaluations" else x_col
+    best = pl.col(fval).cum_max() if maximization else pl.col(fval).cum_min()
+    df = df.with_columns(best.over(group_cols))
+    grid = (
+        df.select(group_cols)
+        .unique()
+        .join(
+            pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]}), how="cross"
+        )
     )
-    df = df.sort([x_col, "data_id"])
-
-    if x_col != "evaluations" and maximization:
-        result_df = x_vals.join_asof(
+    forward = x_col != "evaluations" and maximization
+    if x_col == "evaluations":  # on a tie, the last row in data order
+        df = df.sort(x_col, maintain_order=True)
+    else:  # on a tie, the first evaluation that reached the target
+        df = df.sort([x_col, y_col], descending=[False, not forward])
+    result = (
+        grid.sort(x_col)
+        .join_asof(
             df,
-            by="data_id",
             on=x_col,
-            strategy="forward",
+            by=group_cols,
+            strategy="forward" if forward else "backward",
             check_sortedness=False,
         )
-    else:
-        result_df = x_vals.join_asof(
-            df,
-            by="data_id",
-            on=x_col,
-            strategy="backward",
-            check_sortedness=False,
-        )
-
+        .with_columns(pl.col(y_col).fill_null(np.inf))
+    )
     if output == "long":
-        return result_df
-
-    pivot_df = result_df.pivot(index=x_col, on=("data_id",), values=y_col)
-    return pivot_df
+        return result
+    return result.pivot(index=x_col, on=group_cols, values=y_col)
