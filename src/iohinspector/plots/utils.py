@@ -84,17 +84,7 @@ class BasePlotArgs:
 
         Returns:
             ax: The modified matplotlib Axes object with properties applied.
-
-        Raises:
-            RuntimeError: If matplotlib is not available.
         """
-        try:
-            pass
-        except Exception as exc:
-            raise RuntimeError(
-                "matplotlib is required to apply plot properties"
-            ) from exc
-
         # Title and labels with fontsize handling
         if self.title is not None:
             if self.title_fontsize is not None:
