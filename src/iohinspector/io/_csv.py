@@ -390,7 +390,8 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
         index = len(self.runs)
         rid = run_id(self.tables.dataset_id, self.name, index)
         self.runs.append(_Run(rid, self._field_values(row, line), attrs, line))
-        for c, token in zip(self.descriptor_cols, attrs[self.n_field_cols :]):
+        n = self.n_field_cols
+        for c, token in zip(self.descriptor_cols, attrs[n:]):
             self.descriptor_types[c].add(token)
         return index
 
@@ -517,7 +518,8 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
             out.append(
                 (run.rid, "algorithm_info", values["algorithm_info"], "algorithm")
             )
-        tokens = run.attrs[self.n_field_cols :]
+        n = self.n_field_cols
+        tokens = run.attrs[n:]
         for c, kind, token in zip(self.descriptor_cols, kinds, tokens):
             if token:
                 value = parse_token(token, kind)

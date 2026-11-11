@@ -407,8 +407,9 @@ def _positions(
 ) -> tuple[list[str], list[str]]:
     """The header split into logged properties and position columns."""
     xs = [f"x{i}" for i in range(dimension)]
-    if attributes is not None and header[: len(attributes)] == attributes:
-        rest = header[len(attributes) :]
+    n = 0 if attributes is None else len(attributes)
+    if attributes is not None and header[:n] == attributes:
+        rest = header[n:]
         if rest and rest != xs:
             raise ValueError(
                 f"header columns {rest} are neither logged properties nor "
@@ -499,9 +500,10 @@ def _typed(lines: DataLines, props: list[str], n_x: int, display: str) -> DatFil
             text_columns[name] = numbers[i]
     positions = None
     if n_x:
+        n_props = len(props)
         positions = keys.with_columns(
             check_floats(x, numbers, display, f"x{i}")
-            for i, x in enumerate(columns[len(props) :])
+            for i, x in enumerate(columns[n_props:])
         )
     return DatFile(display, lines, trace, positions, text_columns)
 
