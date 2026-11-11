@@ -50,16 +50,16 @@ def check_source_path(path: str) -> str:
     return path
 
 
-def run_id(dataset_id: str, source_file: str, source_run_index: int) -> int:
-    """The stable run id of run ``source_run_index`` (0-based) in ``source_file``.
+def run_id(dataset_id: str, source_file: str, run_index: int) -> int:
+    """The stable run id of run ``run_index`` (0-based) in ``source_file``.
 
     The first 63 bits of SHA-256 over ``"ioh-run-v1\\n<dataset_id>\\n<source_file>\\n<index>"``.
     """
-    if isinstance(source_run_index, bool) or not isinstance(source_run_index, int):
-        raise TypeError("source_run_index must be an int")
-    if source_run_index < 0:
-        raise ValueError("source_run_index must be >= 0")
-    text = f"{RUN_ID_PREFIX}\n{dataset_id}\n{source_file}\n{source_run_index}"
+    if isinstance(run_index, bool) or not isinstance(run_index, int):
+        raise TypeError("run_index must be an int")
+    if run_index < 0:
+        raise ValueError("run_index must be >= 0")
+    text = f"{RUN_ID_PREFIX}\n{dataset_id}\n{source_file}\n{run_index}"
     digest = hashlib.sha256(text.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "big") & _RUN_ID_MASK
 

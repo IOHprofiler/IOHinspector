@@ -479,7 +479,7 @@ def _add_runs(
                 "evals_used": None if entry is None else entry.evals,
                 "n_objectives": 1,
                 "source_file": primary,
-                "source_run_index": index,
+                "run_index": index,
                 "source_rows_sha256": hashes[index] if index < len(hashes) else None,
             }
         )

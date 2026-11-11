@@ -44,8 +44,8 @@ def cocopp_level(target: float) -> float:
 
 def runs_and_trace(folder: Path, dimension: int) -> tuple[pl.DataFrame, pl.DataFrame]:
     result = read_coco(folder, "cocopp")
-    runs = result.runs.filter(pl.col("dimension") == dimension).sort("source_run_index")
-    trace = result.trace.join(runs.select("run_id", "source_run_index"), on="run_id")
+    runs = result.runs.filter(pl.col("dimension") == dimension).sort("run_index")
+    trace = result.trace.join(runs.select("run_id", "run_index"), on="run_id")
     return runs, trace
 
 
@@ -54,10 +54,10 @@ def hitting_times(trace: pl.DataFrame, runs: int, target: float) -> list[float |
     hits = (
         trace.filter(pl.col("raw_y") <= target)
         .sort("row")
-        .group_by("source_run_index")
+        .group_by("run_index")
         .agg(pl.col("evaluations").first())
     )
-    found = dict(zip(hits["source_run_index"], hits["evaluations"]))
+    found = dict(zip(hits["run_index"], hits["evaluations"]))
     return [None if found.get(i) is None else float(found[i]) for i in range(runs)]
 
 

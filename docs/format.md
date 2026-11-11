@@ -58,13 +58,13 @@ The algorithm is not the identifier of a run (decision D17). A run is identified
 
 `run_id` is a stable hash of the dataset id, the source file and the run's index in that file:
 
-1. Build the UTF-8 string `"ioh-run-v1\n" + dataset_id + "\n" + source_file + "\n" + decimal(source_run_index)`, where `\n` is U+000A and `decimal` writes the integer in base 10 without sign or leading zeros.
+1. Build the UTF-8 string `"ioh-run-v1\n" + dataset_id + "\n" + source_file + "\n" + decimal(run_index)`, where `\n` is U+000A and `decimal` writes the integer in base 10 without sign or leading zeros.
 2. Take the SHA-256 digest of that string.
 3. Read the first 8 bytes of the digest as an unsigned big-endian integer, and clear its highest bit.
 
 The result is in [0, 2^63) and is stored as `int64`. Test vector: dataset id `example-dataset`, source file `algA/data_f1/IOHprofiler_f1_DIM5.dat` and run index `0` give run id `7884767605179371010`.
 
-`source_run_index` counts from 0, in the order the runs appear in the source file. Run ids MUST be unique within a dataset. With 63 bits, the chance of any collision among ten million runs is about 5e-6, and `validate_dataset` reports one if it happens.
+`run_index` counts from 0, in the order the runs appear in the source file. Run ids MUST be unique within a dataset. With 63 bits, the chance of any collision among ten million runs is about 5e-6, and `validate_dataset` reports one if it happens.
 
 ## manifest.json
 
@@ -286,14 +286,14 @@ One row per run. "Not null" columns MUST NOT contain nulls. Writers MUST NOT add
 | `best_y` | float64 | yes | The best value as the source reports it, for example IOHexperimenter's `best.y`. Analysis computes best-so-far values from the trace and does not rely on this column |
 | `n_objectives` | int32 | no | Number of objectives, at least 1. Objective 0 is the trace's `raw_y`, the others are `y1` ... (see [Multiple objectives](#multiple-objectives)) |
 | `source_file` | string | no | The file the run's rows were read from. See [Source paths](#source-paths). It MUST be listed in `manifest.sources` |
-| `source_run_index` | int64 | no | Index of the run in `source_file`, counting from 0 |
+| `run_index` | int64 | no | Index of the run in `source_file`, counting from 0 |
 | `source_rows_sha256` | string | yes | Lower-case hex SHA-256 of the run's data lines in the source, normalised as described below. Null when the source is not text (an `.rds` file, or a logger writing directly) |
 
-`(source_file, source_run_index)` MUST be unique. When the rows of one run come from several files (COCO `.dat` and `.tdat`), `source_file` is the file the reader treats as primary, and the reader's page says which one that is.
+`(source_file, run_index)` MUST be unique. When the rows of one run come from several files (COCO `.dat` and `.tdat`), `source_file` is the file the reader treats as primary, and the reader's page says which one that is.
 
 `source_rows_sha256` hashes the run's data lines of `source_file` in source order. Each line is split into tokens at the source's column separator (runs of whitespace for whitespace-separated files), the tokens are joined by a single space (U+0020), and each line is followed by `\n` (U+000A). Header lines, comment lines and blank lines are left out. The tokens are hashed as text, before any parsing, so that `iohinspector verify` can recompute the hash from the source without sharing code with the readers.
 
-**Sort order.** Rows are sorted by `suite`, `function_id`, `dimension`, `source_file` and `source_run_index`, all ascending. Strings compare byte by byte in UTF-8, as in the C locale. Because `(source_file, source_run_index)` is unique, this order is total. The position of a run in this order is its *run order*. It depends on no descriptor, so editing descriptors never reorders the trace. Runs of one algorithm usually stay together anyway, because sources keep one algorithm per file or folder.
+**Sort order.** Rows are sorted by `suite`, `function_id`, `dimension`, `source_file` and `run_index`, all ascending. Strings compare byte by byte in UTF-8, as in the C locale. Because `(source_file, run_index)` is unique, this order is total. The position of a run in this order is its *run order*. It depends on no descriptor, so editing descriptors never reorders the trace. Runs of one algorithm usually stay together anyway, because sources keep one algorithm per file or folder.
 
 Run identity does not depend on descriptors either: nothing in the format, and nothing `validate_dataset` checks, assumes that algorithm, function, dimension and instance identify a run.
 
@@ -430,7 +430,7 @@ Version 1 stores multi-objective data in a simple form. Richer support follows w
 
 - the manifest: JSON Schema, the format name, an unknown major version, duplicate source paths, and an `archive` that is not listed;
 - the schemas: missing or unknown columns, wrong types, nulls in not-null columns, reserved names, positions columns that are not `x0` to `x(D-1)`, objective columns that are not `y1` to `y(M-1)`;
-- the runs: duplicate or wrongly computed run ids, duplicate `(source_file, source_run_index)`, sort order, `n_objectives` below 1, `dimension` below 1, `source_file` not in the manifest, and a malformed `source_rows_sha256`;
+- the runs: duplicate or wrongly computed run ids, duplicate `(source_file, run_index)`, sort order, `n_objectives` below 1, `dimension` below 1, `source_file` not in the manifest, and a malformed `source_rows_sha256`;
 - the descriptors: run ids that are not in `runs.parquet`, duplicate `(run_id, key)`, unknown origins or types, a `value` that is not canonical for its type or disagrees with the typed column, typed columns that should be null, invalid or reserved keys, sort order, runs without `algorithm_name` or `algorithm_info`, those two with a type other than `string` or an origin other than `algorithm` or `user`, and a manifest summary that does not match;
 - the trace and positions: run ids that are not in `runs.parquet` (referential integrity), `function_id` or `dimension` that differ from the run's, sort order, row numbers with gaps, positions without a trace row, coordinates whose nulls do not match the run's dimension, and objective values whose nulls do not match the run's `n_objectives`;
 - the counts: `manifest.counts` against the row counts of the files.
@@ -452,7 +452,7 @@ All of it lives in `iohinspector.format`.
 | `validate_dataset(path)` | Returns a `ValidationReport` with errors and warnings; `raise_for_errors()` raises `DatasetValidationError` |
 | `read_manifest(path)`, `write_manifest(path, manifest)`, `validate_manifest(manifest)` | Manifest input and output, with the JSON Schema check |
 | `new_manifest(dataset_id, reader_name, reader_version, ...)`, `file_entry(local_path, path, ...)` | Build a manifest, and a `sources` entry with the file's sha256 and size |
-| `run_id(dataset_id, source_file, source_run_index)`, `run_ids(...)` | Run ids, for one run or as an Int64 series |
+| `run_id(dataset_id, source_file, run_index)`, `run_ids(...)` | Run ids, for one run or as an Int64 series |
 | `RUNS_SCHEMA`, `TRACE_SCHEMA`, `POSITIONS_KEY_SCHEMA`, `MANIFEST_SCHEMA` | The fixed polars schemas and the manifest's JSON Schema |
 | `objective_columns(M)`, `position_columns(D)` | The names `y1` to `y(M-1)` and `x0` to `x(D-1)` |
 

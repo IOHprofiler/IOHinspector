@@ -30,7 +30,7 @@ def load(folder: Path, **kwargs) -> tuple[DataManager, pl.DataFrame]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         manager.add_folder(str(folder))
-    return manager, manager.load(include_columns=["source_run_index"], **kwargs)
+    return manager, manager.load(include_columns=["run_index"], **kwargs)
 
 
 def info_instances(folder: Path) -> list[int]:
@@ -43,7 +43,7 @@ def info_instances(folder: Path) -> list[int]:
 
 def test_manager_reads_instances():
     manager, _ = load(FIXTURE, monotonic=False)
-    overview = manager.overview.sort("source_file", "source_run_index")
+    overview = manager.overview.sort("source_file", "run_index")
     assert overview["instance"].to_list() == info_instances(FIXTURE)
 
 
@@ -57,7 +57,7 @@ CONFLICT = TDAT.replace(
 
 def test_manager_keeps_rows_the_files_disagree_on(tmp_path):
     _, df = load(write_coco(tmp_path, {"dat": DAT, "tdat": CONFLICT}), monotonic=False)
-    rows = df.filter(pl.col("source_run_index") == 0, pl.col("evaluations") == 3)
+    rows = df.filter(pl.col("run_index") == 0, pl.col("evaluations") == 3)
     assert sorted(rows["x0"].to_list()) == [0.3, 0.35]
     # every row of both files, identical rows once: 4 + 2 rows
     assert df.height == 6
@@ -77,20 +77,20 @@ def test_manager_splits_runs_on_header_lines(tmp_path):
         write_coco(tmp_path, {"dat": dat}, entries="1:2|3.0e+00, 2:1|1.0e+00"),
         monotonic=False,
     )
-    runs = df.group_by("source_run_index").len().sort("source_run_index")
+    runs = df.group_by("run_index").len().sort("run_index")
     assert runs["len"].to_list() == [3, 1]
 
 
 def test_manager_rows_equal_reader_trace():
     result = read_coco(FIXTURE, "defects")
     per_run = (
-        result.trace.join(result.runs.select("run_id", "source_run_index"), on="run_id")
-        .group_by("source_run_index")
+        result.trace.join(result.runs.select("run_id", "run_index"), on="run_id")
+        .group_by("run_index")
         .agg(pl.col("evaluations"))
-        .sort("source_run_index")["evaluations"]
+        .sort("run_index")["evaluations"]
         .to_list()
     )
     _, df = load(FIXTURE, monotonic=False)
-    got = df.group_by("source_run_index").agg(pl.col("evaluations"))
-    got = got.sort("source_run_index")
+    got = df.group_by("run_index").agg(pl.col("evaluations"))
+    got = got.sort("run_index")
     assert [list(map(int, e)) for e in got["evaluations"].to_list()] == per_run

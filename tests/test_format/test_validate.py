@@ -298,7 +298,7 @@ def test_run_id_check_uses_the_recipe(ds):
     r = runs.row(0, named=True)
     manifest = json.loads((ds / "manifest.json").read_text())
     assert r["run_id"] == run_id(
-        manifest["dataset_id"], r["source_file"], r["source_run_index"]
+        manifest["dataset_id"], r["source_file"], r["run_index"]
     )
 
 

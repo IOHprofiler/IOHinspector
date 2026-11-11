@@ -110,10 +110,10 @@ def test_values_equal_source_tokens(folder):
             for t in (line.split() for line in lines)
             if t and t[0] != "evaluations"
         ]
-        ids = runs.filter(pl.col("source_file") == source).sort("source_run_index")
+        ids = runs.filter(pl.col("source_file") == source).sort("run_index")
         got = (
-            result.trace.join(ids.select("run_id", "source_run_index"), on="run_id")
-            .sort("source_run_index", "row")
+            result.trace.join(ids.select("run_id", "run_index"), on="run_id")
+            .sort("run_index", "row")
             .select("evaluations", "raw_y")
             .rows()
         )
@@ -131,7 +131,7 @@ def test_source_rows_sha256(tmp_path):
         hashlib.sha256(b"1 5.0\n2 4.0\n").hexdigest(),
         hashlib.sha256(b"1 3.0\n").hexdigest(),
     ]
-    assert result.runs.sort("source_run_index")["source_rows_sha256"].to_list() == want
+    assert result.runs.sort("run_index")["source_rows_sha256"].to_list() == want
 
 
 def test_reader_table_and_detection(tmp_path):
@@ -204,7 +204,7 @@ def test_maximization(tmp_path):
 def test_more_dat_runs_than_json_runs(tmp_path):
     write_log(tmp_path, f"{HEADER}\n3 1.0\n{HEADER}\n3 2.0\n", runs=[_run()])
     result = read_ioh(tmp_path, "x")
-    runs = result.runs.sort("source_run_index")
+    runs = result.runs.sort("run_index")
     assert runs["instance"].to_list() == [1, None]
     assert result.trace.height == 2
     codes = [w["code"] for w in result.manifest["warnings"]]
@@ -218,7 +218,7 @@ def test_more_json_runs_than_dat_runs(tmp_path):
     result = read_ioh(tmp_path, "x")
     assert result.runs.height == 2
     assert result.trace.height == 1
-    assert result.runs.sort("source_run_index")["source_rows_sha256"][1] is None
+    assert result.runs.sort("run_index")["source_rows_sha256"][1] is None
 
 
 def test_missing_dat_file(tmp_path):

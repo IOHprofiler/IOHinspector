@@ -161,7 +161,7 @@ def rows_by_run(
     runs: pl.DataFrame, trace: pl.DataFrame, columns: list[str]
 ) -> list[list[tuple]]:
     out = []
-    for rid in runs.sort("source_run_index")["run_id"]:
+    for rid in runs.sort("run_index")["run_id"]:
         part = trace.filter(pl.col("run_id") == rid).sort("row")
         out.append(part.select(columns).rows())
     return out

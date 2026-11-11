@@ -238,7 +238,7 @@ def _runs_column(runs: pl.DataFrame, col: Column, dataset_id: str) -> pl.Series:
             col.name
         )
     if col.name == "run_id":
-        return run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
+        return run_ids(dataset_id, runs["source_file"], runs["run_index"])
     return pl.repeat(
         RUNS_DEFAULTS[col.name], runs.height, dtype=col.dtype, eager=True
     ).alias(col.name)

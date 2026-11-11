@@ -99,13 +99,13 @@ def _runs_and_sources(algorithms, functions, dimensions, runs_per_file, dataset_
                         "instance": i + 1,
                         "maximization": f % 2 == 0,
                         "source_file": path,
-                        "source_run_index": i,
+                        "run_index": i,
                     }
                     for i in range(runs_per_file)
                 ]
     runs = pl.DataFrame(run_rows)
     runs = runs.with_columns(
-        run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
+        run_ids(dataset_id, runs["source_file"], runs["run_index"])
     )
     return runs, sources
 
@@ -115,7 +115,7 @@ def _descriptors(runs: pl.DataFrame) -> pl.DataFrame:
     records = []
     for run in runs.iter_rows(named=True):
         records.append((run["run_id"], "algorithm_name", run["algorithm"], "algorithm"))
-        records.append((run["run_id"], "seed", run["source_run_index"] * 7 + 1, "run"))
+        records.append((run["run_id"], "seed", run["run_index"] * 7 + 1, "run"))
         records.append(
             (run["run_id"], "popsize", 10 * (1 + run["function_id"] % 2), "algorithm")
         )
@@ -186,11 +186,11 @@ def big_trace_chunks(
             "dimension": dims[(idx // 24) % 6],
             "maximization": np.zeros(n_runs, dtype=bool),
             "source_file": path,
-            "source_run_index": idx // (24 * 6 * 7),
+            "run_index": idx // (24 * 6 * 7),
         }
     )
     runs = runs.with_columns(
-        run_ids(dataset_id, runs["source_file"], runs["source_run_index"])
+        run_ids(dataset_id, runs["source_file"], runs["run_index"])
     )
     descriptors = algorithm_descriptors(runs["run_id"], [f"alg{i % 7}" for i in idx])
     sources = [{"path": p, "sha256": None, "bytes": None} for p in sorted(set(path))]

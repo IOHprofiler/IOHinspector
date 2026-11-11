@@ -35,9 +35,7 @@ def small_spills(monkeypatch):
 
 def expected_trace(syn):
     """The trace the format requires: run order, then row; with the copied run columns."""
-    runs = syn.runs.sort(
-        ["function_id", "dimension", "source_file", "source_run_index"]
-    )
+    runs = syn.runs.sort(["function_id", "dimension", "source_file", "run_index"])
     order = runs.select(
         "run_id", "function_id", "dimension", pl.int_range(pl.len()).alias("_o")
     )
@@ -107,9 +105,7 @@ def test_runs_are_sorted_by_suite_function_dimension_and_source(tmp_path):
         tmp_path / "ds", syn.manifest, syn.runs, syn.trace, descriptors=syn.descriptors
     )
     runs = scan_dataset(tmp_path / "ds").runs.collect()
-    keys = runs.select(
-        "function_id", "dimension", "source_file", "source_run_index"
-    ).rows()
+    keys = runs.select("function_id", "dimension", "source_file", "run_index").rows()
     assert keys == sorted(keys)
 
 
@@ -568,7 +564,7 @@ def test_minimal_runs_get_defaults(tmp_path):
             "dimension": [2],
             "maximization": [False],
             "source_file": ["a.dat"],
-            "source_run_index": [0],
+            "run_index": [0],
         }
     )
     rid = run_ids("minimal", ["a.dat"], [0])[0]
