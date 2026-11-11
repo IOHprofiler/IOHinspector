@@ -45,6 +45,9 @@ HINTS: dict[str, str] = {
     "experiment_attributes": "use descriptor_keys, and select(key=[value])",
     "data_attributes": "use trace.collect_schema().names()",
     "NonDominated": "use iohinspector.indicators.NonDominated (final_nondominated)",
+    "turbo_align": "use align_data; it is the one (fast) alignment, best-so-far included",
+    "turbo": "drop turbo=; the alignment is always the fast one",
+    "silence_warning": "drop silence_warning=; align_data no longer warns",
 }
 
 

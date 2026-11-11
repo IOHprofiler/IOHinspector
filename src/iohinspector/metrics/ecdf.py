@@ -2,7 +2,7 @@ import polars as pl
 from typing import Iterable, Sequence
 from .._upgrade import upgrade_hints
 from .utils import get_sequence
-from ..align import align_data, turbo_align
+from ..align import align_data
 from .utils import transform_fval
 
 
@@ -20,7 +20,6 @@ def get_data_ecdf(
     eval_max: int = None,
     scale_eval_log: bool = True,
     maximization: bool = False,
-    turbo: bool = False,
 ) -> pl.DataFrame:
     """Generate empirical cumulative distribution function (ECDF) data based on EAF calculations.
 
@@ -38,7 +37,6 @@ def get_data_ecdf(
         eval_max (int, optional): Maximum evaluation value. If None, uses maximum from data. Defaults to None.
         scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to True.
         maximization (bool, optional): Whether the performance measure is being maximized. Defaults to False.
-        turbo (bool, optional): Whether to use turbo alignment for faster processing. Defaults to False.
 
     Returns:
         pl.DataFrame: A DataFrame containing the ECDF data with aligned evaluation
@@ -52,24 +50,13 @@ def get_data_ecdf(
         eval_values = get_sequence(
             eval_min, eval_max, 50, scale_log=scale_eval_log, cast_to_int=True
         )
-    if turbo:
-        data_aligned = turbo_align(
-            data.cast({eval_var: pl.Int64}),
-            eval_values,
-            x_col=eval_var,
-            y_col=fval_var,
-            maximization=maximization,
-        )
-    else:
-        data_aligned = align_data(
-            data.cast({eval_var: pl.Int64}),
-            eval_values,
-            group_cols=["run_id"],
-            x_col=eval_var,
-            y_col=fval_var,
-            maximization=maximization,
-            silence_warning=True,
-        )
+    data_aligned = align_data(
+        data.cast({eval_var: pl.Int64}),
+        eval_values,
+        x_col=eval_var,
+        y_col=fval_var,
+        maximization=maximization,
+    )
     dt_ecdf = transform_fval(
         data_aligned,
         fval_var=fval_var,

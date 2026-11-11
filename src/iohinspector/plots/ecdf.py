@@ -79,7 +79,6 @@ def plot_ecdf(
         eval_max=eval_max,
         eval_min=eval_min,
         scale_eval_log=scale_eval_log,
-        turbo=True,
     )
 
     plot_args = _create_plot_args(

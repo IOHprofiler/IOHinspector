@@ -92,7 +92,7 @@ Generate attractor network analysis from optimization algorithm trajectory data.
 
 ### ECDF
 
-#### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True, turbo=True)`
+#### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True)`
 Generate Empirical Cumulative Distribution Function (ECDF) data for performance analysis.
 
 **Args:**
@@ -108,7 +108,6 @@ Generate Empirical Cumulative Distribution Function (ECDF) data for performance 
 - `eval_min (int, optional)`: Minimum evaluation bound. If None, uses data minimum. Defaults to None.
 - `eval_max (int, optional)`: Maximum evaluation bound. If None, uses data maximum. Defaults to None.
 - `scale_eval_log (bool, optional)`: Whether evaluation axis should be log-scaled. Defaults to True.
-- `turbo (bool, optional)`: Whether to use optimized computation. Defaults to True.
 
 **Returns:**
 - `pl.DataFrame`: DataFrame containing ECDF data with evaluation points and cumulative probabilities.

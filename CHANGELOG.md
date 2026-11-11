@@ -65,10 +65,28 @@ One data model and one way to load and use data. The outward API stays close to
 | `free_var="..."` (`plot_paretofronts_2d`, `plot_indicator_over_time`) | `by=["..."]` |
 | `return_as_pandas=` (every metric) | removed; results are polars, call `.to_pandas()` |
 | plots return pandas frames | plots return the polars frame they drew |
-| frames grouped on `data_id` (`align_data`, `turbo_align`, `add_indicator`, EAF, attractor network, single-run heatmap) | grouped on `run_id` |
+| frames grouped on `data_id` (`align_data`, `add_indicator`, EAF, attractor network, single-run heatmap) | grouped on `run_id` |
 | `get_discritized_eaf_single_objective`: pandas, `eaf_target` as index | polars, `eaf_target` as first column, one column per evaluation value |
 | `get_attractor_network`: pandas nodes and edges | polars; a node's number is its row number |
 
 A removed keyword argument raises `TypeError`, and a frame with a `data_id` column
 but no `run_id` raises `ValueError`, each with the upgrade hint. The numbers the
-metrics compute are unchanged.
+metrics compute are unchanged, except for the alignment fixes below.
+
+### Alignment
+
+`align_data` is the one alignment function. It is the former `turbo_align` (one join
+for all runs), with what only the old `align_data` did: best-so-far values, `inf`
+where a run has no value yet (before its first evaluation, or a target it never
+reached), any `group_cols`, and a wide output per group.
+
+| 0.0.x | 0.1.0 |
+|---|---|
+| `turbo_align(df, x_values, ...)` | `align_data(df, x_values, ...)` |
+| `align_data(..., silence_warning=True)` | `align_data(...)`; it no longer warns |
+| `get_data_ecdf(..., turbo=True)` | `get_data_ecdf(...)`; the alignment is always the fast one |
+| `turbo_align`, so `plot_ecdf` and the single-objective EAF, used `raw_y` as given | best-so-far, so a frame loaded with `monotonic=False` gives the same result as with `monotonic=True` |
+| `turbo_align` left a missing value null | `inf` |
+| the old `align_data` set every numeric column of a missing row to `inf` (so means of `optimum`, `budget` or a run attribute could become `inf`) | only the aligned column is `inf`; the others stay null |
+| fixed target: on a tie (the best-so-far value repeats, for example the final row of a monotonic frame) the old `align_data` could take a later row | the first evaluation that reached the target. This changes `aggregate_running_time` where the old result was a later evaluation (one target of the test data: minimum 100 becomes 82, ERT 1500 becomes 1482) |
+| `load(x_values=...)` on maximisation runs | aligned per run with its own direction |

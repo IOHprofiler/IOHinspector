@@ -3,7 +3,7 @@ import polars as pl
 from moocore import eaf, eafdiff
 
 from .._upgrade import upgrade_hints
-from ..align import turbo_align
+from ..align import align_data
 from .utils import get_sequence, transform_fval
 
 
@@ -52,9 +52,7 @@ def get_discritized_eaf_single_objective(
             eval_min, eval_max, eval_targets, scale_log=scale_eval_log, cast_to_int=True
         )
 
-    dt_aligned = turbo_align(
-        data, eval_values, x_col=eval_var, y_col=fval_var, output="long"
-    )
+    dt_aligned = align_data(data, eval_values, x_col=eval_var, y_col=fval_var)
     dt_aligned = transform_fval(
         dt_aligned,
         lb=f_min,
@@ -99,7 +97,7 @@ def get_eaf_data(
         eval_max = data[eval_var].max()
 
     evals = get_sequence(eval_min, eval_max, 50, scale_eval_log, True).astype("uint64")
-    return turbo_align(data, evals, output="long")
+    return align_data(data, evals)
 
 
 def _points(data: pl.DataFrame, obj1_var: str, obj2_var: str) -> np.ndarray:

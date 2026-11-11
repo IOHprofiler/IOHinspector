@@ -44,5 +44,4 @@ def get_trajectory(
         x_col=evaluation_variable,
         y_col=fval_variable,
         maximization=maximization,
-        silence_warning=True,
     )

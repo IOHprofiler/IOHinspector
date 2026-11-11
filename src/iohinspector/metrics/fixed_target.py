@@ -52,7 +52,6 @@ def aggregate_running_time(
         x_col=fval_var,
         y_col=eval_var,
         maximization=maximization,
-        silence_warning=True,
     )
 
     if eval_max is None:

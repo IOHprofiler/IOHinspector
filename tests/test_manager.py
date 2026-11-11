@@ -3,7 +3,7 @@ import warnings
 
 import pytest
 
-from iohinspector import DataManager, plot_ecdf, turbo_align
+from iohinspector import DataManager, align_data, plot_ecdf
 from iohinspector.convert import convert
 from iohinspector.io import ReaderError
 
@@ -145,7 +145,7 @@ def test_align(manager):
     )
     df = selection.load(monotonic=True, include_meta_data=True)
     evals = [1, 5, 10, 20, 50, 100]
-    df = turbo_align(df, evals)
+    df = align_data(df, evals)
     assert set(df["evaluations"].unique()) == set(evals)
     assert df["run_id"].n_unique() * len(evals) == df.shape[0]
 

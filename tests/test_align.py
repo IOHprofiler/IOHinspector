@@ -1,208 +1,85 @@
-import unittest
+import math
+
 import polars as pl
-from iohinspector.align import align_data, turbo_align
+import pytest
+
+import iohinspector.align
+from iohinspector.align import align_data
+
+TWO_RUNS = pl.DataFrame(
+    {
+        "run_id": [1, 1, 1, 2, 2, 2],
+        "evaluations": [1, 2, 5, 1, 4, 5],
+        "raw_y": [10, 8, 6, 20, 18, 16],
+    }
+)
 
 
-class TestAlignData(unittest.TestCase):
-    def test_align_data_minimization_long(self):
-        df = pl.DataFrame(
-            {
-                "run_id": [1, 1, 1, 2, 2, 2],
-                "evaluations": [1, 2, 5, 1, 4, 5],
-                "raw_y": [10, 8, 6, 20, 18, 16],
-            }
-        )
-
-        evals = [1, 2, 3, 4, 5]
-        result = align_data(
-            df,
-            evals,
-            group_cols=("run_id",),
-            x_col="evaluations",
-            y_col="raw_y",
-            output="long",
-            maximization=False,
-            silence_warning=True,
-        )
-        expected = pl.DataFrame(
-            {
-                "evaluations": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-                "raw_y": [10, 8, 8, 8, 6, 20, 20, 20, 18, 16],
-                "run_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
-            }
-        )
-        result_sorted = result.sort(["run_id", "evaluations"])
-        expected_sorted = expected.sort(["run_id", "evaluations"])
-        self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
-
-    def test_align_data_maximization_long(self):
-        df = pl.DataFrame(
-            {"run_id": [1, 1, 1], "evaluations": [1, 2, 3], "raw_y": [5, 7, 6]}
-        )
-        evals = [1, 2, 3]
-        result = align_data(
-            df,
-            evals,
-            group_cols=("run_id",),
-            x_col="evaluations",
-            y_col="raw_y",
-            output="long",
-            maximization=True,
-            silence_warning=True,
-        )
-        expected = pl.DataFrame(
-            {"evaluations": [1, 2, 3], "raw_y": [5, 7, 7], "run_id": [1, 1, 1]}
-        )
-        result_sorted = result.sort(["run_id", "evaluations"])
-        expected_sorted = expected.sort(["run_id", "evaluations"])
-        self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
-
-    def test_align_data_wide_output(self):
-        df = pl.DataFrame(
-            {
-                "run_id": [1, 1, 1, 2, 2, 2],
-                "evaluations": [1, 2, 5, 1, 4, 5],
-                "raw_y": [10, 8, 6, 20, 18, 16],
-            }
-        )
-        evals = [1, 2, 3, 4, 5]
-
-        result = align_data(
-            df,
-            evals,
-            group_cols=("run_id",),
-            x_col="evaluations",
-            y_col="raw_y",
-            output="wide",
-            maximization=False,
-            silence_warning=True,
-        )
-        # Should pivot to wide format
-        self.assertIn("1", result.columns)
-        self.assertIn("2", result.columns)
-        self.assertIn("evaluations", result.columns)
-        self.assertEqual(result.shape[0], 5)  # 3 evals
-
-    def test_align_data_custom_group_col(self):
-        df = pl.DataFrame(
-            {"exp_id": [1, 1, 2, 2], "evaluations": [1, 2, 1, 2], "raw_y": [5, 3, 7, 6]}
-        )
-        evals = [1, 2]
-        result = align_data(
-            df,
-            evals,
-            group_cols=("exp_id",),
-            x_col="evaluations",
-            y_col="raw_y",
-            output="long",
-            maximization=False,
-            silence_warning=True,
-        )
-        self.assertTrue(set(result["exp_id"].to_list()) == {1, 2})
-
-    def test_align_data_non_default_x_col(self):
-        df = pl.DataFrame(
-            {"run_id": [1, 1, 1], "steps": [10, 20, 30], "score": [100, 90, 80]}
-        )
-        evals = [10, 20, 30]
-        result = align_data(
-            df,
-            evals,
-            group_cols=("run_id",),
-            x_col="steps",
-            y_col="score",
-            output="long",
-            maximization=False,
-            silence_warning=True,
-        )
-        self.assertTrue(result["steps"].to_list() == [10, 20, 30])
+def _rows(df, *cols):
+    return df.sort(["run_id", cols[0]]).select("run_id", *cols).rows()
 
 
-class TestTurboAlignData(unittest.TestCase):
-    def test_turbo_align_minimization_long(self):
-        df = pl.DataFrame(
-            {
-                "run_id": [1, 1, 1, 2, 2, 2],
-                "evaluations": [1, 2, 5, 1, 4, 5],
-                "raw_y": [10, 8, 6, 20, 18, 16],
-            }
-        )
-        evals = [1, 2, 3, 4, 5]
-        result = turbo_align(
-            df,
-            evals,
-            x_col="evaluations",
-            y_col="raw_y",
-            output="long",
-            maximization=False,
-        )
-        expected = pl.DataFrame(
-            {
-                "evaluations": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-                "run_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
-                "raw_y": [10, 8, 8, 8, 6, 20, 20, 20, 18, 16],
-            }
-        )
-        result_sorted = result.sort(["run_id", "evaluations"])
-        expected_sorted = expected.sort(["run_id", "evaluations"])
-        self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
-
-    def test_turbo_align_maximization_long(self):
-        df = pl.DataFrame(
-            {"run_id": [1, 1, 1], "evaluations": [1, 2, 5], "raw_y": [5, 7, 8]}
-        )
-        evals = [1, 2, 3, 4, 5]
-        result = turbo_align(
-            df,
-            evals,
-            x_col="evaluations",
-            y_col="raw_y",
-            output="long",
-            maximization=True,
-        )
-        expected = pl.DataFrame(
-            {
-                "evaluations": [1, 2, 3, 4, 5],
-                "run_id": [1, 1, 1, 1, 1],
-                "raw_y": [5, 7, 7, 7, 8],
-            }
-        )
-        result_sorted = result.sort(["run_id", "evaluations"])
-        expected_sorted = expected.sort(["run_id", "evaluations"])
-        self.assertEqual(result_sorted.to_dicts(), expected_sorted.to_dicts())
-
-    def test_turbo_align_wide_output(self):
-        df = pl.DataFrame(
-            {
-                "run_id": [1, 1, 1, 2, 2, 2],
-                "evaluations": [1, 2, 5, 1, 4, 5],
-                "raw_y": [10, 8, 6, 20, 18, 16],
-            }
-        )
-        evals = [1, 2, 3, 4, 5]
-        result = turbo_align(
-            df,
-            evals,
-            x_col="evaluations",
-            y_col="raw_y",
-            output="wide",
-            maximization=False,
-        )
-        self.assertIn("1", result.columns)
-        self.assertIn("2", result.columns)
-        self.assertIn("evaluations", result.columns)
-        self.assertEqual(result.shape[0], 5)
-
-    def test_turbo_align_non_default_x_col(self):
-        df = pl.DataFrame(
-            {"run_id": [1, 1, 1], "steps": [10, 20, 30], "score": [100, 90, 80]}
-        )
-        evals = [10, 20, 30]
-        result = turbo_align(
-            df, evals, x_col="steps", y_col="score", output="long", maximization=False
-        )
-        self.assertTrue(result["steps"].to_list() == [10, 20, 30])
+def test_fixed_budget_minimization():
+    result = align_data(TWO_RUNS, [1, 2, 3, 4, 5])
+    assert _rows(result, "evaluations", "raw_y") == [
+        (1, 1, 10), (1, 2, 8), (1, 3, 8), (1, 4, 8), (1, 5, 6),
+        (2, 1, 20), (2, 2, 20), (2, 3, 20), (2, 4, 18), (2, 5, 16),
+    ]  # fmt: skip
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_fixed_budget_computes_best_so_far():
+    df = pl.DataFrame(
+        {"run_id": [1, 1, 1], "evaluations": [1, 2, 3], "raw_y": [5, 7, 6]}
+    )
+    assert align_data(df, [1, 2, 3], maximization=True)["raw_y"].to_list() == [5, 7, 7]
+    assert align_data(df, [1, 2, 3])["raw_y"].to_list() == [5, 5, 5]
+
+
+def test_before_the_first_evaluation_is_inf():
+    df = pl.DataFrame({"run_id": [1], "evaluations": [3], "raw_y": [1.0]})
+    assert align_data(df, [1, 3])["raw_y"].to_list() == [math.inf, 1.0]
+
+
+@pytest.mark.parametrize(
+    ("maximization", "y", "expected"),
+    [
+        (False, [10, 8, 9, 6], {9: 2, 6: 4, 1: math.inf}),
+        (True, [1, 3, 2, 5], {2: 2, 5: 4, 9: math.inf}),
+    ],
+)
+def test_fixed_target_first_hit(maximization, y, expected):
+    df = pl.DataFrame({"run_id": [1] * 4, "evaluations": [1, 2, 3, 4], "raw_y": y})
+    result = align_data(
+        df,
+        list(expected),
+        x_col="raw_y",
+        y_col="evaluations",
+        maximization=maximization,
+    )
+    assert dict(result.select("raw_y", "evaluations").rows()) == expected
+
+
+def test_wide_output():
+    result = align_data(TWO_RUNS, [1, 2, 3, 4, 5], output="wide")
+    assert {"evaluations", "1", "2"} == set(result.columns)
+    assert result.height == 5
+
+
+def test_group_columns():
+    df = pl.DataFrame(
+        {"exp_id": [1, 1, 2, 2], "evaluations": [1, 2, 1, 2], "raw_y": [5, 3, 7, 6]}
+    )
+    result = align_data(df, [1, 2], group_cols=("exp_id",))
+    assert _rows(result.rename({"exp_id": "run_id"}), "evaluations", "raw_y") == [
+        (1, 1, 5), (1, 2, 3), (2, 1, 7), (2, 2, 6),
+    ]  # fmt: skip
+
+
+def test_turbo_align_is_gone():
+    with pytest.raises(ImportError, match="use align_data"):
+        _ = iohinspector.align.turbo_align
+
+
+def test_removed_arguments_hint():
+    with pytest.raises(TypeError, match="no longer warns"):
+        align_data(TWO_RUNS, [1], silence_warning=True)

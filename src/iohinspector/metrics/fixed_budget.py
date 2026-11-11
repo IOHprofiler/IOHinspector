@@ -50,7 +50,6 @@ def aggregate_convergence(
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
-        silence_warning=True,
     )
     aggregations = [
         pl.mean(fval_var).alias("mean"),

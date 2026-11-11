@@ -16,7 +16,7 @@ from typing import Any
 import polars as pl
 
 from ._upgrade import removed_names, upgrade_hints
-from .align import turbo_align
+from .align import align_data
 from .convert import read_dataset
 from .format import (
     DESCRIPTORS_SCHEMA,
@@ -193,7 +193,7 @@ class DataManager:
 
         ``monotonic`` makes ``raw_y`` the best-so-far value and keeps, per run, the
         rows where it changes and the final row. ``x_values`` aligns each run to
-        those evaluations (``turbo_align``; implies ``monotonic``).
+        those evaluations (``align_data``; implies ``monotonic``).
         ``include_meta_data`` puts every ``overview`` column in front,
         ``include_columns`` only the ones named.
         """
@@ -211,7 +211,12 @@ class DataManager:
         lf = lf.drop("row").with_columns(pl.col("evaluations").cast(pl.UInt64))
         df = lf.collect()
         if x_values is not None:
-            df = turbo_align(df, x_values)
+            maxi = self.runs.filter("maximization").select("run_id").collect()
+            is_max = pl.col("run_id").is_in(maxi["run_id"].implode())
+            df = pl.concat(
+                align_data(df.filter(is_max == m), x_values, maximization=m)
+                for m in (False, True)
+            )
         if include_meta_data or include_columns is not None:
             meta = self.overview
             if include_columns is not None:
