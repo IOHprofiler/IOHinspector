@@ -106,6 +106,13 @@ class FileScan:
     rows: pl.DataFrame | None = None
 
 
+_ROWS = {"run_index": pl.Int64, "evaluations": pl.Int64, "y": pl.Float64}
+#: Rows move to polars in chunks: small allocations of one size, which the
+#: allocator reuses from file to file. Large ones of every file's own size stay
+#: in the resident memory of some (macOS), so the peak would grow with the input.
+_CHUNK_ROWS = 1 << 16
+
+
 @dataclass
 class _Collector:
     path: str
@@ -114,6 +121,7 @@ class _Collector:
     run_index: list[int] = field(default_factory=list)
     evaluations: list[int] = field(default_factory=list)
     values: list[float] = field(default_factory=list)
+    chunks: list[pl.DataFrame] = field(default_factory=list)
 
     def new_run(self) -> int:
         self.digests.append(hashlib.sha256())
@@ -130,31 +138,39 @@ class _Collector:
         self.run_index.append(run)
         self.evaluations.append(int(ev))
         self.values.append(float(y))
+        if len(self.values) == _CHUNK_ROWS:
+            self.flush()
+
+    def flush(self) -> None:
+        columns = (self.run_index, self.evaluations, self.values)
+        self.chunks.append(pl.DataFrame(dict(zip(_ROWS, columns)), schema=_ROWS))
+        for column in columns:
+            column.clear()
 
     def result(self) -> FileScan:
-        rows = pl.DataFrame(
-            {
-                "run_index": self.run_index,
-                "evaluations": self.evaluations,
-                "y": self.values,
-            },
-            schema={"run_index": pl.Int64, "evaluations": pl.Int64, "y": pl.Float64},
-        )
+        self.flush()
         return FileScan(
-            self.path, [d.hexdigest() for d in self.digests], self.counts, rows
+            self.path,
+            [d.hexdigest() for d in self.digests],
+            self.counts,
+            pl.concat(self.chunks),
         )
 
 
-def _decode(data: bytes, path: str, bom: bool = False) -> str:
-    if path.lower().endswith(".gz"):
-        try:
-            data = gzip.decompress(data)
-        except (OSError, EOFError) as exc:
-            raise ScanError(f"{path}: not gzip data ({exc})") from exc
+def _gunzip(data: bytes, path: str) -> bytes:
+    if not path.lower().endswith(".gz"):
+        return data
+    try:
+        return gzip.decompress(data)
+    except (OSError, EOFError) as exc:
+        raise ScanError(f"{path}: not gzip data ({exc})") from exc
+
+
+def _decode(data: bytes, where: str, bom: bool = False) -> str:
     try:
         return data.decode("utf-8-sig" if bom else "utf-8")
     except UnicodeDecodeError as exc:
-        raise ScanError(f"{path}: not UTF-8 ({exc})") from exc
+        raise ScanError(f"{where}: not UTF-8 ({exc})") from exc
 
 
 def _column(spec: int | str, header: list[str], path: str, line: int) -> int:
@@ -180,7 +196,9 @@ def scan_text(data: bytes, path: str, layout: TextLayout) -> FileScan:
     """Split a whitespace-separated data file into runs at its header lines."""
     out = _Collector(path)
     columns: tuple[int, int] | None = None
-    for number, text in enumerate(_decode(data, path).split("\n"), 1):
+    # line by line: no copy of the whole file as text or as a list of lines
+    for number, line in enumerate(io.BytesIO(_gunzip(data, path)), 1):
+        text = _decode(line, f"{path}:{number}")
         tokens = text.split()
         if not tokens:
             continue
@@ -207,7 +225,7 @@ def scan_text(data: bytes, path: str, layout: TextLayout) -> FileScan:
 def scan_csv(data: bytes, path: str, layout: CsvLayout) -> FileScan:
     """Read a CSV file with the ``csv`` module; runs by ``layout.run_by``."""
     reader = csv.reader(
-        io.StringIO(_decode(data, path, bom=True), newline=""),
+        io.StringIO(_decode(_gunzip(data, path), path, bom=True), newline=""),
         delimiter=layout.delimiter,
     )
     header = next(reader, None) or []

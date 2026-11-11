@@ -177,7 +177,7 @@ class _Checker:  # pylint: disable=too-many-instance-attributes  # one field per
             self.error(f"{name} is missing")
             return None
         try:
-            pf = pq.ParquetFile(file)
+            pf = pq.ParquetFile(file, pre_buffer=False)
         except (OSError, ValueError) as exc:  # pyarrow's ArrowInvalid is a ValueError
             self.error(f"{name} is not a readable Parquet file: {exc}")
             return None

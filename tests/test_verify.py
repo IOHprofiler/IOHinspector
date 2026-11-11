@@ -7,13 +7,17 @@ import json
 import re
 import runpy
 import shutil
+import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 import pytest
 
+from iohinspector import verify as verify_module
 from iohinspector.cli import main
 from iohinspector.convert import convert
 from iohinspector.verify import verify
@@ -107,6 +111,48 @@ def test_archives_verify(tmp_path):
     report = verify(outer, tmp_path / "ds")
     assert report.ok, report.summary()
     assert report.files == 5
+
+
+@pytest.mark.parametrize("name", ["coco_old", "ioh040"])
+def test_trace_batches_split_runs(tmp_path, monkeypatch, name):
+    """Runs split across trace batches still match their source (I27)."""
+    monkeypatch.setattr(verify_module, "_BATCH_ROWS", 7)
+    report = verify(*_convert(name, tmp_path))
+    assert report.ok, report.summary()
+
+
+def test_verify_memory_does_not_grow_with_the_data(tmp_path):
+    """Eight times the rows, in files of the same size, cost ``verify`` little
+    more memory (I27). Before I27 they cost about 500 MB more; now about 100 MB,
+    which is the allocators warming up."""
+    pytest.importorskip("resource")
+    ioh = pytest.importorskip("ioh")
+    peak = (
+        "import resource, sys\n"
+        "from iohinspector.verify import verify\n"
+        "assert verify(sys.argv[1], sys.argv[2]).ok\n"
+        "print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)"  # KiB on Linux
+    )
+    peaks = []
+    for functions in (1, 8):  # 0.4 and 3.2 million rows
+        source = tmp_path / f"in{functions}"
+        logger = ioh.logger.Analyzer(
+            root=str(source), triggers=[ioh.logger.trigger.ALWAYS]
+        )
+        for fid in range(1, functions + 1):
+            for dim in (2, 3):
+                problem = ioh.get_problem(fid, 1, dim)
+                problem.attach_logger(logger)
+                for _ in range(2):
+                    problem(np.random.default_rng(fid).uniform(-5, 5, (100_000, dim)))
+                    problem.reset()
+        logger.close()
+        ds = tmp_path / f"ds{functions}"
+        convert(source, ds)
+        cmd = [sys.executable, "-c", peak, str(source), str(ds)]
+        peaks.append(int(subprocess.run(cmd, capture_output=True, check=True).stdout))
+    unit = 1 if sys.platform == "darwin" else 1024
+    assert (peaks[1] - peaks[0]) * unit < 250 * 2**20, peaks
 
 
 def test_every_reader_kind_has_a_scanner():
