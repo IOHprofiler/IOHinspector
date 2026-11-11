@@ -24,7 +24,7 @@ def runs_and_trace() -> tuple[pl.DataFrame, pl.DataFrame]:
     dataset = scan_dataset(fixture_path("extdata"), warn=False)
     runs = dataset.runs.collect().with_columns(
         funcId=pl.coalesce("function_name", pl.col("function_id").cast(pl.String)),
-        run=(pl.col("run_index") + 1).cast(pl.Int32),
+        run=(pl.col("source_run_index") + 1).cast(pl.Int32),
     )
     trace = (
         dataset.trace.collect()

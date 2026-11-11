@@ -72,7 +72,7 @@ def trace_rows(result, kind: str | None = None) -> list[list[tuple]]:
         (c for c in trace.columns if re.fullmatch(r"x\d+", c)), key=lambda c: int(c[1:])
     )
     out = []
-    for rid in result.runs.sort("source_file", "run_index")["run_id"]:
+    for rid in result.runs.sort("source_file", "source_run_index")["run_id"]:
         rows = trace.filter(pl.col("run_id") == rid).sort("row")
         cols = ["evaluations", second, "raw_y", "measured_f", "best_measured_f", *xs]
         out.append(
@@ -149,7 +149,7 @@ def test_reader_table_and_detection(tmp_path):
 
 def test_fixture_runs():
     result = read_coco(FIXTURE, "fixture")
-    runs = result.runs.sort("run_index")
+    runs = result.runs.sort("source_run_index")
     info = INFO.read_text().splitlines()[2]
     entries = re.findall(r"(\d+):(\d+)\|", info)
     assert runs["instance"].to_list() == [int(i) for i, _ in entries]
@@ -200,7 +200,9 @@ def test_fixture_source_rows_sha256():
         hashlib.sha256("".join(" ".join(t) + "\n" for t in run).encode()).hexdigest()
         for run in file_runs(dat)
     ]
-    assert result.runs.sort("run_index")["source_rows_sha256"].to_list() == hashes
+    assert (
+        result.runs.sort("source_run_index")["source_rows_sha256"].to_list() == hashes
+    )
 
 
 def test_fixture_round_trip(tmp_path):
@@ -220,8 +222,10 @@ def test_fixture_round_trip(tmp_path):
 
 def test_identical_rows_merged_and_others_kept(tmp_path):
     result = read_coco(write_coco(tmp_path, {"dat": DAT, "tdat": TDAT}), "m")
-    trace = result.trace.join(result.runs.select("run_id", "run_index"), on="run_id")
-    first = trace.filter(pl.col("run_index") == 0).sort("row")
+    trace = result.trace.join(
+        result.runs.select("run_id", "source_run_index"), on="run_id"
+    )
+    first = trace.filter(pl.col("source_run_index") == 0).sort("row")
     assert first["evaluations"].to_list() == [1, 2, 3]
     assert first["logged_in"].to_list() == ["dat+tdat", "tdat", "dat+tdat"]
     assert not first["merge_conflict"].any()
@@ -324,7 +328,7 @@ def test_unfinalized_runs_and_messy_info(tmp_path):
         ":2001991|1.4e-03, 5\n\n"
     )
     result = read_coco(write_coco(tmp_path, {"dat": DAT}, info), "u")
-    runs = result.runs.sort("run_index")
+    runs = result.runs.sort("source_run_index")
     assert runs["instance"].to_list() == [1, 2]
     assert runs["evals_used"].to_list() == [3, None]
     assert {"unfinalized_run", "info_line_skipped"} <= set(codes(result))
@@ -332,7 +336,7 @@ def test_unfinalized_runs_and_messy_info(tmp_path):
 
 def test_run_count_mismatch(tmp_path):
     result = read_coco(write_coco(tmp_path, {"dat": DAT}, entries="7:3|1.0e-01"), "c")
-    runs = result.runs.sort("run_index")
+    runs = result.runs.sort("source_run_index")
     assert runs["instance"].to_list() == [7, None]
     assert "run_count_mismatch" in codes(result)
     assert result.descriptors.filter(pl.col("key") == "algorithm_name").height == 2

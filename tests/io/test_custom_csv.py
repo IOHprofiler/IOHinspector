@@ -87,12 +87,12 @@ def test_long_format_values_and_counts(tmp_path, source):
     assert manifest["counts"]["trace_rows"] == len(lines)
     assert manifest["sources"][0]["data_rows"] == len(lines)
     assert manifest["reader"]["options"]["mapping"] == MAPPING
-    r = ds.runs.collect().sort("run_index")
+    r = ds.runs.collect().sort("source_run_index")
     assert (r["suite"] == "mine").all()
     # runs are numbered in order of first appearance, which is the order of seeds here
     assert r["function_id"].to_list() == [rows[0][1] for rows in runs]
-    trace = ds.trace.collect().join(r.select("run_id", "run_index"), on="run_id")
-    trace = trace.sort("run_index", "row")
+    trace = ds.trace.collect().join(r.select("run_id", "source_run_index"), on="run_id")
+    trace = trace.sort("source_run_index", "row")
     expected = [row for rows in runs for row in rows]
     assert trace["evaluations"].to_list() == [row[5] for row in expected]
     assert trace["raw_y"].to_list() == [row[6] for row in expected]
@@ -113,7 +113,7 @@ def test_run_hash_follows_source_order(tmp_path, source):
     path, runs, _lines = source
     out = tmp_path / "ds"
     convert_custom_csv(path, out, MAPPING)
-    r = scan_dataset(out, warn=False).runs.collect().sort("run_index")
+    r = scan_dataset(out, warn=False).runs.collect().sort("source_run_index")
     for rec, rows in zip(r.iter_rows(named=True), runs, strict=True):
         text = "".join(" ".join(map(str, row)) + "\n" for row in rows)
         assert rec["source_rows_sha256"] == hashlib.sha256(text.encode()).hexdigest()
@@ -142,13 +142,13 @@ def test_one_row_per_run_with_constants_and_function_names(tmp_path):
     out = tmp_path / "ds"
     manifest = convert_custom_csv(path, out, mapping)
     ds = scan_dataset(out, warn=False)
-    runs = ds.runs.collect().sort("run_index")
+    runs = ds.runs.collect().sort("source_run_index")
     assert runs["function_name"].to_list() == ["sphere", "ackley", "sphere"]
     assert runs["function_id"].to_list() == [2, 1, 2]
     assert manifest["extra"]["function_ids"] == {"ackley": 1, "sphere": 2}
     assert runs["maximization"].all() and runs["optimum"].to_list() == [0.0] * 3
-    y = ds.trace.collect().join(runs.select("run_id", "run_index"), on="run_id")
-    y = y.sort("run_index")["raw_y"].to_list()
+    y = ds.trace.collect().join(runs.select("run_id", "source_run_index"), on="run_id")
+    y = y.sort("source_run_index")["raw_y"].to_list()
     assert y[0] == 0.5 and y[1] == float("inf") and y[2] != y[2]
     d = ds.descriptors.collect()
     assert set(d.filter(pl.col("key") == "algorithm_info")["value"]) == {"v1"}

@@ -767,7 +767,7 @@ def _add_runs(  # pylint: disable=too-many-arguments,too-many-positional-argumen
                 "best_y": None if info is None else info.best_y,
                 "n_objectives": 1,
                 "source_file": display,
-                "run_index": index,
+                "source_run_index": index,
                 "source_rows_sha256": hashes[index] if index < len(hashes) else None,
             }
         )

@@ -51,7 +51,7 @@ RUNS_COLUMNS: tuple[Column, ...] = (
     Column("best_y", pl.Float64(), True),
     Column("n_objectives", pl.Int32(), False),
     Column("source_file", pl.String(), False),
-    Column("run_index", pl.Int64(), False),
+    Column("source_run_index", pl.Int64(), False),
     Column("source_rows_sha256", pl.String(), True),
 )
 
@@ -67,7 +67,7 @@ RUNS_REQUIRED_INPUT = (
     "dimension",
     "maximization",
     "source_file",
-    "run_index",
+    "source_run_index",
 )
 
 #: Defaults for runs columns the caller leaves out. ``run_id`` is computed.
@@ -90,7 +90,7 @@ RUNS_SORT_KEYS = (
     "function_id",
     "dimension",
     "source_file",
-    "run_index",
+    "source_run_index",
 )
 
 #: Row groups of the trace preferably start where these change.

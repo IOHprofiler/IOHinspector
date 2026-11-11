@@ -14,8 +14,7 @@ One data model and one way to load and use data. The outward API stays close to
 - Runs are keyed by `run_id`, a stable hash of the dataset id, the source file and the
   run's index in it. The process-global `data_id` counter is gone, so ids no longer
   depend on what was loaded before. `run_id` is no longer 1, 2, ... per file; that
-  number is the overview column `run_index` (from 0; called `source_run_index` in the
-  0.1.0 drafts of the format).
+  number is the overview column `source_run_index` (from 0).
 - Columns have the format's types: `run_id` int64; `function_id`, `instance` and
   `dimension` int32. `evaluations` stays UInt64 in `load()`.
 

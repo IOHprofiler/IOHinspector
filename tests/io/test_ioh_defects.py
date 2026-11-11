@@ -41,12 +41,12 @@ def load(folder: Path, **kwargs) -> pl.DataFrame:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         manager.add_folder(str(folder))
-    return manager.load(include_columns=["run_index"], **kwargs)
+    return manager.load(include_columns=["source_run_index"], **kwargs)
 
 
 def trace_by_run(result) -> list[list[tuple[int, float]]]:
     """The trace as ``(evaluations, raw_y)`` per run, in source order."""
-    runs = result.runs.sort(["source_file", "run_index"])
+    runs = result.runs.sort(["source_file", "source_run_index"])
     trace = result.trace
     out = []
     for run_id in runs["run_id"]:
@@ -81,7 +81,7 @@ def test_manager_splits_runs_on_header_lines(ioh_logs):
     df = load(folder, monotonic=False)
     # evaluation 1 is never logged: 0.0.8 loads zero rows
     assert len(df) == 10
-    runs = df.group_by("run_index").len().sort("run_index")
+    runs = df.group_by("source_run_index").len().sort("source_run_index")
     assert runs["len"].to_list() == [4, 3, 3]
 
 
@@ -100,8 +100,8 @@ def test_manager_improvement_filter_is_per_run(ioh_logs):
 
 def test_manager_monotonic_load_keeps_final_rows(ioh_logs):
     df = load(ioh_logs / "cross_run", monotonic=True)
-    lasts = df.group_by("run_index").agg(pl.col("evaluations").max())
-    lasts = lasts.sort("run_index")
+    lasts = df.group_by("source_run_index").agg(pl.col("evaluations").max())
+    lasts = lasts.sort("source_run_index")
     assert lasts["evaluations"].to_list() == [9, 6]
 
 

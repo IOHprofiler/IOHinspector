@@ -284,7 +284,7 @@ def _file_aggregates(result: FileScan, layout: Layout, state: _State) -> pl.Data
     primary = _primary(result.path, layout, state)
     n = len(result.counts)
     ids = state.runs.filter(pl.col("source_file") == primary).select(
-        "run_index", "run_id"
+        pl.col("source_run_index").alias("run_index"), "run_id"
     )
     per_run = pl.DataFrame(
         {
@@ -401,7 +401,7 @@ def _orphan_hashes(state: _State, source: pl.DataFrame) -> None:
         .filter(pl.col("source_rows_sha256").is_not_null())
     )
     for rid, path, index in orphans.select(
-        "run_id", "source_file", "run_index"
+        "run_id", "source_file", "source_run_index"
     ).iter_rows():
         state.report.add(
             "run_missing_in_source",
@@ -426,7 +426,7 @@ def _state(dataset: Path, report: VerifyReport) -> _State:
         columns=[
             "run_id",
             "source_file",
-            "run_index",
+            "source_run_index",
             "maximization",
             "source_rows_sha256",
         ],

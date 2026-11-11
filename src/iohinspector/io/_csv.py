@@ -491,7 +491,7 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
                     "suite": values.get("suite", ""),
                     "n_objectives": 1,
                     "source_file": self.name,
-                    "run_index": index,
+                    "source_run_index": index,
                     "source_rows_sha256": run.digest.hexdigest(),
                 }
             )

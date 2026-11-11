@@ -124,10 +124,10 @@ def parameter_study(tmp_path, *, files=2, runs_per_file=6):
             "instance": [1] * (files * runs_per_file),
             "maximization": [False] * (files * runs_per_file),
             "source_file": [p for p in paths for _ in range(runs_per_file)],
-            "run_index": [i for _ in paths for i in range(runs_per_file)],
+            "source_run_index": [i for _ in paths for i in range(runs_per_file)],
         }
     )
-    ids = run_ids("study", runs["source_file"], runs["run_index"]).to_list()
+    ids = run_ids("study", runs["source_file"], runs["source_run_index"]).to_list()
     records, trace = [], []
     for n, rid in enumerate(ids):
         records += [

@@ -40,12 +40,12 @@ def check_against_source(path, out):
     report = validate_dataset(out)
     report.raise_for_errors()
     ds = scan_dataset(out, warn=False)
-    runs = ds.runs.collect().sort("run_index")
+    runs = ds.runs.collect().sort("source_run_index")
     trace = ds.trace.collect()
     assert runs.height == len(rows) == trace.height
     assert ds.manifest["sources"][0]["data_rows"] == len(rows)
-    by_run = trace.join(runs.select("run_id", "run_index"), on="run_id")
-    by_run = by_run.sort("run_index")
+    by_run = trace.join(runs.select("run_id", "source_run_index"), on="run_id")
+    by_run = by_run.sort("source_run_index")
     assert by_run["raw_y"].to_list() == [float(r["loss"]) for r in rows]
     assert by_run["evaluations"].to_list() == [int(r["budget"]) for r in rows]
     assert runs["dimension"].to_list() == [int(r["dimension"]) for r in rows]
@@ -132,7 +132,7 @@ def test_rescale_and_function_ids(tmp_path):
     )
     m = convert_nevergrad(src, tmp_path / "ds")
     ds = scan_dataset(tmp_path / "ds", warn=False)
-    runs = ds.runs.collect().sort("run_index")
+    runs = ds.runs.collect().sort("source_run_index")
     assert runs["function_name"].to_list() == ["sphere", "sphere_rescaled", "ackley"]
     assert runs["function_id"].to_list() == [2, 3, 1]
     assert m["extra"]["function_ids"] == {

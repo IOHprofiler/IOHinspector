@@ -121,7 +121,7 @@ def runs_problems(
 
 def _run_id_problems(df: pl.DataFrame, dataset_id: str) -> list[str]:
     problems = []
-    expected = run_ids(dataset_id, df["source_file"], df["run_index"])
+    expected = run_ids(dataset_id, df["source_file"], df["source_run_index"])
     wrong = df.with_columns(expected.alias("__expected")).filter(
         pl.col("run_id") != pl.col("__expected")
     )
@@ -129,14 +129,14 @@ def _run_id_problems(df: pl.DataFrame, dataset_id: str) -> list[str]:
         r = wrong.row(0, named=True)
         problems.append(
             f"runs: {wrong.height} run id(s) differ from the stable hash, for example "
-            f"run {r['run_id']} ({r['source_file']!r}, index {r['run_index']}) "
+            f"run {r['run_id']} ({r['source_file']!r}, index {r['source_run_index']}) "
             f"should be {r['__expected']}"
         )
     if df["run_id"].n_unique() != df.height:
         problems.append("runs: run_id is not unique")
-    pairs = df.select(pl.struct("source_file", "run_index").n_unique()).item()
+    pairs = df.select(pl.struct("source_file", "source_run_index").n_unique()).item()
     if pairs != df.height:
-        problems.append("runs: (source_file, run_index) is not unique")
+        problems.append("runs: (source_file, source_run_index) is not unique")
     return problems
 
 
@@ -144,7 +144,7 @@ def _range_problems(df: pl.DataFrame) -> list[str]:
     problems = []
     for column, condition, rule in (
         ("dimension", pl.col("dimension") < 1, "at least 1"),
-        ("run_index", pl.col("run_index") < 0, ">= 0"),
+        ("source_run_index", pl.col("source_run_index") < 0, ">= 0"),
         ("n_objectives", pl.col("n_objectives") < 1, "at least 1"),
     ):
         n = df.filter(condition).height
@@ -202,7 +202,7 @@ def run_map(sorted_runs: pl.DataFrame) -> pl.DataFrame:
         pl.col("dimension").alias(RUN_DIM),
         pl.col("n_objectives").alias(RUN_NOBJ),
         "source_file",
-        "run_index",
+        "source_run_index",
     )
 
 
@@ -234,7 +234,7 @@ def describe_runs(run_map_df: pl.DataFrame) -> Callable[[int], str]:
     """A function that names the run of a rank, for error messages."""
     ids = run_map_df["run_id"].to_list()
     files = run_map_df["source_file"].to_list()
-    index = run_map_df["run_index"].to_list()
+    index = run_map_df["source_run_index"].to_list()
 
     def describe(rank: int) -> str:
         if 0 <= rank < len(ids):
