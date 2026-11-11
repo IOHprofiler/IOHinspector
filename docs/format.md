@@ -352,7 +352,8 @@ Rules:
 **Grouping.** An analysis names what it compares with `by`, a list of names (default `["algorithm_name"]`). Each name is a `runs.parquet` column (such as `function_id` or `dimension`) or a descriptor key; the default is therefore read from the descriptors. A descriptor key becomes one column with one value per run:
 
 - if every value of the key has one type, the column has that type: string for `string`, int64 for `int` (string with the exact decimal text if any value is outside int64), float64 for `float`, boolean for `bool`;
-- if the key has several types, the column is a string column of the `value` texts, so that values that differ in type stay apart (the caller may ask for an error instead);
+- if the key has only `int` and `float` values, the column is float64, so that a parameter such as `0` in one dataset and `0.5` in another stays numeric;
+- if the key has any other mix of types, the column is a string column of the `value` texts, so that values that differ in type stay apart (the caller may ask for an error instead);
 - runs without the key are null.
 
 ### Manifest summary

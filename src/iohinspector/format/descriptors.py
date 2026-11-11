@@ -410,8 +410,9 @@ def descriptor_columns(
 
     A key with one type gets that type (String for ``string``, Int64
     for ``int`` unless a value is outside int64, then String with the exact decimal
-    text, Float64, Boolean). A key with several types gets the ``value`` text, or
-    raises ``ValueError`` with ``mixed="error"``. Runs without the key are null.
+    text, Float64, Boolean). A key with only ``int`` and ``float`` values gets
+    Float64. A key with other mixes of types gets the ``value`` text, or raises
+    ``ValueError`` with ``mixed="error"``. Runs without the key are null.
     Raises ``ValueError`` for a key the table does not have.
     """
     lf = descriptors.lazy()
@@ -438,6 +439,8 @@ def _key_column(lf: pl.LazyFrame, key: str, mixed: str) -> pl.LazyFrame:
         expr = pl.col("value_int")
     elif types == {"float"}:
         expr = pl.col("value_float")
+    elif types == {"int", "float"} and not big:
+        expr = pl.coalesce("value_float", pl.col("value_int").cast(pl.Float64))
     elif types == {"bool"}:
         expr = pl.col("value_bool")
     elif len(types) > 1 and mixed == "error":
