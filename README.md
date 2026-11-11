@@ -49,7 +49,7 @@ df = selection.load(monotonic=True, include_meta_data=True)
 plot_ecdf(df, by=["algorithm_name"])
 ```
 
-`add_folder` takes a file, a folder or an archive in any supported format. Every metric and plot groups its results with `by`, a list of columns: any column of `manager.overview`, such as `algorithm_name`, `function_id` or a descriptor of the runs. Results are polars DataFrames; call `.to_pandas()` if you prefer pandas.
+`add_folder` takes a file, a folder or an archive in any supported format. Your own CSV files work too, with a column mapping: `manager.add_folder("results.csv", mapping="mapping.json")`; see [the CSV example](docs/readers-csv.md#custom-csv). Every metric and plot groups its results with `by`, a list of columns: any column of `manager.overview`, such as `algorithm_name`, `function_id` or a descriptor of the runs. Results are polars DataFrames; call `.to_pandas()` if you prefer pandas.
 
 Upgrading from 0.0.x? See [CHANGELOG.md](CHANGELOG.md): `free_vars` is now `by`, `return_as_pandas` is gone, and runs are identified by `run_id`.
 
