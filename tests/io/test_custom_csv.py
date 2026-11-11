@@ -73,6 +73,21 @@ def source(tmp_path):
     return write_csv(tmp_path / "data.csv", lines), runs, lines
 
 
+def test_documented_example():
+    """The example in docs/readers-csv.md, from examples/custom_csv."""
+    from pathlib import Path
+
+    from iohinspector import DataManager
+
+    folder = Path(__file__).parents[2] / "examples" / "custom_csv"
+    manager = DataManager()
+    manager.add_folder(folder / "results.csv", mapping=folder / "mapping.json")
+    assert manager.n_runs == 3
+    df = manager.load(monotonic=False, include_meta_data=True)
+    assert df.height == 9
+    assert {"algorithm_name", "function_name", "seed", "sigma"} <= set(df.columns)
+
+
 def test_registered():
     assert READERS["custom-csv"].read is read_custom_csv
 

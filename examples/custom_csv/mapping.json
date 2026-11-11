@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "evaluations": "evals",
+  "value": "best_f",
+  "run_by": ["algorithm", "function", "dim", "seed"],
+  "fields": {
+    "algorithm_name": "algorithm",
+    "function_name": "function",
+    "dimension": "dim",
+    "maximization": {"constant": false}
+  },
+  "descriptors": ["seed"],
+  "trace_columns": ["sigma"]
+}

@@ -1,0 +1,10 @@
+algorithm,function,dim,seed,evals,best_f,sigma
+CMA-ES,sphere,5,1,1,12.5,0.5
+CMA-ES,sphere,5,1,10,3.2,0.31
+CMA-ES,sphere,5,1,100,0.004,0.02
+CMA-ES,sphere,5,2,1,15.1,0.5
+CMA-ES,sphere,5,2,10,4.0,0.28
+CMA-ES,sphere,5,2,100,0.009,0.03
+RandomSearch,sphere,5,1,1,14.2,
+RandomSearch,sphere,5,1,10,9.8,
+RandomSearch,sphere,5,1,100,5.1,
