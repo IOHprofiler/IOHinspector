@@ -23,7 +23,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ._csv import CsvMapping, MappingError, Source, convert, read_header
+from ._csv import CsvMapping, MappingError, Source, read_csv, read_header
+from .base import ReadResult
 
 READER_NAME = "nevergrad-csv"
 REQUIRED = ("loss", "budget", "dimension", "optimizer_name")
@@ -76,27 +77,12 @@ def nevergrad_mapping(header: list[str]) -> CsvMapping:
     )
 
 
-def convert_nevergrad(
-    source: str | Path,
-    output: str | Path,
-    *,
-    dataset_id: str | None = None,
-    source_name: str | None = None,
-    overwrite: bool = False,
-) -> dict[str, Any]:
-    """Convert a Nevergrad CSV file to a dataset in ``output``; returns its manifest.
-
-    ``dataset_id`` defaults to the file name without extensions. ``source_name`` is
-    the path recorded in the dataset (default: the file name).
-    """
-    return convert(
+def read_nevergrad(source: str | Path, dataset_id: str) -> ReadResult:
+    """Read a Nevergrad CSV file (or the only CSV file in a folder)."""
+    return read_csv(
         source,
-        output,
+        dataset_id,
         nevergrad_mapping,
         reader_name=READER_NAME,
-        kind="nevergrad-csv",
         origin="experiment",
-        dataset_id=dataset_id,
-        source_name=source_name,
-        overwrite=overwrite,
     )

@@ -5,8 +5,8 @@ instance ids are lost, and the ``.dat``/``.tdat`` merge is wrong. 0.0.8 set
 every instance to 0, split runs on ``evaluations == 1``, and merged the two
 files with ``unique(evaluations, keep="first")``, which drops a ``.tdat`` row
 whenever the ``.dat`` file has a row with the same evaluation count, even with
-other values. Each test checks the corrected behaviour in the reader
-(``iohinspector.io.coco``) and through ``DataManager``.
+other values. The reader's side is in ``test_coco.py`` (``test_fixture_runs``,
+``test_conflicting_rows_kept_and_flagged``); these check ``DataManager``.
 """
 
 from __future__ import annotations
@@ -41,12 +41,6 @@ def info_instances(folder: Path) -> list[int]:
 # --- Instance ids are lost --------------------------------------------------------
 
 
-def test_reader_reads_instances():
-    result = read_coco(FIXTURE, "defects")
-    runs = result.runs.sort("source_run_index")
-    assert runs["instance"].to_list() == info_instances(FIXTURE)
-
-
 def test_manager_reads_instances():
     manager, _ = load(FIXTURE, monotonic=False)
     overview = manager.overview.sort("run_id")
@@ -59,13 +53,6 @@ CONFLICT = TDAT.replace(
     "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.0e-01 +4.0e-01",
     "3 0 +1.0e-01 +1.01e+01 +1.01e+01 +3.5e-01 +4.0e-01",
 )
-
-
-def test_reader_keeps_rows_the_files_disagree_on(tmp_path):
-    result = read_coco(write_coco(tmp_path, {"dat": DAT, "tdat": CONFLICT}), "d")
-    rows = result.trace.filter(pl.col("evaluations") == 3)
-    assert rows.height == 2
-    assert rows["merge_conflict"].all()
 
 
 def test_manager_keeps_rows_the_files_disagree_on(tmp_path):

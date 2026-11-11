@@ -14,7 +14,7 @@ dataset. Per run of every data file it checks:
 It also checks the sha256 and size of every listed source file and archive, the
 manifest's ``data_rows``, that every trace row belongs to a verified source run,
 and runs ``validate_dataset``. Any mismatch fails the check. Files that merge into
-one run set (legacy and COCO ``.dat``/``.tdat``/...) are compared through the
+one run set (COCO ``.dat``/``.tdat``/...) are compared through the
 trace's ``logged_in`` column: a file's rows are those whose ``logged_in`` names
 its kind (its file name suffix), or all rows of its own runs when it is null.
 """

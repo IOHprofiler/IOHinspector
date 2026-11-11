@@ -6,8 +6,9 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from iohinspector.format import FormatError, scan_dataset, validate_dataset
-from iohinspector.io import CONVERTERS, convert_nevergrad
+from iohinspector.convert import convert
+from iohinspector.format import scan_dataset, validate_dataset
+from iohinspector.io import READERS, ReaderError, read_nevergrad
 from iohinspector.io._csv import MappingError
 from iohinspector.io.nevergrad import is_nevergrad_csv
 
@@ -16,6 +17,10 @@ SAMPLE = DATA / "nevergrad_sample.csv"
 DOWNLOADED = sorted((DATA / "downloaded").glob("*.csv.gz"))
 
 HEADER = "loss,seed,name,rescale,dimension,budget,optimizer_name,flag,note\n"
+
+
+def convert_nevergrad(source, output, **kwargs):
+    return convert(source, output, format="nevergrad-csv", **kwargs)
 
 
 def read_source(path):
@@ -55,7 +60,7 @@ def check_against_source(path, out):
 
 
 def test_registered():
-    assert CONVERTERS["nevergrad-csv"] is convert_nevergrad
+    assert READERS["nevergrad-csv"].read is read_nevergrad
     assert is_nevergrad_csv(SAMPLE)
 
 
@@ -86,14 +91,12 @@ def test_sample_values_and_counts(tmp_path):
     assert list(ids) == sorted(ids)
 
 
-def test_gzip_and_source_name(tmp_path):
+def test_gzip(tmp_path):
     gz = tmp_path / "x.csv.gz"
     gz.write_bytes(gzip.compress(SAMPLE.read_bytes()))
-    m = convert_nevergrad(
-        gz, tmp_path / "ds", dataset_id="ng-1", source_name="a/b.csv.gz"
-    )
+    m = convert_nevergrad(gz, tmp_path / "ds", dataset_id="ng-1")
     assert m["dataset_id"] == "ng-1"
-    assert m["sources"][0]["path"] == "a/b.csv.gz"
+    assert m["sources"][0]["path"] == "x.csv.gz"
     assert scan_dataset(tmp_path / "ds", warn=False).runs.collect().height == 120
 
 
@@ -176,7 +179,7 @@ def test_reserved_names_are_renamed(tmp_path):
         ),
         (
             "1.0,1,f,False,5,10.5,A,True,",
-            "ng.csv:2: column 'budget': '10.5' is not an integer",
+            "ng.csv:2: budget: '10.5' is not an integer",
         ),
         ("1.0,1,f,False,5,10,,True,", "ng.csv:2: algorithm_name is empty"),
         ("1.0,1,f,False,5,10,A", "ng.csv:2: expected 9 fields"),
@@ -185,7 +188,7 @@ def test_reserved_names_are_renamed(tmp_path):
 )
 def test_errors_name_file_and_line(tmp_path, row, message):
     src = write(tmp_path, [row])
-    with pytest.raises(FormatError, match=message):
+    with pytest.raises(ReaderError, match=message):
         convert_nevergrad(src, tmp_path / "ds")
     assert not (tmp_path / "ds").exists()
 
@@ -196,5 +199,5 @@ def test_not_nevergrad(tmp_path):
     with pytest.raises(MappingError, match="not a Nevergrad result file"):
         convert_nevergrad(src, tmp_path / "ds")
     empty = write(tmp_path, [], HEADER, "empty.csv")
-    with pytest.raises(FormatError, match="no data rows"):
+    with pytest.raises(ReaderError, match="no data rows"):
         convert_nevergrad(empty, tmp_path / "ds")

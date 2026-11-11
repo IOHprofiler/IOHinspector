@@ -1,6 +1,6 @@
 # Reader: COCO single-objective data
 
-`iohinspector.io.read_coco(source, dataset_id)` reads the data that COCO's single-objective loggers write, as it appears in the [COCO data archive](https://numbbo.github.io/data-archive): the suites `bbob`, `bbob-noisy`, `bbob-largescale` and `bbob-boxed`, from the 2009 logger to today's. Its name in `READERS` is `coco`. `source` is a folder (searched recursively), an `.info` file or an archive. It returns the tables of [format v1](format.md), which `ReadResult.write` stores.
+`iohinspector.io.read_coco(source, dataset_id)` reads the data that COCO's single-objective loggers write, as it appears in the [COCO data archive](https://numbbo.github.io/data-archive): the suites `bbob`, `bbob-noisy`, `bbob-largescale` and `bbob-boxed`, from the 2009 logger to today's. Its name in `READERS` is `coco`. `source` is a folder (searched recursively) or an `.info` file; `iohinspector convert` also opens archives (below). It returns the tables of [format v1](format.md), which `ReadResult.write` stores.
 
 COCO's bi-objective, constrained and mixed-integer suites are out of scope (list C of the plan).
 
@@ -66,7 +66,6 @@ Quirks in the sample and the scan, each covered by a test:
 | comment line | descriptor `algorithm_info`, without the `%` |
 | other header keys (`Precision`, `coco_version`, `logger`, `data_format`, …) | descriptors with origin `experiment`, under their own names; quoted values are strings, others `int` or `float` |
 | run entry | `runs.instance`; `runs.evals_used` (null for an unfinalised run); descriptor `final_delta_f` (origin `run`) |
-| the archive a run came from | descriptor `archive` (origin `path`): the outermost archive's source path |
 | Fopt in the run's header line | `runs.optimum` |
 | data column 1 | `trace.evaluations` |
 | data column 2 | `g_evaluations` (new header, int64) or `current_delta_f` (old header: the evaluation's noise-free Δf) |
@@ -82,7 +81,7 @@ The runs of a data file start at its header lines (`% f evaluations …` or `% f
 
 ## Merging the data files
 
-All data files of a stem are read and must hold the same number of runs, otherwise the reader fails. Rows are merged under the identical-row rule (`iohinspector.io.merge`, the same rule and columns as the legacy reader): a row that two files log for the same evaluation of a run is stored once when every column, position included, is identical (NaN equals NaN). Otherwise both rows are kept. Nothing is merged within one file. When a stem has more than one file, two trace columns describe the merge:
+All data files of a stem are read and must hold the same number of runs, otherwise the reader fails. Rows are merged under the identical-row rule (`iohinspector.io.merge`): a row that two files log for the same evaluation of a run is stored once when every column, position included, is identical (NaN equals NaN). Otherwise both rows are kept. Nothing is merged within one file. When a stem has more than one file, two trace columns describe the merge:
 
 - `logged_in`: the kinds that hold the row, joined by `+` in the order `dat`, `tdat`, `rdat`, for example `dat+tdat`;
 - `merge_conflict`: true for every row of an evaluation that the files log with different values. A `merge_conflict` warning counts them per stem.
@@ -91,13 +90,13 @@ Rows are ordered by evaluation, then by kind, then by position in the file. If a
 
 ## Archives
 
-A folder may hold archives, and an archive may hold archives (`iohinspector.io.archive`). zip, tar, tgz, tar.gz, tar.bz2 and tar.xz are opened. A file inside an archive has the source path `<archive path>/<member path>`, for example `BFGS.tgz/BFGS/data_f1/bbobexp_f1_DIM2.dat`; `manifest.archives` lists every archive with its sha256 (and the archive it came from), and each source names its innermost archive. One input may hold many algorithms: every `.info` block carries its own `algId`. Members that are links or devices, or whose names leave the archive, are skipped (`skipped_archive_member`); an archive that cannot be opened is skipped (`skipped_archive`). Detection (`detect_coco`) looks into archives in the input, but not into archives inside them.
+`iohinspector convert` opens archives before the reader runs (`iohinspector.io.archive`, the same for every reader): a folder may hold archives, and an archive may hold archives. zip, tar, tgz, tar.gz, tar.bz2 and tar.xz are opened. A file inside an archive has the source path `<archive path>/<member path>`, for example `BFGS.tgz/BFGS/data_f1/bbobexp_f1_DIM2.dat`; `manifest.archives` lists every archive with its sha256 (and the archive it came from), and each source names its innermost archive. One input may hold many algorithms: every `.info` block carries its own `algId`. Members that are links or devices, or whose names leave the archive, are skipped (`skipped_archive_member`); an archive that cannot be opened is skipped (`skipped_archive`).
 
 ## Differences from cocopp and IOHanalyzer
 
 - cocopp aligns the `.dat` rows on its grid of target levels 10^(i/5) and looks a target up at the closest level not larger than it. It computes the level as `10 ** (i / 5)`, which for 17 of the 51 standard targets is one ulp above the target `10 ** (2 - k / 5)`, so it uses the next, stricter level there. iohinspector hits the target itself (AL-2, AL-8). `tests/io/test_coco_cocopp.py` reproduces cocopp's lookup to compare, and checks that the agreed rule differs only at those targets, and only by being earlier.
 - cocopp skips runs without data rows when it splits a data file, which shifts the instances of later runs; this reader splits on header lines.
-- cocopp names datasets read from archives after the archive, not `algId`; this reader keeps `algId` and adds the `archive` descriptor.
+- cocopp names datasets read from archives after the archive, not `algId`; this reader keeps `algId`; the source paths name the archive.
 - IOHanalyzer reads only one data file (`.dat`, else `.tdat`, else `.cdat`; `R/DataSet.R` 93–101) and the first five columns; this reader keeps every row of every file and every column.
 - iohinspector 0.0.8 set every instance to 0 and merged `.dat` and `.tdat` rows on the evaluation count alone, keeping the first and dropping the rest. `DataManager` now reads COCO data with this reader.
 
@@ -105,10 +104,10 @@ A folder may hold archives, and an archive may hold archives (`iohinspector.io.a
 
 Malformed input raises `ReaderError`, whose message starts with `file:line`: a header without `funcId` or `DIM`, a run entry that is not `instance:evaluations|value` or `instance`, a data line naming several data files, a data line before the first header line, a row of other than 5 or 5 + D fields, a token that is not a number (or not an integer in the evaluation columns), a header style that changes within a file or between the files of a stem, files of one stem with different run counts, and one stem named with two dimensions.
 
-Warnings in the manifest: `suite_inferred`, `missing_algorithm`, `unfinalized_run`, `run_count_mismatch`, `missing_data_file` (the runs are kept without trace rows, the source is listed with a null sha256), `unreferenced_data_file` (also every `.mdat` and `.cdat`), `skipped_file` (an `.info` file that is not COCO's), `info_line_skipped`, `incomplete_info_record`, `not_utf8` (an `.info` file read as Latin-1), `merge_conflict`, `unsorted_evaluations`, `skipped_archive` and `skipped_archive_member`.
+Warnings in the manifest (the last two from `convert`): `suite_inferred`, `missing_algorithm`, `unfinalized_run`, `run_count_mismatch`, `missing_data_file` (the runs are kept without trace rows, the source is listed with a null sha256), `unreferenced_data_file` (also every `.mdat` and `.cdat`), `skipped_file` (an `.info` file that is not COCO's), `info_line_skipped`, `incomplete_info_record`, `not_utf8` (an `.info` file read as Latin-1), `merge_conflict`, `unsorted_evaluations`, `skipped_archive` and `skipped_archive_member`.
 
 ## Tests
 
-- `tests/io/test_coco.py`: the fixture `tests/test_coco_data` against the files read independently (every row of every data file, hashes, instances, Fopt), the merge, every variant above, malformed input, and nested archives.
+- `tests/io/test_coco.py`: the fixture `tests/test_coco_data` against the files read independently (every row of every data file, hashes, instances, Fopt), the merge, every variant above, malformed input, and nested archives (through `convert`).
 - `tests/io/test_coco_cocopp.py`: runtimes for the 51 targets and aRT for the 51 and the table targets against cocopp 2.9.1 on `coco` and `coco_old` (`tests/golden/cocopp`).
 - `tests/io/test_coco_archive.py`: every sampled archive, with every data file counted from the archive independently; run with `python scripts/coco_archive.py` and then `COCO_ARCHIVE_TESTS=1 pytest tests/io/test_coco_archive.py` (about 90 s).

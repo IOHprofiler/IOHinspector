@@ -27,7 +27,7 @@ the difference. The goldens record what IOHanalyzer actually returns, defects in
 | `ioh040_max` | `ioh==0.4.0`, PBO | OneMax and LeadingOnes, dimensions 16 and 32, `rs`, `rls`, `ea`, maximisation |
 | `ioh040_cons` | `ioh==0.4.0` | sphere with a soft constraint, every evaluation logged with `violation` and `penalty` |
 | `ioh040_pos` | `ioh==0.4.0` | positions logged as parameters `x0..x2` |
-| `extdata` | IOHanalyzer `inst/extdata` | legacy IOHprofiler `.info` + `.dat`, three data sets with 10 runs each |
+| `extdata` | IOHanalyzer `inst/extdata` | a format v1 dataset, not raw logs: the legacy IOHprofiler `.info` + `.dat` files (three data sets with 10 runs each) converted once with the legacy reader before iohinspector dropped it (WP I25). `generate.R` reads IOHanalyzer's own copy of the logs; `test_extdata_dataset.py` ties the dataset to the references |
 | `coco` | `tests/test_coco_data` | COCO BFGS on f1, 2-D, 15 instances |
 | `coco_old` | COCO data archive, `bbob/2009/DIRECT_posik_noiseless.tgz` (WP I07) | DIRECT on f6, 2-D and 3-D, instances 1-5: the 2009 logger's format (old header, Windows paths, CRLF), unsuccessful runs. The `.info` file is cut to its 2-D and 3-D blocks; data files unchanged. cocopp references only |
 

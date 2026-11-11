@@ -68,10 +68,12 @@ class InfoBlock:  # pylint: disable=too-many-instance-attributes
     entries: list[InfoEntry] = field(default_factory=list)
 
     def get(self, key: str, default: Any = None) -> Any:
-        for name, value in self.header:
-            if ALIASES.get(name, name) == key:
-                return value
-        return default
+        return _lookup(self.header, key, default)
+
+
+def _lookup(header: list[tuple[str, Any]], key: str, default: Any = None) -> Any:
+    """The value of ``key`` (or one of its aliases) in a header."""
+    return next((v for n, v in header if ALIASES.get(n, n) == key), default)
 
 
 @dataclass
@@ -104,12 +106,12 @@ def parse_header(text: str, path: str, line: int) -> list[tuple[str, Any]]:
 
 
 def _int_key(header: list[tuple[str, Any]], key: str, path: str, line: int) -> int:
-    for name, value in header:
-        if ALIASES.get(name, name) == key:
-            if isinstance(value, int):
-                return value
-            raise ReaderError(f"{key} = {value!r} is not an integer", path, line)
-    raise ReaderError(f"the header has no {key}", path, line)
+    value = _lookup(header, key)
+    if value is None:
+        raise ReaderError(f"the header has no {key}", path, line)
+    if not isinstance(value, int):
+        raise ReaderError(f"{key} = {value!r} is not an integer", path, line)
+    return value
 
 
 def parse_entries(parts: list[str], path: str, line: int) -> list[InfoEntry]:

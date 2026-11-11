@@ -1,6 +1,8 @@
-"""The legacy reader against IOHanalyzer's parsed extdata (WP I06, step 4).
+"""The ``extdata`` fixture against IOHanalyzer's parsed extdata.
 
-The references are I03's goldens for the ``extdata`` fixture (IOHanalyzer at
+The fixture is a format v1 dataset, converted once from IOHanalyzer's
+``inst/extdata`` with the legacy IOHprofiler reader before that reader was removed
+(WP I25). These tests keep it tied to I03's goldens (IOHanalyzer at
 ``caecada^``): ``RT_sample`` and ``FV_sample`` are samples of IOHanalyzer's RT and
 FV matrices, ``runtimes`` and ``funvals`` their row names, ``maxRT`` the per-run
 budgets. Best-so-far values are computed from ``raw_y`` (maximisation, as the
@@ -13,19 +15,23 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from iohinspector.io import read_legacy
+from iohinspector.format import scan_dataset
 from tests.golden.load import fixture_path, golden
 
 
 @pytest.fixture(scope="module")
 def runs_and_trace() -> tuple[pl.DataFrame, pl.DataFrame]:
-    result = read_legacy(fixture_path("extdata"), "extdata")
-    runs = result.runs.with_columns(
+    dataset = scan_dataset(fixture_path("extdata"), warn=False)
+    runs = dataset.runs.collect().with_columns(
         funcId=pl.coalesce("function_name", pl.col("function_id").cast(pl.String)),
         run=(pl.col("source_run_index") + 1).cast(pl.Int32),
     )
-    trace = result.trace.join(runs.select("run_id", "funcId", "run"), on="run_id")
-    trace = trace.with_columns(best=pl.col("raw_y").cum_max().over("run_id"))
+    trace = (
+        dataset.trace.collect()
+        .sort("run_id", "row")
+        .with_columns(best=pl.col("raw_y").cum_max().over("run_id"))
+        .join(runs.select("run_id", "funcId", "run"), on="run_id")
+    )
     assert golden("extdata", "meta")["maximization"].to_list() == [True]
     assert runs["maximization"].all()
     return runs, trace

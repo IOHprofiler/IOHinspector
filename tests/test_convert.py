@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import tarfile
@@ -14,12 +15,11 @@ import pytest
 from iohinspector.cli import main
 from iohinspector.convert import ConvertError, PathPattern, convert, parse_tag
 from iohinspector.format import scan_dataset, validate_dataset
-from iohinspector.io import read_ioh
+from iohinspector.io import ReaderError, read_ioh
 
 TESTS = Path(__file__).resolve().parent
 IOH = TESTS / "io" / "fixtures" / "ioh040"
 NEVERGRAD = TESTS / "io" / "data" / "nevergrad_sample.csv"
-EXTDATA = TESTS / "golden" / "fixtures" / "extdata"
 COCO = TESTS / "test_coco_data"
 
 pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
@@ -41,7 +41,6 @@ def _zip(folder: Path, target: Path, prefix: str = "") -> Path:
     ("source", "reader"),
     [
         (IOH, "ioh"),
-        (EXTDATA, "ioh-legacy"),
         (COCO, "coco"),
         (NEVERGRAD, "nevergrad-csv"),
     ],
@@ -52,6 +51,19 @@ def test_detects_and_writes_a_valid_dataset(tmp_path, source, reader):
     assert manifest["extra"]["convert"]["format"] == reader
     assert validate_dataset(tmp_path / "ds").ok
     assert "updated" not in manifest
+
+
+def test_legacy_ioh_profiler_is_refused(tmp_path):
+    (tmp_path / "data_f1").mkdir()
+    (tmp_path / "IOHprofiler_f1.info").write_text(
+        "suite = 'PBO', funcId = 1, DIM = 16, algId = 'ea'\n%\n"
+        "data_f1/IOHprofiler_f1_DIM16.dat, 1:2|16\n"
+    )
+    (tmp_path / "data_f1" / "IOHprofiler_f1_DIM16.dat").write_text(
+        '"function evaluation" "current f(x)"\n1 16\n2 16\n'
+    )
+    with pytest.raises(ValueError, match="legacy IOHprofiler format is not supported"):
+        convert(tmp_path, tmp_path / "ds")
 
 
 def test_same_runs_as_the_reader(tmp_path):
@@ -96,6 +108,32 @@ def test_nested_archives_in_a_folder(tmp_path):
     assert any(p.startswith("plain/") and a is None for p, a in sources.items())
     nested = [p for p, a in sources.items() if a == "outer.tar.gz/sub/inner.zip"]
     assert nested and all(p.startswith("outer.tar.gz/sub/inner.zip/") for p in nested)
+
+
+def test_unsafe_members_and_broken_archives_are_skipped(tmp_path):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        link = tarfile.TarInfo("alg/evil")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        tar.addfile(link)
+    folder = tmp_path / "in"
+    shutil.copytree(IOH / "f_zero", folder / "plain")
+    with zipfile.ZipFile(folder / "outer.zip", "w") as zf:
+        zf.writestr("inner.tgz", buf.getvalue())
+        zf.writestr("../escape.info", b"x")
+    (folder / "broken.zip").write_bytes(b"not a zip")
+    manifest = convert(folder, tmp_path / "ds")
+    warned = sorted(
+        (w["code"], w["source"])
+        for w in manifest["warnings"]
+        if w["code"].startswith("skipped_archive")
+    )
+    assert warned == [
+        ("skipped_archive", "broken.zip"),
+        ("skipped_archive_member", "outer.zip"),
+        ("skipped_archive_member", "outer.zip/inner.tgz"),
+    ]
 
 
 def test_tags_and_path_tags(tmp_path):
@@ -204,7 +242,7 @@ def test_custom_csv_needs_its_mapping(tmp_path):
 
 def test_unknown_input(tmp_path):
     (tmp_path / "notes.txt").write_text("hello\n")
-    with pytest.raises(ConvertError, match="no reader recognises"):
+    with pytest.raises(ReaderError, match="no reader recognises"):
         convert(tmp_path / "notes.txt", tmp_path / "ds")
     with pytest.raises(ConvertError, match="unknown format"):
         convert(IOH, tmp_path / "ds", format="sos")

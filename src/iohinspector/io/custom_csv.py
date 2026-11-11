@@ -62,7 +62,6 @@ removed), joined by one space.
 
 from __future__ import annotations
 
-import difflib
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -74,8 +73,10 @@ from ._csv import (
     MappingError,
     Source,
     check_mapping,
-    convert,
+    read_csv,
+    suggest,
 )
+from .base import ReadResult
 
 READER_NAME = "custom-csv"
 MAPPING_VERSION = 1
@@ -96,11 +97,6 @@ _CONSTANT_TYPES = {
     "float": (int, float),
     "bool": (bool,),
 }
-
-
-def _suggest(name: str, known: Sequence[str]) -> str:
-    close = difflib.get_close_matches(name, list(known), n=1)
-    return f" Did you mean {close[0]!r}?" if close else ""
 
 
 def _column(value: Any, where: str) -> str:
@@ -144,7 +140,7 @@ def _check_keys(obj: Mapping[str, Any]) -> None:
     for key in obj:
         if key not in _KEYS:
             raise MappingError(
-                f"unknown key {key!r}.{_suggest(key, _KEYS)} "
+                f"unknown key {key!r}.{suggest(key, _KEYS)} "
                 f"Allowed keys: {', '.join(_KEYS)}"
             )
     if obj.get("version", MAPPING_VERSION) != MAPPING_VERSION:
@@ -162,7 +158,7 @@ def _parse_fields(raw_fields: Any) -> dict[str, Source]:
     for name, value in raw_fields.items():
         if name not in FIELDS:
             raise MappingError(
-                f"fields: unknown field {name!r}.{_suggest(name, list(FIELDS))} "
+                f"fields: unknown field {name!r}.{suggest(name, list(FIELDS))} "
                 f"Allowed fields: {', '.join(FIELDS)}"
             )
         fields[name] = _source(name, FIELDS[name][0], value)
@@ -225,36 +221,26 @@ def validate_mapping(
     return parsed
 
 
-def convert_custom_csv(  # pylint: disable=too-many-arguments
+def read_custom_csv(
     source: str | Path,
-    output: str | Path,
+    dataset_id: str,
     mapping: CsvMapping | Mapping[str, Any] | str | Path,
-    *,
-    dataset_id: str | None = None,
-    source_name: str | None = None,
-    overwrite: bool = False,
-) -> dict[str, Any]:
-    """Convert a CSV file with a declared mapping to a dataset in ``output``.
+) -> ReadResult:
+    """Read a CSV file (or the only CSV file in a folder) with a declared mapping.
 
     ``mapping`` is a JSON object, JSON text or a path to a JSON file; see the module
     documentation. Raises ``MappingError`` for a mapping that is not valid or does
-    not fit the file's columns, and ``FormatError`` for data that breaks the
-    format, with the file name and line. Returns the manifest.
+    not fit the file's columns, and ``ReaderError`` for data that breaks the
+    format, with the file name and line.
     """
-    # #lizard forgives  (public API with keyword-only options)
     parsed = load_mapping(mapping)
-    return convert(
+    return read_csv(
         source,
-        output,
+        dataset_id,
         parsed,
         reader_name=READER_NAME,
-        kind="custom-csv",
         origin="run",
-        dataset_id=dataset_id,
-        source_name=source_name,
-        overwrite=overwrite,
         reader_options={"mapping": _mapping_json(mapping, parsed)},
-        delimiter=parsed.delimiter,
     )
 
 

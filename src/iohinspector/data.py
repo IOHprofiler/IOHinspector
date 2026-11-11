@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 import numpy as np
 import polars as pl
 from .align import turbo_align
-from .io._coco_dat import header_style, parse_coco_dat
 from .io._coco_info import parse_info
 from .io.coco import KINDS as COCO_KINDS
+from .io.coco import header_style, parse_coco_dat
 from .io.ioh import IohJson, IohScenario, load_ioh_json, parse_dat
 from .io.merge import merge_files
 import re
@@ -279,7 +279,7 @@ class Scenario:
             self.data_file, dimension=self.dimension, attributes=self.attributes
         )
         lookup = {r.id: r.data_id for r in self.runs}
-        df = dat.trace
+        df = dat.typed()
         if dat.positions is not None:
             taken = set(df.columns)
             xs = [c for c in dat.positions.columns if c not in ("run_index", "row")]

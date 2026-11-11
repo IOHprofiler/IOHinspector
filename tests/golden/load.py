@@ -28,7 +28,8 @@ FIXTURES = ("ioh040_min", "ioh040_max", "ioh040_cons", "ioh040_pos", "extdata", 
 
 
 def fixture_path(name: str) -> Path:
-    """Folder with the raw logs of a fixture (input to readers)."""
+    """Folder with the raw logs of a fixture (input to readers); ``extdata`` is a
+    format v1 dataset instead (read it with ``scan_dataset``)."""
     path = FIXTURES_DIR / name
     if not path.is_dir():
         raise FileNotFoundError(f"unknown golden fixture {name!r}; have {FIXTURES}")

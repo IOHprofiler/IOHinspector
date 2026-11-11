@@ -7,10 +7,7 @@ the reader, so that a shared bug cannot hide.
 from __future__ import annotations
 
 import hashlib
-import io
 import re
-import tarfile
-import zipfile
 from pathlib import Path
 
 import polars as pl
@@ -146,7 +143,6 @@ def test_reader_table_and_detection(tmp_path):
     assert detect_format(INFO) == "coco"
     assert detect_coco(FIXTURE)
     assert not detect_coco(ROOT / "io" / "fixtures" / "ioh040")
-    assert not detect_coco(ROOT / "golden" / "fixtures" / "extdata")
     assert not detect_coco(tmp_path)
     assert read(FIXTURE, "x").runs.height == 15
 
@@ -386,18 +382,26 @@ def test_folder_header_and_unreferenced_files(tmp_path):
 
 def test_other_info_files_are_skipped(tmp_path):
     write_coco(tmp_path, {"dat": DAT})
-    (tmp_path / "legacy.info").write_text(
-        "suite = 'PBO', funcId = 1, DIM = 16, algId = 'ea'\n%\n"
-        "data_f1/IOHprofiler_f1_DIM16.dat, 1:10|16\n"
-    )
-    (tmp_path / "data_f1" / "IOHprofiler_f1_DIM16.dat").write_text(
-        '"function evaluation" "current f(x)"\n1 16\n'
-    )
+    (tmp_path / "notes.info").write_text("free text, not a COCO header\n")
     result = read_coco(tmp_path, "s")
     assert result.runs.height == 2
     assert "skipped_file" in codes(result)
     with pytest.raises(ReaderError, match="not a COCO"):
-        read_coco(tmp_path / "legacy.info", "s")
+        read_coco(tmp_path / "notes.info", "s")
+
+
+def test_legacy_ioh_profiler_is_refused(tmp_path):
+    (tmp_path / "legacy.info").write_text(
+        "suite = 'PBO', funcId = 1, DIM = 16, algId = 'ea'\n%\n"
+        "data_f1/IOHprofiler_f1_DIM16.dat, 1:10|16\n"
+    )
+    (tmp_path / "data_f1").mkdir()
+    (tmp_path / "data_f1" / "IOHprofiler_f1_DIM16.dat").write_text(
+        '"function evaluation" "current f(x)"\n1 16\n'
+    )
+    for call in (detect_coco, lambda p: read_coco(p, "s")):
+        with pytest.raises(ReaderError, match="legacy IOHprofiler format"):
+            call(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -451,81 +455,6 @@ def test_run_ids_stable(tmp_path):
     a = read_coco(FIXTURE, "same")
     b = read_coco(FIXTURE, "same")
     assert a.runs["run_id"].to_list() == b.runs["run_id"].to_list()
-
-
-# ------------------------------------------------------------------------- archives
-
-
-def _tgz(files: dict[str, bytes]) -> bytes:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for name, data in files.items():
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
-        link = tarfile.TarInfo("alg/evil")
-        link.type = tarfile.SYMTYPE
-        link.linkname = "/etc/passwd"
-        tar.addfile(link)
-    return buf.getvalue()
-
-
-def _folder_files(folder: Path, prefix: str) -> dict[str, bytes]:
-    return {
-        f"{prefix}{p.relative_to(folder).as_posix()}": p.read_bytes()
-        for p in sorted(folder.rglob("*"))
-        if p.is_file()
-    }
-
-
-def test_nested_archives(tmp_path):
-    src = write_coco(tmp_path / "src", {"dat": DAT, "tdat": TDAT})
-    inner = _tgz(_folder_files(src, "alg/"))
-    outer = tmp_path / "in" / "outer.zip"
-    outer.parent.mkdir()
-    with zipfile.ZipFile(outer, "w") as zf:
-        zf.writestr("inner.tgz", inner)
-        zf.writestr("../escape.info", b"x")
-        zf.writestr("README.txt", b"hello")
-    assert detect_coco(outer.parent)
-    result = read_coco(outer.parent, "arch")
-    assert set(result.runs["source_file"]) == {
-        "outer.zip/inner.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"
-    }
-    archives = {a["path"]: a.get("archive") for a in result.manifest["archives"]}
-    assert archives == {"outer.zip": None, "outer.zip/inner.tgz": "outer.zip"}
-    sources = {s["path"]: s.get("archive") for s in result.manifest["sources"]}
-    assert sources["outer.zip/inner.tgz/alg/bbobexp_f1.info"] == "outer.zip/inner.tgz"
-    skipped = [
-        w for w in result.manifest["warnings"] if w["code"] == "skipped_archive_member"
-    ]
-    assert len(skipped) == 2
-    archive = result.descriptors.filter(pl.col("key") == "archive")["value"].unique()
-    assert archive.to_list() == ["outer.zip"]
-    result.write(tmp_path / "ds")
-    assert validate_dataset(tmp_path / "ds").ok
-
-
-def test_archive_as_input(tmp_path):
-    src = write_coco(tmp_path / "src", {"dat": DAT})
-    path = tmp_path / "alg.tgz"
-    path.write_bytes(_tgz(_folder_files(src, "alg/")))
-    assert detect_format(path) == "coco"
-    result = read_coco(path, "a")
-    assert set(result.runs["source_file"]) == {
-        "alg.tgz/alg/data_f1/bbobexp_f1_DIM2.dat"
-    }
-    assert (
-        result.manifest["archives"][0]["sha256"]
-        == hashlib.sha256(path.read_bytes()).hexdigest()
-    )
-
-
-def test_broken_archive_is_skipped(tmp_path):
-    write_coco(tmp_path, {"dat": DAT})
-    (tmp_path / "broken.zip").write_bytes(b"not a zip")
-    result = read_coco(tmp_path, "b")
-    assert "skipped_archive" in codes(result)
 
 
 def test_no_info_file(tmp_path):
