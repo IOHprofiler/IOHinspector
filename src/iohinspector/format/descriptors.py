@@ -454,12 +454,16 @@ def update_descriptors(
     path: str | os.PathLike[str],
     upsert: pl.DataFrame | Iterable[Sequence[Any] | Mapping[str, Any]] | None = None,
     remove_keys: Iterable[str] = (),
+    *,
+    origin: str | None = "user",
 ) -> dict[str, Any]:
     """Add, change or remove descriptors of the stored dataset ``path``.
 
     ``upsert`` is a descriptors table (see ``descriptor_frame``) or records
     ``(run_id, key, value, origin)``; its rows replace those with the same
-    ``(run_id, key)`` and are stored with origin ``user``. ``remove_keys`` drops
+    ``(run_id, key)`` and are stored with origin ``origin`` (default ``user``), or
+    with their own origins when ``origin`` is None (as the converter does for
+    descriptors taken from paths). ``remove_keys`` drops
     keys from every run; ``algorithm_name`` and ``algorithm_info`` can be changed
     (to strings) but not removed. Only descriptors.parquet and the manifest are
     rewritten; runs, trace and positions are not touched. Nothing is written when
@@ -472,7 +476,9 @@ def update_descriptors(
     if upsert is not None:
         if not isinstance(upsert, pl.DataFrame):
             upsert = descriptor_frame(upsert)
-        new = conform_descriptors(upsert).with_columns(pl.lit("user").alias("origin"))
+        new = conform_descriptors(upsert)
+        if origin is not None:
+            new = new.with_columns(pl.lit(origin).alias("origin"))
         pairs = new.select("run_id", "key")
         table = pl.concat(
             [table.join(pairs, on=["run_id", "key"], how="anti"), new], how="vertical"
