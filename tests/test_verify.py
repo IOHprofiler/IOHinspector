@@ -7,7 +7,7 @@ import json
 import re
 import runpy
 import shutil
-import subprocess
+import subprocess  # nosec B404  # runs verify in a child process to measure it
 import sys
 import tarfile
 import zipfile
@@ -150,7 +150,8 @@ def test_verify_memory_does_not_grow_with_the_data(tmp_path):
         ds = tmp_path / f"ds{functions}"
         convert(source, ds)
         cmd = [sys.executable, "-c", peak, str(source), str(ds)]
-        peaks.append(int(subprocess.run(cmd, capture_output=True, check=True).stdout))
+        child = subprocess.run(cmd, capture_output=True, check=True)  # nosec B603
+        peaks.append(int(child.stdout))
     unit = 1 if sys.platform == "darwin" else 1024
     assert (peaks[1] - peaks[0]) * unit < 250 * 2**20, peaks
 
