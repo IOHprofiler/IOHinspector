@@ -9,7 +9,7 @@ from iohinspector.metrics.ecdf import (
     get_rank_table,
 )
 from iohinspector.targets import get_ecdf_targets
-from tests.golden.load import golden
+from tests.golden.load import golden, golden_renamed, logged
 
 # A simple synthetic dataset
 DF = pl.DataFrame(
@@ -329,3 +329,75 @@ def test_rank_table_matches_iohanalyzer(fixture, metric):
     gold = golden(fixture, metric)
     ours = get_rank_table(gold.drop("rank"), "value", pair=["DIM", "funcId"])
     assert ours["rank"].to_list() == gold["rank"].to_list()
+
+
+# Golden tests against IOHanalyzer (WP I03): generate_data.ECDF and generate_data.AUC
+# with 5 log-linear targets per pair, on its 50-point linear grid. IOHanalyzer
+# compares strictly (f < t); with the next float below each target (above, when
+# maximising) the inclusive ECDF is the same function, so the results must agree
+# exactly. The agreed, inclusive ECDF (EC-1) is never lower.
+GOLDEN = pytest.mark.parametrize("fixture", ["ioh040_min", "ioh040_max"])
+PAIR = ["function_id", "dimension"]
+BY_PAIR = ["algorithm_name", *PAIR]
+
+
+def _golden(fixture, metric):
+    """A golden output, with the pair of a per-pair call as ``PAIR``."""
+    gold = golden_renamed(fixture, metric)
+    if "pair_f" not in gold.columns:
+        return gold
+    pair = [
+        pl.col(c).cast(pl.Int32).alias(n) for c, n in zip(["pair_f", "pair_d"], PAIR)
+    ]
+    return gold.with_columns(pair)
+
+
+def _golden_ecdf(fixture, metric, by, strict=True):
+    maximization = fixture == "ioh040_max"
+    targets = golden_renamed(fixture, "RT_sample").select(*PAIR, "target").unique()
+    if strict:
+        targets = _strict(targets, maximization)
+    gold = _golden(fixture, metric).rename({"x": "evaluations"})
+    ours = get_ecdf(
+        logged(fixture),
+        targets,
+        by,
+        x_values=gold["evaluations"].unique(),
+        maximization=maximization,
+    )
+    joined = gold.join(ours, on=[*by, "evaluations"], how="left")
+    assert joined.height == gold.height
+    return joined
+
+
+@GOLDEN
+@pytest.mark.parametrize("by", [BY_PAIR, ["algorithm_name"]], ids=["pair", "pooled"])
+def test_ecdf_matches_iohanalyzer(fixture, by):
+    metric = "ECDF_by_RT" if by == BY_PAIR else "ECDF_default_targets"
+    joined = _golden_ecdf(fixture, metric, by)
+    np.testing.assert_allclose(joined["ecdf"], joined["mean"], rtol=0, atol=1e-12)
+    inclusive = _golden_ecdf(fixture, metric, by, strict=False)
+    assert (inclusive["ecdf"] >= inclusive["mean"] - 1e-12).all()
+    assert (inclusive["ecdf"] > inclusive["mean"] + 1e-12).any()
+
+
+@GOLDEN
+def test_auc_matches_iohanalyzer_trapezoid(fixture):
+    # EC-4: IOHanalyzer integrates its grid with the trapezoid rule and divides by
+    # the upper budget, not by the range; only this test reproduces that
+    x, y = pl.col("evaluations"), pl.col("ecdf")
+    area = ((y + y.shift(1)) / 2 * x.diff()).over(BY_PAIR)
+    ours = (
+        _golden_ecdf(fixture, "ECDF_by_RT", BY_PAIR)
+        .sort(BY_PAIR + ["evaluations"])
+        .group_by(BY_PAIR)
+        .agg(raw=area.sum(), x=x.max())
+    )
+    for metric, ours_auc in [("AUC_by_RT_raw", "raw"), ("AUC_by_RT", "normalised")]:
+        gold = _golden(fixture, metric)
+        joined = gold.join(
+            ours.with_columns(normalised=pl.col("raw") / pl.col("x")),
+            on=[*BY_PAIR, "x"],
+        )
+        assert joined.height == gold.height
+        np.testing.assert_allclose(joined[ours_auc], joined["auc"], rtol=1e-12)

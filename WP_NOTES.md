@@ -1,6 +1,6 @@
 # WP I12: ECDF, AUC, AOCC and aggregation
 Branch: wp/I12-ecdf (stacked on wp/I10-alignment, IOHinspector#32)
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1/4: `metrics.get_ecdf`: target ECDF (EC-1, EC-3, exact steps or sampled
@@ -11,10 +11,15 @@ Status: in progress
   the equivalence (target AUC within 1/m of the AOCC); legacy note on `get_aocc`.
 - step 3/4: `get_rank_table` (EC-8) tests: ties, inf, null/NaN last, direction,
   and IOHanalyzer's `Aggr_*` ranks on its own values (all five files match).
+- step 4/4: golden tests: `ECDF_by_RT`, `ECDF_default_targets` (pooled, equal
+  weight per pair), `AUC_by_RT`, `AUC_by_RT_raw` on ioh040_min and ioh040_max
+  match exactly with strict-equivalent targets (nextafter); the inclusive ECDF
+  is never lower and is higher somewhere. Worked example 0.70 / 0.733 / 0.75.
+  Docs: implementation section in `docs/definitions/ecdf.md`, CHANGELOG,
+  FUNCTION_REFERENCE.
 
 ## Next step
-Step 4: golden tests of the ECDF (`ECDF_by_RT`, `ECDF_default_targets`) and AUC
-(`AUC_by_RT`, `AUC_by_RT_raw`) on ioh040_min/max; docs and CHANGELOG.
+None: ready for the controller (push, PR, dvermetten review).
 
 ## Decisions
 - Venv: `uv venv .venv --python 3.14 && uv pip install -e ".[dev]"` (polars 2.1).
@@ -38,4 +43,9 @@ Step 4: golden tests of the ECDF (`ECDF_by_RT`, `ECDF_default_targets`) and AUC
   `get_target_dt`'s targets with it.
 
 ## Open questions / Blocked
-- (none yet)
+- Q-EC-3 (added to ecdf.md): IOHanalyzer's fixed-budget ECDF (`ECDF_by_FV`,
+  `AUC_by_FV`) is not defined in `docs/definitions/`, so it is not implemented.
+- Q-EC-1 stays open: the data behind 0.67 / 0.90 is unknown; the worked example
+  of ecdf.md is the golden case.
+- BBOB recognition for the default continuum/AOCC bounds (EA-3) is still open
+  for H1; for now the caller passes `get_ecdf_targets(data, "bbob")`.

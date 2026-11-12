@@ -14,6 +14,16 @@
   evaluations the run used) and `aggregate_convergence` reports `n_active`;
   `load(x_values=...)` always adds `stopped`. `load(monotonic=True)` marks each
   run's last logged row `is_final`. No rows are added.
+- ECDF, AUC, AOCC and rank tables (`docs/definitions/ecdf.md`):
+  `metrics.get_ecdf` is the target ECDF, inclusive (f <= t and T <= x), exact at its
+  steps or sampled at `x_values`, averaged over the (function, dimension) pairs
+  with equal weight. By default it uses only the pairs every group has and warns
+  about the others (`pairs="all"` to average each group's own pairs).
+  `continuous=True` gives the continuum ECDF with bounds fixed per pair.
+  `metrics.get_ecdf_auc` is the exact normalised area under either; with
+  `continuous=True` it is the AOCC. `metrics.get_rank_table` ranks a per-pair
+  summary (average ties, missing values last). `get_data_ecdf` and `get_aocc` stay
+  as they were (legacy).
 - `metrics.group_label(by, template)`: a label per group of `by` from a template
   such as `"{algorithm_name} (sigma {sigma0})"`. Plots grouped by several columns
   label them `"a, b"` instead of a tuple.
