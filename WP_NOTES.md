@@ -9,9 +9,12 @@ Status: in progress
   `get_rank_table` are written (tests in steps 2 and 3).
 - step 2/4: tests of `get_ecdf_auc` (EC-4), AOCC (`continuous=True`, EC-5) and
   the equivalence (target AUC within 1/m of the AOCC); legacy note on `get_aocc`.
+- step 3/4: `get_rank_table` (EC-8) tests: ties, inf, null/NaN last, direction,
+  and IOHanalyzer's `Aggr_*` ranks on its own values (all five files match).
 
 ## Next step
-Step 3: tests of `get_rank_table` (EC-8), including the golden `Aggr_*` ranks.
+Step 4: golden tests of the ECDF (`ECDF_by_RT`, `ECDF_default_targets`) and AUC
+(`AUC_by_RT`, `AUC_by_RT_raw`) on ioh040_min/max; docs and CHANGELOG.
 
 ## Decisions
 - Venv: `uv venv .venv --python 3.14 && uv pip install -e ".[dev]"` (polars 2.1).
@@ -30,6 +33,9 @@ Step 3: tests of `get_rank_table` (EC-8), including the golden `Aggr_*` ranks.
 - `get_data_ecdf` and `get_aocc` stay unchanged (legacy, docstring says so); no
   DeprecationWarning yet, because `plot_ecdf` still uses `get_data_ecdf` until
   the figures move (I19/I20).
+- `get_rank_table` ranks a given summary table; it does not compute ERT or the
+  fixed-budget mean (I11's code, not merged). The website joins I11's ERT at
+  `get_target_dt`'s targets with it.
 
 ## Open questions / Blocked
 - (none yet)

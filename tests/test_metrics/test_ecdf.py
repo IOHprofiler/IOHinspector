@@ -2,8 +2,14 @@ import numpy as np
 import polars as pl
 import pytest
 
-from iohinspector.metrics.ecdf import get_data_ecdf, get_ecdf, get_ecdf_auc
+from iohinspector.metrics.ecdf import (
+    get_data_ecdf,
+    get_ecdf,
+    get_ecdf_auc,
+    get_rank_table,
+)
 from iohinspector.targets import get_ecdf_targets
+from tests.golden.load import golden
 
 # A simple synthetic dataset
 DF = pl.DataFrame(
@@ -286,3 +292,40 @@ def test_aocc_is_the_limit_of_the_target_auc(maximization):
         targets = get_ecdf_targets(df, n=m)
         auc = get_ecdf_auc(df, targets, **options)["auc"].item()
         assert abs(auc - aocc) < 1 / m
+
+
+# Multi-function rank tables (EC-8)
+
+
+def test_rank_table_ties_inf_and_missing():
+    summary = pl.DataFrame(
+        {
+            "function_id": [1] * 6 + [2] * 2,
+            "dimension": [2] * 8,
+            "ERT": [5.0, 3.0, 3.0, np.inf, None, np.nan, 7.0, 1.0],
+        }
+    )
+    ranks = get_rank_table(summary)["rank"].to_list()
+    assert ranks == [3.0, 1.5, 1.5, 4.0, 5.5, 5.5, 2.0, 1.0]
+    mean = summary.rename({"ERT": "mean"}).with_columns(pl.col("mean").fill_nan(9.0))
+    ranks = get_rank_table(mean, "mean", higher_is_better=True)["rank"].to_list()
+    assert ranks == [3.0, 4.5, 4.5, 1.0, 6.0, 2.0, 1.0, 2.0]
+
+
+@pytest.mark.parametrize(
+    ("fixture", "metric"),
+    [
+        ("ioh040_min", "Aggr_DIM"),
+        ("ioh040_min", "Aggr_funcId"),
+        ("ioh040_max", "Aggr_DIM"),
+        ("ioh040_max", "Aggr_funcId"),
+        ("extdata", "Aggr_funcId"),
+    ],
+)
+def test_rank_table_matches_iohanalyzer(fixture, metric):
+    # generate.Aggr ranks ERT per (DIM, funcId) with frank(na.last = TRUE); its ERT
+    # values carry RT-1 (and Aggr_funcId mixes the dimensions' targets), so the
+    # ranks are compared on its own values
+    gold = golden(fixture, metric)
+    ours = get_rank_table(gold.drop("rank"), "value", pair=["DIM", "funcId"])
+    assert ours["rank"].to_list() == gold["rank"].to_list()
