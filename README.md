@@ -55,6 +55,21 @@ Upgrading from 0.0.x? See [CHANGELOG.md](CHANGELOG.md): `free_vars` is now `by`,
 
 ![ecdf](image.png)
 
+## Uploading to the website
+
+Create a personal upload token on the website's account page, then:
+
+```bash
+export IOH_TOKEN=ioh_...        # or pass --token
+iohinspector upload my_experiment/ --title "My experiment" --tag budget=1000
+```
+
+The data is converted and verified locally first, and nothing is sent when
+verification fails (`--no-check` skips this). The original files are then sent in
+chunks (a folder is zipped to `my_experiment.zip` first), and the server converts
+them again. If the upload is interrupted, run the same command to continue. The
+website is `https://coaxium.liacs.nl` unless `--url` or `IOH_URL` says otherwise.
+
 ## Tutorials
 
 To highlight the usage of IOHinspector, we have created two tutorials in the form of jupyter notebooks:
