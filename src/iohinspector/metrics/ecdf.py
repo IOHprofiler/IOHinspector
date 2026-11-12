@@ -54,7 +54,9 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> N
     )
 
 
-def _hits(data, targets, keys, pair, maximization, fval_var, eval_var):
+def _hits(  # pylint: disable=R0913,R0917
+    data, targets, keys, pair, maximization, fval_var, eval_var
+):
     """Increments ``dy`` = 1/m of each (run, target) pair at its first hitting time
     (EC-1: inclusive, AL-1; ties to the first row, AL-3)."""
     parts = targets.partition_by(pair, as_dict=True)
@@ -72,7 +74,9 @@ def _hits(data, targets, keys, pair, maximization, fval_var, eval_var):
     return aligned.filter(pl.col(eval_var).is_finite())
 
 
-def _quality(data, targets, pair, maximization, scale_f_log, fval_var):
+def _quality(  # pylint: disable=R0913,R0917
+    data, targets, pair, maximization, scale_f_log, fval_var
+):
     """Increments ``dy`` of each run's normalised quality q (EC-5): the log10 (or
     linear) distance of its best-so-far value from the worse bound, between the
     pair's smallest and largest target. q is the fraction of a continuum of targets
@@ -101,7 +105,7 @@ def _quality(data, targets, pair, maximization, scale_f_log, fval_var):
     )
 
 
-def _increments(  # pylint: disable=too-many-arguments
+def _increments(  # pylint: disable=R0913,R0914
     data: pl.DataFrame,
     targets: pl.DataFrame | None,
     by: list[str],
@@ -117,6 +121,7 @@ def _increments(  # pylint: disable=too-many-arguments
 ) -> tuple[pl.DataFrame, float]:
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), and the largest budget in the selection."""
+    # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
     pair = list(pair)
     if targets is None:
         kind = "log-linear" if scale_f_log else "linear"
