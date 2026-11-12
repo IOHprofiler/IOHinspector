@@ -83,6 +83,11 @@
 - `align_data` at a target: the other columns of a row (such as a parameter) came
   from the last of the rows with the same evaluation count and best-so-far value,
   not from the first row that reached the target (AL-3).
+- COCO reader: data files of COCO 2.2.1 (`data_format = 'bbob-new'`, for example
+  `bbob/2018/uDE-best_Vodopija`) have six fixed columns before `x1 ... xD`, the
+  header's fourth field being a second noise-free column. They failed with
+  "8 fields; a 2-D data line has 5 or 7". The layout is read from the header
+  line; the other layouts read as before.
 - Budget grids (`get_sequence(..., cast_to_int=True)` and the default grids of
   `aggregate_convergence`, `get_data_ecdf` and the EAF) are rounded, not truncated:
   a grid up to 100 ended at 99 (TG-5).
