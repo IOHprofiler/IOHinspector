@@ -56,17 +56,15 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pairs: str) -> None:
     )
 
 
-def _hits(  # pylint: disable=R0913,R0917
-    data, targets, keys, maximization, fval_var, eval_var
-):
+def _hits(data, targets, maximization, fval_var, eval_var):
     """Increments ``dy`` = 1/m of each (run, target) pair at its first hitting time
-    (EC-1: inclusive, AL-1; ties to the first row, AL-3)."""
+    (EC-1: inclusive, AL-1; ties to the first row, AL-3), with the other columns of
+    the row that reached it."""
     parts = targets.partition_by(PAIR, as_dict=True)
     aligned = pl.concat(
         align_data(
             runs,
             parts[key]["target"],
-            group_cols=["run_id", *keys],
             x_col=fval_var,
             y_col=eval_var,
             maximization=maximization,
@@ -130,8 +128,7 @@ def _increments(  # pylint: disable=R0913,R0914
     if continuous:
         steps = _quality(data, targets, maximization, scale_f_log, fval_var)
     else:
-        keys = list(dict.fromkeys([*by, *PAIR, "weight"]))
-        steps = _hits(data, targets, keys, maximization, fval_var, eval_var)
+        steps = _hits(data, targets, maximization, fval_var, eval_var)
     x = pl.col(eval_var).cast(pl.Float64)
     if divide_by_dimension:
         x = x / pl.col("dimension")

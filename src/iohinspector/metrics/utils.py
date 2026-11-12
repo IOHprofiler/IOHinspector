@@ -158,7 +158,8 @@ def normalize_objectives(
                     f"Lower bound for column '{col}' <= 0; resetting to 1e-8 for log-scaling."
                 )
                 lb = 1e-8
-            lb, ub, v = np.log10(lb), np.log10(ub), v.log10()
+            lb, ub = np.log10([lb, ub])
+            v = v.log10()
         norm_expr = ((v - lb) / (ub - lb)).clip(0, 1)
         if not is_max:  # minimisation: the lower bound is the best
             norm_expr = 1 - norm_expr
