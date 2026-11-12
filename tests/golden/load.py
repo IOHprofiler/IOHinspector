@@ -12,6 +12,7 @@ asserts the agreed value and names the difference (see tests/golden/README.md).
 from __future__ import annotations
 
 import json
+import warnings
 from functools import cache
 from pathlib import Path
 
@@ -66,6 +67,20 @@ def golden(fixture: str, metric: str) -> pl.DataFrame:
             f"no golden output {fixture}/{metric}; versions()['skipped'] lists IOHanalyzer errors"
         )
     return pl.read_parquet(path)
+
+
+@cache
+def logged(fixture: str) -> pl.DataFrame:
+    """Every logged row of an ``ioh040_*`` fixture as iohinspector loads it (raw, not
+    best-so-far), with ``function_id``, ``dimension`` and ``algorithm_name``."""
+    from iohinspector import DataManager
+
+    manager = DataManager()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        manager.add_folder(fixture_path(fixture))
+    columns = ["function_id", "dimension", "algorithm_name"]
+    return manager.load(monotonic=False, include_columns=columns)
 
 
 def golden_cocopp(name: str, fixture: str = "coco") -> pl.DataFrame:

@@ -1,8 +1,8 @@
 import polars as pl
 from typing import Iterable, Sequence
 from .._upgrade import upgrade_hints
-from .utils import get_sequence
 from ..align import align_data
+from ..targets import seq_rt
 from .utils import transform_fval
 
 
@@ -43,13 +43,7 @@ def get_data_ecdf(
             points.
     """
     if eval_values is None:
-        if eval_min is None:
-            eval_min = data[eval_var].min()
-        if eval_max is None:
-            eval_max = data[eval_var].max()
-        eval_values = get_sequence(
-            eval_min, eval_max, 50, scale_log=scale_eval_log, cast_to_int=True
-        )
+        eval_values = seq_rt(data[eval_var], 50, scale_eval_log, eval_min, eval_max)
     data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),
         eval_values,

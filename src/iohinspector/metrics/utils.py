@@ -7,6 +7,8 @@ from moocore import (
     filter_dominated,
 )
 
+from ..targets import seq_rt, spaced
+
 
 def get_sequence(
     min: float,
@@ -22,34 +24,15 @@ def get_sequence(
         max (float): Final point of the range.
         len (float): Number of steps in the sequence.
         scale_log (bool, optional): Whether values should be scaled logarithmically. Defaults to False.
-        cast_to_int (bool, optional): Whether the values should be casted to integers (e.g. in case of budget) or not. Defaults to False.
+        cast_to_int (bool, optional): Whether the values should be rounded to integers
+            (e.g. in case of budget, ``targets.seq_rt``) or not. Defaults to False.
 
     Returns:
         np.ndarray: Array of evenly spaced values between min and max.
     """
-    transform = lambda x: x
-    if scale_log:
-        assert min > 0
-        min = np.log10(min)
-        max = np.log10(max)
-        transform = lambda x: 10**x
-    if len == 1:
-        values = np.array([min])
-    else:
-        if max == min:
-            values = np.ones(len) * min
-        else:
-            values = np.arange(
-                min,
-                max + (max - min) / (2 * (len - 1)),
-                (max - min) / (len - 1),
-                dtype=float,
-            )
-
-    values = transform(values)
     if cast_to_int:
-        return np.unique(np.array(values, dtype=int))
-    return np.unique(values)
+        return seq_rt([min, max], len, scale_log)
+    return spaced(min, max, len, scale_log)
 
 
 def normalize_objectives(

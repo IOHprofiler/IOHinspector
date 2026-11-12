@@ -4,7 +4,8 @@ from moocore import eaf, eafdiff
 
 from .._upgrade import upgrade_hints
 from ..align import align_data
-from .utils import get_sequence, transform_fval
+from ..targets import seq_rt
+from .utils import transform_fval
 
 
 @upgrade_hints
@@ -46,12 +47,8 @@ def get_discritized_eaf_single_objective(
     """
 
     if eval_values is None:
-        if eval_min is None:
-            eval_min = data[eval_var].min()
-        if eval_max is None:
-            eval_max = data[eval_var].max()
-        eval_values = get_sequence(
-            eval_min, eval_max, eval_targets, scale_log=scale_eval_log, cast_to_int=True
+        eval_values = seq_rt(
+            data[eval_var], eval_targets, scale_eval_log, eval_min, eval_max
         )
 
     dt_aligned = align_data(
@@ -98,13 +95,7 @@ def get_eaf_data(
         pl.DataFrame: A DataFrame with aligned EAF data; null before a run's first
             logged evaluation (AL-5).
     """
-
-    if eval_min is None:
-        eval_min = data[eval_var].min()
-    if eval_max is None:
-        eval_max = data[eval_var].max()
-
-    evals = get_sequence(eval_min, eval_max, 50, scale_eval_log, True).astype("uint64")
+    evals = seq_rt(data[eval_var], 50, scale_eval_log, eval_min, eval_max)
     return align_data(data, evals, maximization=maximization)
 
 
