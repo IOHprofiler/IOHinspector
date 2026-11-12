@@ -6,12 +6,13 @@ Status: in progress
 - step 1: `metrics/parameters.py`: `get_parameter_sample`, `get_parameter_summary`,
   `get_logged_rows` (correlation pairs and positions), `apply_penalty`; unit tests.
 
+- step 2: golden tests against `extdata` (PAR_sample and PAR_summary by RT and FV,
+  exact), `ioh040_cons` PAR_summary_by_RT, the JSON fixtures' PAR_sample_by_RT
+  (equal where the run logged b; elsewhere IOHanalyzer's value is the run's next
+  logged row), positions, Parameter_correlation and penalty_*_FV_matrix.
+
 ## Next step
-Step 2: golden tests in `tests/test_metrics/test_parameters.py` against
-`extdata` (PAR_sample/summary by RT and FV), the JSON fixtures (PAR_sample_by_RT
-at logged evaluations), `ioh040_pos/positions`, `ioh040_cons/Parameter_correlation`
-and `ioh040_cons/penalty_*_FV_matrix`. Then step 3: definitions page "what was
-built", CHANGELOG.
+Step 3: definitions page "what was built", CHANGELOG entry.
 
 ## Decisions
 - `QUANTILES` is defined in `parameters.py` because I11 (which adds the same tuple
