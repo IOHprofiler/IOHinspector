@@ -137,10 +137,13 @@ def sample(values, groups, column="v"):
 
 def test_histogram_equal_bins_and_per_algorithm():
     s = sample([1.0, 2, 2, 3, 4, 9, 9, 10, 10, 10], list("aaaaabbbbb"))
-    edges = lambda h: {
-        k[0]: f["left"].to_list()
-        for k, f in h.partition_by("algorithm_name", as_dict=True).items()
-    }
+
+    def edges(h):
+        return {
+            k[0]: f["left"].to_list()
+            for k, f in h.partition_by("algorithm_name", as_dict=True).items()
+        }
+
     equal, own = (
         edges(get_histogram(s, "v")),
         edges(get_histogram(s, "v", bins="per_algorithm")),

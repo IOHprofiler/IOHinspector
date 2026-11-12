@@ -88,8 +88,11 @@ def nclass_fd(x: np.ndarray) -> int:
     return max(1, math.ceil((x.max() - x.min()) / (h * n ** (-1 / 3))))
 
 
-def pretty(lo: float, up: float, n: int, min_n: int = 1) -> np.ndarray:
+def pretty(  # pylint: disable=too-many-locals
+    lo: float, up: float, n: int, min_n: int = 1
+) -> np.ndarray:
     """R's ``pretty(c(lo, up), n, min.n)`` (the C routine ``R_pretty``, R 4.3.3)."""
+    # #lizard forgives  (a line-by-line port of R's C routine)
     h, h5, eps = 1.5, 0.5 + 1.5 * 1.5, 1e-10
     dx = up - lo
     cell = 1.0 if dx == 0 and up == 0 else max(abs(lo), abs(up))
@@ -154,7 +157,7 @@ def _finite(sample: pl.DataFrame, value: str) -> pl.DataFrame:
     return sample.filter(pl.col(value).is_finite())  # drops null (undefined) too
 
 
-def get_histogram(
+def get_histogram(  # pylint: disable=too-many-locals
     sample: pl.DataFrame,
     value: str,
     by: Sequence[str] = ("algorithm_name",),
