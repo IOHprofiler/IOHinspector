@@ -94,3 +94,21 @@ def test_ecdf_with_eval_min_eval_max():
     )
     algo2_eaf.sort()
     np.testing.assert_allclose(algo2_eaf, [0, 1 / 6, 1 / 3])
+
+
+def test_run_without_a_value_yet_keeps_its_group():
+    # run 2 is first logged at evaluation 5, so it has no value at budget 1; that row
+    # still belongs to algorithm A (it used to form a separate group with a null name)
+    df = pl.DataFrame(
+        {
+            "run_id": [1, 1, 2, 2],
+            "algorithm_name": ["A"] * 4,
+            "evaluations": [1, 10, 5, 10],
+            "raw_y": [4.0, 2.0, 3.0, 1.0],
+        }
+    )
+    result = get_data_ecdf(
+        df, f_min=1, f_max=4, scale_f_log=False, eval_values=[1, 5, 10]
+    )
+    assert result["algorithm_name"].to_list() == ["A"] * 3
+    assert result["evaluations"].to_list() == [1, 5, 10]
