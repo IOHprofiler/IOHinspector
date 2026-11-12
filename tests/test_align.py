@@ -88,7 +88,7 @@ def test_stopped_from_evals_used(maximization):
 @DIRECTIONS
 def test_fixed_budget_leaves_out_but_counts(maximization):
     result = _at(aggregate_convergence(LATE, maximization=maximization), 1)
-    assert result.select("mean", "min", "max", "n_runs", "n_defined").row(0) == (
+    assert result.select("mean", "best", "worst", "n_runs", "n_defined").row(0) == (
         4.0, 4.0, 4.0, 2, 1,
     )  # fmt: skip
 

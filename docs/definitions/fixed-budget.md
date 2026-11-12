@@ -3,7 +3,8 @@
 Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Fixed-budget summary, overviews".
-Implemented in: I11.
+Implemented in: I11 (`iohinspector.metrics.aggregate_convergence` and
+`get_overview`).
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
 
 The fixed-budget view asks which function value a run set has reached after b
@@ -169,9 +170,9 @@ positive value for the log axis. Runs are not instance-balanced in this plot
   or simulated restarts, with the run stopping told apart from the run not
   improving; alignment keeps the last evaluation at all times (AL-9). See FB-6.
 
-Remaining points for H1: the restart procedure is the proposal above (draw
-uniformly with replacement from the run set, one chain per run, seeded); the
-review named the option but not the procedure. The default stays carry forward.
+The restart procedure (draw uniformly with replacement from the run set, one
+chain per run, seeded) was signed off as built (user, 2026-11-12); the review
+named the option but not the procedure. The default stays carry forward.
 
 ## Test tolerance
 

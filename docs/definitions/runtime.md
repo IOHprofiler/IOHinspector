@@ -4,7 +4,8 @@ Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "ERT, PAR-k, runtime summary with quantiles"; the runtime
 half of "Runtime and value samples".
-Implemented in: I10 (hitting times), I11 (summaries).
+Implemented in: I10 (hitting times), I11 (summaries:
+`iohinspector.metrics.aggregate_running_time`).
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
 
 ## Notation

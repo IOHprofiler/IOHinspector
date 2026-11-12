@@ -10,12 +10,19 @@ from iohinspector.metrics import (
     aggregate_convergence,
     aggregate_running_time,
     get_data_ecdf,
+    get_overview,
     get_trajectory,
     group_label,
 )
 from tests.golden.load import fixture_path
 
-METRICS = [aggregate_convergence, aggregate_running_time, get_data_ecdf, get_trajectory]
+METRICS = [
+    aggregate_convergence,
+    aggregate_running_time,
+    get_data_ecdf,
+    get_overview,
+    get_trajectory,
+]
 
 
 @pytest.fixture(scope="module")

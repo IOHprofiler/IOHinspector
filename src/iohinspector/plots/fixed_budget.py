@@ -5,7 +5,13 @@ import polars as pl
 from typing import Iterable, Sequence
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_budget import aggregate_convergence
-from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
+from .utils import (
+    LinePlotArgs,
+    _check_measures,
+    _create_plot_args,
+    _hue,
+    _save_fig,
+)
 
 
 @upgrade_hints
@@ -39,8 +45,9 @@ def plot_single_function_fixed_budget(
         eval_min (float, optional): Minimum evaluation bound for the plot. If None, uses data minimum. Defaults to None.
         eval_max (float, optional): Maximum evaluation bound for the plot. If None, uses data maximum. Defaults to None.
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
-        measures (Iterable[str], optional): Aggregate measures to plot. Valid options are "geometric_mean",
-            "mean", "median", "min", "max". Defaults to ["geometric_mean"].
+        measures (Iterable[str], optional): Aggregate measures to plot: columns of
+            ``aggregate_convergence``, such as "geometric_mean", "mean", "median",
+            "best", "worst" or "q50". Defaults to ["geometric_mean"].
         ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
         file_name (str, optional): Path to save the plot. If None, plot is not saved. Defaults to None.
         plot_args (dict | LinePlotArgs, optional): Plot styling arguments. Can include:
@@ -67,6 +74,7 @@ def plot_single_function_fixed_budget(
         eval_max=eval_max,
         maximization=maximization,
     )
+    _check_measures(dt_agg, measures)
     dt_plot = (
         dt_agg.unpivot(index=[eval_var, *by])
         .filter(pl.col("variable").is_in(list(measures)))
