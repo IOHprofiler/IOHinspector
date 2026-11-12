@@ -13,6 +13,43 @@ from moocore import (
 from ..targets import seq_rt, spaced
 
 
+#: The probabilities of the quantile columns ``q2`` ... ``q98``, in percent: the
+#: nine of IOHanalyzer (``docs/definitions/runtime.md`` RT-5, ``fixed-budget.md`` FB-2).
+QUANTILES = (2, 5, 10, 25, 50, 75, 90, 95, 98)
+
+
+def runs_of(
+    data: pl.DataFrame, by: Sequence[str] = (), eval_var: str = "evaluations"
+) -> pl.DataFrame:
+    """One row per run: ``run_id``, the ``by`` columns, ``run_set`` (an integer key
+    of the run's group of ``by``) and B_i as ``evals_used``: the evaluations the run
+    used by the run metadata (``DataManager.load(include_columns=["evals_used"])``),
+    or else its last logged evaluation, which is less for a source that does not log
+    the final evaluation (``docs/definitions/runtime.md``).
+
+    Metrics align and group on ``run_id`` and ``run_set`` and join the ``by``
+    columns afterwards (``name_run_sets``): several times faster than on ``by``."""
+    by = list(dict.fromkeys(by))
+    used = "evals_used" if "evals_used" in data.columns else eval_var
+    runs = data.group_by("run_id").agg(
+        pl.col([c for c in by if c != "run_id"]).first(),
+        pl.col(used).max().cast(pl.Int64).alias("evals_used"),
+    )
+    run_set = pl.struct(by).rank("dense") if by else pl.lit(1, pl.UInt32)
+    return runs.with_columns(run_set=run_set)
+
+
+def name_run_sets(
+    summary: pl.DataFrame, runs: pl.DataFrame, by: Sequence[str], *x: str
+) -> pl.DataFrame:
+    """``summary``, keyed by ``run_set`` (and ``x``), with the ``by`` columns of
+    ``runs`` (``runs_of``) in place of ``run_set``, in front and sorted."""
+    keys = list(dict.fromkeys([*by, *x]))
+    names = runs.select("run_set", *dict.fromkeys(by)).unique("run_set")
+    summary = summary.join(names, on="run_set").drop("run_set")
+    return summary.select(*keys, pl.exclude(*keys)).sort(*keys)
+
+
 def get_sequence(
     min: float,
     max: float,
