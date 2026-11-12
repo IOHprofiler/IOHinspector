@@ -192,8 +192,10 @@ class DataManager:
         """The trace of the selected runs in one frame, positions ``x0`` ... joined.
 
         ``monotonic`` makes ``raw_y`` the best-so-far value and keeps, per run, the
-        rows where it changes and the final row. ``x_values`` aligns each run to
-        those evaluations (``align_data``; implies ``monotonic``).
+        rows where it changes and the last logged row, which ``is_final`` marks
+        (AL-9). ``x_values`` aligns each run to those evaluations (``align_data``;
+        implies ``monotonic``), with ``stopped`` where an evaluation exceeds the
+        run's ``evals_used``.
         ``include_meta_data`` puts every ``overview`` column in front,
         ``include_columns`` only the ones named.
         """
@@ -211,10 +213,14 @@ class DataManager:
         lf = lf.drop("row").with_columns(pl.col("evaluations").cast(pl.UInt64))
         df = lf.collect()
         if x_values is not None:
-            maxi = self.runs.filter("maximization").select("run_id").collect()
-            is_max = pl.col("run_id").is_in(maxi["run_id"].implode())
+            runs = self.runs.select("run_id", "evals_used", "maximization").collect()
+            df = df.drop("is_final").join(runs, on="run_id", maintain_order="left")
             df = pl.concat(
-                align_data(df.filter(is_max == m), x_values, maximization=m)
+                align_data(
+                    df.filter(maximization=m).drop("maximization"),
+                    x_values,
+                    maximization=m,
+                ).drop("evals_used")
                 for m in (False, True)
             )
         if include_meta_data or include_columns is not None:
@@ -237,7 +243,7 @@ def _only(dataset: StoredDataset, run_ids: pl.Series) -> StoredDataset:
 
 def _best_so_far(lf: pl.LazyFrame, maximization: pl.LazyFrame) -> pl.LazyFrame:
     """Per run, ``raw_y`` as the best-so-far value, on the rows where it changes
-    and the final row."""
+    and the last logged row (``is_final``)."""
     y = pl.col("raw_y")
     best = (
         pl.when(pl.col("maximization"))
@@ -248,7 +254,7 @@ def _best_so_far(lf: pl.LazyFrame, maximization: pl.LazyFrame) -> pl.LazyFrame:
     lf = lf.with_columns(raw_y=best).drop("maximization")
     changed = (y != y.shift(1)).over("run_id").fill_null(True)
     last = (pl.int_range(pl.len()) == pl.len() - 1).over("run_id")
-    return lf.filter(changed | last)
+    return lf.with_columns(is_final=last).filter(changed | pl.col("is_final"))
 
 
 __all__ = ["DataManager"]

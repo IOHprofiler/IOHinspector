@@ -42,10 +42,10 @@ Together these answer the plan's question on quantile types.
 
 ### Stopped runs: carry forward or simulated restarts
 
-A run **stopped** at b when B_i < b (run metadata, from the final evaluation
-that alignment keeps, AL-9). A run with B_i ≥ b that has not improved since an
-earlier evaluation did not stop: its value at b is its best-so-far, and it
-counts in n_active. For stopped runs the summary has two options,
+A run **stopped** at b when B_i < b (B_i is `evals_used` from the run
+metadata; alignment flags such rows `stopped`, AL-9). A run with B_i ≥ b that
+has not improved since an earlier evaluation did not stop: its value at b is
+its best-so-far, and it counts in n_active. For stopped runs the summary has two options,
 `stopped = "carry_forward"` (default) or `"restart"`:
 
 - **carry forward**: V_i(b) is the run's final best value (as AL-4);
@@ -157,8 +157,11 @@ positive value for the log axis. Runs are not instance-balanced in this plot
 - **FB-6.** Runs that stopped before b (B_i < b) are handled by one of two
   options: carry the final value forward (default, FB-1) or perform simulated
   restarts as defined above. A run that stopped is distinguished from a run
-  that merely did not improve, using the final evaluation that alignment keeps
-  (AL-9). Excluding stopped runs is not offered. Decided by the D6 review (dvermetten, 2026-11-06).
+  that merely did not improve, using the `stopped` flag that alignment sets
+  from `evals_used` (AL-9). Excluding stopped runs is not offered. Decided by
+  the D6 review (dvermetten, 2026-11-06); mechanics: flag column `stopped`
+  from evals_used plus `is_final` on the last logged row in monotonic load
+  (user, 2026-11-12).
 
 ## Questions answered by the D6 review
 

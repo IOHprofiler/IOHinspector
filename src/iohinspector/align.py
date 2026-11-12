@@ -32,8 +32,16 @@ def align_data(  # pylint: disable=too-many-arguments
     null (``docs/definitions/alignment.md``, AL-5): metrics leave it out of their
     statistics but count the run. Works in one join for all runs.
 
+    Fixed budget with an ``evals_used`` column (the run's B_i from the run
+    metadata, ``DataManager.load(include_columns=["evals_used"])``): each row
+    also gets ``stopped``, whether the budget exceeds B_i (AL-9, FB-6); the value
+    there is the run's final best value, carried forward. Without ``evals_used``
+    there is no ``stopped`` column: the last logged evaluation is not B_i for
+    sources that do not log the final evaluation.
+
     Args:
-        df: at least ``x_col``, ``y_col`` and ``group_cols``, in evaluation order.
+        df: at least ``x_col``, ``y_col`` and ``group_cols``, in evaluation order;
+            optionally ``evals_used``.
         x_values: the evaluations, or function values, to align on.
         group_cols: the columns that identify a run.
         x_col: the column to align on.
@@ -49,12 +57,14 @@ def align_data(  # pylint: disable=too-many-arguments
     fval = y_col if x_col == "evaluations" else x_col
     best = pl.col(fval).cum_max() if maximization else pl.col(fval).cum_min()
     df = df.with_columns(best.over(group_cols))
-    grid = (
-        df.select(group_cols)
-        .unique()
-        .join(
-            pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]}), how="cross"
-        )
+    stopped = x_col == "evaluations" and "evals_used" in df.columns
+    if stopped:  # B_i per run, from the run metadata (AL-9)
+        runs = df.group_by(group_cols).agg(pl.col("evals_used").max())
+        df = df.drop("evals_used")
+    else:
+        runs = df.select(group_cols).unique()
+    grid = runs.join(
+        pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]}), how="cross"
     )
     forward = x_col != "evaluations" and maximization
     if x_col == "evaluations":  # on a tie, the last row in data order
@@ -70,6 +80,8 @@ def align_data(  # pylint: disable=too-many-arguments
     )
     if x_col != "evaluations":
         result = result.with_columns(pl.col(y_col).fill_null(np.inf))
+    if stopped:
+        result = result.with_columns(stopped=pl.col(x_col) > pl.col("evals_used"))
     if output == "long":
         return result
     return result.pivot(index=x_col, on=group_cols, values=y_col)

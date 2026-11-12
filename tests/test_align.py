@@ -71,6 +71,21 @@ def test_before_the_first_evaluation_is_null(maximization):
 
 
 @DIRECTIONS
+def test_stopped_from_evals_used(maximization):
+    # AL-9: run 1 used 10 evaluations but last logged 5, run 2 used 12; no rows added
+    df = LATE.with_columns(evals_used=pl.Series([10, 10, 12, 12]))
+    df = df.with_columns(evaluations=pl.Series([1, 5, 5, 10]))
+    result = align_data(df, [5, 10, 11], maximization=maximization).sort("run_id")
+    assert result.height == 6
+    assert result["stopped"].to_list() == [False, False, True, False, False, False]
+    assert _at(result, 11, run_id=1)["raw_y"].item() == (4.0 if maximization else 2.0)
+    assert "stopped" not in align_data(LATE, [5], maximization=maximization).columns
+    summary = aggregate_convergence(df, eval_max=12, maximization=maximization)
+    assert _at(summary, 10)["n_active"].item() == 2
+    assert _at(summary, 12)["n_active"].item() == 1
+
+
+@DIRECTIONS
 def test_fixed_budget_leaves_out_but_counts(maximization):
     result = _at(aggregate_convergence(LATE, maximization=maximization), 1)
     assert result.select("mean", "min", "max", "n_runs", "n_defined").row(0) == (

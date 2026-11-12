@@ -33,7 +33,9 @@ def aggregate_convergence(
         pl.DataFrame: A DataFrame with aggregated performance statistics (mean, min,
             max, median, std, geometric_mean) over the runs that have a value at the
             budget, ``n_runs`` and ``n_defined`` (the runs that have a value; a run has
-            none before its first logged evaluation, AL-5).
+            none before its first logged evaluation, AL-5). With an ``evals_used``
+            column in ``data`` also ``n_active``, the runs that had not stopped
+            (B_i >= b, FB-6).
     """
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
@@ -58,6 +60,8 @@ def aggregate_convergence(
         pl.len().alias("n_runs"),
         pl.col(fval_var).count().alias("n_defined"),
     ]
+    if "stopped" in data_aligned.columns:  # FB-6: runs with B_i >= b
+        aggregations.append(pl.col("stopped").not_().sum().alias("n_active"))
 
     if custom_op is not None:
         aggregations.append(

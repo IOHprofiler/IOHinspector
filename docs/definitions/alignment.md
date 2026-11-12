@@ -61,13 +61,18 @@ than an easier one.
   replaced by +∞, −∞ or any value of the run. In IOHexperimenter data
   e_i1 = 1, so this only arises for b < 1 or for formats that start logging
   later.
-- **The final evaluation is always kept.** The aligned table keeps, for every
-  run, a row at B_i (from run metadata) even when the last improvement came
-  earlier. Its best-so-far value is the run's final best value, and a flag
-  `is_final` marks it. A run that stopped (B_i < b) and a run that is still
-  running but has not improved since some evaluation (B_i ≥ b) are then
-  distinguishable, which the fixed-budget restart option needs
-  ([fixed-budget](fixed-budget.md), FB-6).
+- **Stopped runs are flagged.** Every fixed-budget aligned row carries a
+  flag `stopped` = (b > B_i), with B_i the run's `evals_used` from the run
+  metadata, not the last logged evaluation: IOHexperimenter always logs the
+  final evaluation, other sources may not. No rows are added; the aligned
+  table keeps one row per run and budget. A run that stopped (B_i < b) and a
+  run that is still running but has not improved since some evaluation
+  (B_i ≥ b) are then distinguishable, which the fixed-budget restart option
+  needs ([fixed-budget](fixed-budget.md), FB-6). Fixed-target alignment needs
+  no flag.
+- **The last logged row is kept.** A best-so-far load keeps each run's last
+  logged row even when it does not improve, and marks it `is_final` (true
+  only on that row).
 
 ### Runtime and value samples
 
@@ -178,10 +183,12 @@ apply to Δf; how Δf is stored or derived is decided by the COCO reader (I07).
 - **AL-8.** No tolerance is added to the hit rule for COCO-derived data;
   cocopp's relative 1e-9 is not ported and AL-2 holds for every source. A
   tolerance can be offered later as an explicit option. Decided by the D6 review (dvermetten, 2026-11-06).
-- **AL-9.** Alignment keeps every run's final evaluation: a row at B_i with the
-  run's final best value and an `is_final` flag, whether or not the run improved
-  there. It is what lets fixed-budget views separate "the run stopped" from
-  "the run did not improve" (FB-6). Decided by the D6 review (dvermetten, 2026-11-06).
+- **AL-9.** Alignment keeps the information on every run's final evaluation,
+  whether or not the run improved there. It is what lets fixed-budget views
+  separate "the run stopped" from "the run did not improve" (FB-6). Decided by
+  the D6 review (dvermetten, 2026-11-06); mechanics: flag column `stopped`
+  from evals_used plus `is_final` on the last logged row in monotonic load
+  (user, 2026-11-12).
 
 ## Questions answered by the D6 review
 
