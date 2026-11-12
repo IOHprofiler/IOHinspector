@@ -69,6 +69,18 @@ def golden(fixture: str, metric: str) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
+#: IOHanalyzer's column names for a run's function, dimension and algorithm.
+NAMES = {"funcId": "function_id", "DIM": "dimension", "ID": "algorithm_name"}
+
+
+def golden_renamed(fixture: str, metric: str) -> pl.DataFrame:
+    """``golden`` with iohinspector's names (``NAMES``) and int32 ids, so it joins with
+    ``logged``."""
+    df = golden(fixture, metric).rename(NAMES, strict=False)
+    ids = [c for c in ("function_id", "dimension") if c in df.columns]
+    return df.with_columns(pl.col(ids).cast(pl.Int32))
+
+
 @cache
 def logged(fixture: str) -> pl.DataFrame:
     """Every logged row of an ``ioh040_*`` fixture as iohinspector loads it (raw, not
@@ -79,7 +91,7 @@ def logged(fixture: str) -> pl.DataFrame:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         manager.add_folder(fixture_path(fixture))
-    columns = ["function_id", "dimension", "algorithm_name"]
+    columns = ["function_id", "dimension", "algorithm_name", "source_run_index"]
     return manager.load(monotonic=False, include_columns=columns)
 
 
