@@ -32,8 +32,10 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+import pyarrow.parquet as pq
 
 from ..format import read_manifest, validate_dataset
+from ..format._frames import frame_from_arrow
 from ._scan import (
     KINDS,
     METADATA_KINDS,
@@ -48,6 +50,8 @@ from ._sources import SourceFile, walk
 
 _SUFFIX = re.compile(r"\.([^./]*)$")
 _KEYS = ["run_id", "label"]
+#: Trace rows per batch: memory stays bounded however large the trace is.
+_BATCH_ROWS = 1 << 18
 
 
 @dataclass
@@ -162,27 +166,31 @@ def _aggregate(frame: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def _trace_aggregates(dataset: Path, runs: pl.DataFrame) -> pl.DataFrame:
-    trace = pl.scan_parquet(dataset / "trace.parquet")
-    names = trace.collect_schema().names()
+    """``_aggregate`` of the trace, in batches of whole runs. The format keeps the
+    rows of a run contiguous and in ``row`` order, so nothing needs sorting."""
+    trace = pq.ParquetFile(dataset / "trace.parquet", pre_buffer=False)
     own = pl.col("source_file").str.extract(_SUFFIX.pattern, 1).fill_null("")
-    cols = ["run_id", "row", "evaluations", pl.col("raw_y").alias("y")]
-    if "logged_in" in names:
-        cols.append("logged_in")
-        label = (
-            pl.when(pl.col("logged_in").is_null())
-            .then(pl.concat_list(own))
-            .otherwise(pl.col("logged_in").str.split("+"))
-        )
-    else:
-        label = pl.concat_list(own)
-    frame = (
-        trace.select(cols)
-        .join(runs.lazy().select("run_id", "source_file"), on="run_id", how="left")
-        .with_columns(label=label)
-        .explode("label")
-        .sort("run_id", "label", "row")
-    )
-    return _aggregate(frame).collect()
+    labels = runs.lazy().select("run_id", label=pl.concat_list(own))
+    names = trace.schema_arrow.names
+    cols = [c for c in ("run_id", "evaluations", "raw_y", "logged_in") if c in names]
+    parts = []
+    carry = frame_from_arrow(trace.schema_arrow.empty_table().select(cols))
+    for batch in trace.iter_batches(_BATCH_ROWS, columns=cols):
+        batch = pl.concat([carry, frame_from_arrow(batch)])
+        last = pl.col("run_id") == batch["run_id"].last()
+        parts.append(_trace_batch(batch.filter(~last), labels))
+        carry = batch.filter(last)
+    parts.append(_trace_batch(carry, labels))
+    return pl.concat(parts).sort(_KEYS)
+
+
+def _trace_batch(batch: pl.DataFrame, labels: pl.LazyFrame) -> pl.DataFrame:
+    frame = batch.lazy().join(labels, on="run_id", how="left", maintain_order="left")
+    if "logged_in" in batch.columns:
+        logged = pl.col("logged_in")
+        label = pl.when(logged.is_null()).then("label")
+        frame = frame.with_columns(label=label.otherwise(logged.str.split("+")))
+    return _aggregate(frame.rename({"raw_y": "y"}).explode("label")).collect()
 
 
 # --------------------------------------------------------------------------- the walk
@@ -291,23 +299,25 @@ def _file_aggregates(result: FileScan, layout: Layout, state: _State) -> pl.Data
             "run_index": pl.Series(range(n), dtype=pl.Int64),
             "line_sha256": pl.Series(result.hashes, dtype=pl.String),
         }
-    ).join(ids, on="run_index", how="left")
-    rows = result.rows if result.rows is not None else pl.DataFrame()
-    agg = _aggregate(
-        rows.lazy()
-        .with_row_index("seq")
-        .join(per_run.lazy().select("run_index", "run_id"), on="run_index")
-        .with_columns(label=pl.lit(suffix(result.path)))
-        .sort("seq")  # joins do not keep the order of the rows
-        .rename({"run_index": "file_run"})
-        .with_columns(pl.col("run_id").fill_null(-1 - pl.col("file_run")))
-    ).collect()
-    return per_run.with_columns(
+    ).join(ids, on="run_index", how="left", maintain_order="left")
+    per_run = per_run.with_columns(
         source=pl.lit(result.path),
         label=pl.lit(suffix(result.path)),
         is_primary=pl.lit(primary == result.path),
         key=pl.col("run_id").fill_null(-1 - pl.col("run_index")),
-    ).join(agg.rename({"run_id": "key"}).drop("label"), on="key", how="left")
+    )
+    rows = result.rows if result.rows is not None else pl.DataFrame()
+    agg = _aggregate(
+        rows.lazy().select(
+            run_id=per_run["key"].gather(rows["run_index"]),
+            label=pl.lit(suffix(result.path)),
+            evaluations="evaluations",
+            y="y",
+        )
+    ).collect()
+    return per_run.join(
+        agg.rename({"run_id": "key"}).drop("label"), on="key", how="left"
+    )
 
 
 # --------------------------------------------------------------------------- compare
