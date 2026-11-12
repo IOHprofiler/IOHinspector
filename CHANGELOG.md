@@ -18,6 +18,12 @@
   such as `"{algorithm_name} (sigma {sigma0})"`. Plots grouped by several columns
   label them `"a, b"` instead of a tuple.
 
+- Distributions (`docs/definitions/distributions.md`): `get_runtime_sample` and
+  `get_value_sample` (raw per-run tables), `get_histogram` (R's `nclass.FD` and
+  `pretty` breaks, right-closed bins; equal pooled bins by default for several
+  groups, DI-4, or `bins="per_algorithm"`) and `get_violin` (Gaussian kernel,
+  Silverman bandwidth, box quartiles). Failed runs are counted in `n_failed`.
+
 ### Fixed
 
 - Budget grids (`get_sequence(..., cast_to_int=True)` and the default grids of
