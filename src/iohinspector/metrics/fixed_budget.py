@@ -12,7 +12,7 @@ from .utils import QUANTILES, name_run_sets, runs_of
 
 
 @upgrade_hints
-def aggregate_convergence(  # pylint: disable=too-many-arguments,too-many-locals
+def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
@@ -58,6 +58,7 @@ def aggregate_convergence(  # pylint: disable=too-many-arguments,too-many-locals
             ``n_active``, the runs that had not stopped (B_i >= b), and with
             restarts ``n_restarted``, the runs that had.
     """
+    # #lizard forgives  (the public signature of 0.0.x plus the FB options)
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
     if stopped not in ("carry_forward", "restart"):
@@ -109,7 +110,7 @@ def aggregate_convergence(  # pylint: disable=too-many-arguments,too-many-locals
     return name_run_sets(summary, runs, by, eval_var)
 
 
-def _restart(  # pylint: disable=too-many-arguments,too-many-locals
+def _restart(  # pylint: disable=R0913,R0914,R0917
     data: pl.DataFrame,
     aligned: pl.DataFrame,
     runs: pl.DataFrame,
@@ -124,6 +125,7 @@ def _restart(  # pylint: disable=too-many-arguments,too-many-locals
     for its own B_j evaluations, until the largest budget. The value at b is the
     best over the chain up to b, from ``align_data`` on the chain's joined trace.
     ``runs`` is ``runs_of(data, by)``."""
+    # #lizard forgives  (one procedure, FB-6, kept in one place)
     runs = runs.sort("run_set", "run_id").with_columns(
         position=pl.int_range(pl.len()).over("run_set"),
         size=pl.len().over("run_set"),

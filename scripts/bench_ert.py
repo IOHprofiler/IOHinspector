@@ -57,7 +57,7 @@ def write(folder: Path, algorithms: int, rows: int, seed: int = 1) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", maxsplit=1)[0])
     parser.add_argument("--algorithms", type=int, default=258)
     parser.add_argument("--rows", type=int, default=40)
     parser.add_argument("--out", type=Path, help="keep the data here")

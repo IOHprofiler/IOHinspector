@@ -25,7 +25,7 @@ def _type3(t: pl.Expr, n: pl.Expr, pct: int) -> pl.Expr:
 
 
 @upgrade_hints
-def aggregate_running_time(  # pylint: disable=too-many-arguments,too-many-locals
+def aggregate_running_time(  # pylint: disable=R0913,R0914,R0917
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
@@ -73,6 +73,7 @@ def aggregate_running_time(  # pylint: disable=too-many-arguments,too-many-local
             ``median`` and ``sd`` of the successful runtimes (RT-4), and the type 3
             quantiles ``q2`` ... ``q98`` (RT-5).
     """
+    # #lizard forgives  (the public signature of 0.0.x plus the RT options)
     if targets is None:
         targets = seq_fv(data[fval_var], 50, scale_f_log, f_min, f_max)
     hits = align_data(
