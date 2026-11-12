@@ -8,7 +8,7 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import seq_rt
-from .utils import QUANTILES, name_run_sets, runs_of
+from .utils import custom, describe, name_run_sets, runs_of
 
 
 @upgrade_hints
@@ -70,7 +70,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
             'DataManager.load(include_columns=["evals_used"])'
         )
     if budgets is None:
-        budgets = seq_rt(data[eval_var], 50, True, eval_min, eval_max)
+        budgets = seq_rt(data[eval_var], 50, lower=eval_min, upper=eval_max)
     data = data.cast({eval_var: pl.Int64})
     runs = runs_of(data, by, eval_var)
     aligned = align_data(
@@ -79,6 +79,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
+        eval_var=eval_var,
     )
     if stopped == "restart":
         aligned = _restart(data, aligned, runs, eval_var, fval_var, maximization, seed)
@@ -86,26 +87,17 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
     y = pl.col(fval_var)
     best, worst = (pl.max, pl.min) if maximization else (pl.min, pl.max)
     aggregations = [
-        y.mean().alias("mean"),
-        y.median().alias("median"),
-        y.std().alias("sd"),
-        *(y.quantile(pct / 100, "linear").alias(f"q{pct}") for pct in QUANTILES),
+        *describe(y),
         best(fval_var).alias("best"),
         worst(fval_var).alias("worst"),
         pl.when((y > 0).all()).then(y.log().mean().exp()).alias("geometric_mean"),
-        pl.len().alias("n_runs"),
-        y.count().alias("n_defined"),
     ]
     if "stopped" in aligned.columns:  # FB-6: runs with B_i >= b
         aggregations.append(pl.col("stopped").not_().sum().alias("n_active"))
         if stopped == "restart":
             aggregations.append(pl.col("stopped").sum().alias("n_restarted"))
     if custom_op is not None:
-        aggregations.append(
-            y.map_batches(
-                custom_op, return_dtype=pl.Float64, returns_scalar=True
-            ).alias(custom_op.__name__)
-        )
+        aggregations.append(custom(custom_op, y))
     summary = aligned.group_by("run_set", eval_var).agg(aggregations)
     return name_run_sets(summary, runs, by, eval_var)
 
@@ -164,6 +156,7 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
+        eval_var=eval_var,
     ).rename({fval_var: "restarted"})
     value = pl.when("stopped").then("restarted").otherwise(fval_var)
     return (
@@ -175,9 +168,10 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
 
 def get_overview(
     data: pl.DataFrame,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
-    by: Sequence[str] = ("algorithm_name",),
     maximization: bool = False,
 ) -> pl.DataFrame:
     """Overview table of each run set (a group of ``by``), FB-4.

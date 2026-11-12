@@ -1,6 +1,6 @@
 import string
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Iterable, Optional, Union, Dict
 
 import numpy as np
@@ -16,6 +16,26 @@ from ..targets import seq_rt, spaced
 #: The probabilities of the quantile columns ``q2`` ... ``q98``, in percent: the
 #: nine of IOHanalyzer (``docs/definitions/runtime.md`` RT-5, ``fixed-budget.md`` FB-2).
 QUANTILES = (2, 5, 10, 25, 50, 75, 90, 95, 98)
+
+
+def describe(v: pl.Expr) -> list[pl.Expr]:
+    """``n_runs``, ``n_defined`` (non-null), ``mean``, ``median``, ``sd`` and the
+    type 7 quantiles ``q2`` ... ``q98`` of ``v`` per group (FB-2, PA-2)."""
+    return [
+        pl.len().alias("n_runs"),
+        v.count().alias("n_defined"),
+        v.mean().alias("mean"),
+        v.median().alias("median"),
+        v.std().alias("sd"),
+        *(v.quantile(pct / 100, "linear").alias(f"q{pct}") for pct in QUANTILES),
+    ]
+
+
+def custom(op: Callable[[pl.Series], float], v: pl.Expr) -> pl.Expr:
+    """The statistic ``op`` of ``v`` per group, named after ``op``."""
+    return v.map_batches(op, return_dtype=pl.Float64, returns_scalar=True).alias(
+        op.__name__
+    )
 
 
 def runs_of(
@@ -47,7 +67,7 @@ def name_run_sets(
     keys = list(dict.fromkeys([*by, *x]))
     names = runs.select("run_set", *dict.fromkeys(by)).unique("run_set")
     summary = summary.join(names, on="run_set").drop("run_set")
-    return summary.select(*keys, pl.exclude(*keys)).sort(*keys)
+    return summary.select(*keys, pl.exclude(keys)).sort(keys)
 
 
 def get_sequence(
@@ -71,7 +91,7 @@ def get_sequence(
         np.ndarray: Array of evenly spaced values between min and max.
     """
     if cast_to_int:
-        return seq_rt([min, max], len, scale_log)
+        return seq_rt([min, max], len, log=scale_log)
     return spaced(min, max, len, scale_log)
 
 
@@ -118,53 +138,36 @@ def normalize_objectives(
     Returns:
         pl.DataFrame: The original dataframe with new normalized objective columns added.
     """
-    result = data.clone()
-    n_objectives = len(obj_vars)
-
+    result = data
     ndpoints = None
     if only_nondominated and len(obj_vars) > 1:
-        obj_vals = np.array(result[obj_vars])
-        ndpoints = filter_dominated(obj_vals)
+        ndpoints = filter_dominated(np.array(result[obj_vars]))
 
     for i, col in enumerate(obj_vars):
-        # Determine log scaling
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
         is_max = maximize[col] if isinstance(maximize, dict) else maximize
-
-        # Get bounds
-        lb, ub = None, None
-        if bounds and col in bounds:
-            lb, ub = bounds[col]
+        lb, ub = bounds[col] if bounds and col in bounds else (None, None)
         if lb is None:
             lb = result[col].min() if ndpoints is None else ndpoints[:, i].min()
         if ub is None:
             ub = result[col].max() if ndpoints is None else ndpoints[:, i].max()
-        # Log scale if needed
+        v = pl.col(col)
         if use_log:
             if lb <= 0:
                 warnings.warn(
                     f"Lower bound for column '{col}' <= 0; resetting to 1e-8 for log-scaling."
                 )
                 lb = 1e-8
-            lb, ub = np.log10(lb), np.log10(ub)
-            norm_expr = ((pl.col(col).log10() - lb) / (ub - lb)).clip(0, 1)
-        else:
-            norm_expr = ((pl.col(col) - lb) / (ub - lb)).clip(0, 1)
-
-        # Reverse if minimization
-        if not is_max:
+            lb, ub = np.log10([lb, ub])
+            v = v.log10()
+        norm_expr = ((v - lb) / (ub - lb)).clip(0, 1)
+        if not is_max:  # minimisation: the lower bound is the best
             norm_expr = 1 - norm_expr
-        # Add normalized column with appropriate name
-        if n_objectives > 1:
-            if keep_original:
-                norm_expr = norm_expr.alias(f"{prefix}_{col}")
-            else:
-                idx = list(obj_vars).index(col) + 1
-                norm_expr = norm_expr.alias(f"{prefix}{idx}")
+        if len(obj_vars) == 1:
+            name = prefix
         else:
-            # If only one objective, use the prefix directly
-            norm_expr = norm_expr.alias(prefix)
-        result = result.with_columns(norm_expr)
+            name = f"{prefix}_{col}" if keep_original else f"{prefix}{i + 1}"
+        result = result.with_columns(norm_expr.alias(name))
 
     return result
 

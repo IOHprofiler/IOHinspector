@@ -128,6 +128,25 @@ def test_restart_continues_stopped_runs():
     assert first.equals(again)
 
 
+def test_maximisation_mirrors_minimisation():
+    # the same runs with -f under maximisation: every value statistic negated,
+    # restarts included (the draws depend on the seed only)
+    neg = STOPPED.with_columns(-pl.col("raw_y"))
+    options = {"budgets": [3, 4, 6], "stopped": "restart", "seed": 1}
+    values = ["mean", "median", "best", "worst"]
+    low = aggregate_convergence(STOPPED, **options)
+    high = aggregate_convergence(neg, maximization=True, **options)
+    assert high.select(values).equals(low.select(-pl.col(values)))
+    assert high.select("n_active", "n_restarted").equals(
+        low.select("n_active", "n_restarted")
+    )
+    values = ["best_reached", "worst_reached", "mean_reached", "worst_recorded"]
+    low, high = get_overview(STOPPED), get_overview(neg, maximization=True)
+    assert high.select(values).equals(low.select(-pl.col(values)))
+    counts = ["n_runs", "budget", "n_best", "min_runtime", "max_runtime"]
+    assert high.select(counts).equals(low.select(counts))
+
+
 def test_restart_needs_evals_used():
     with pytest.raises(ValueError, match="evals_used"):
         aggregate_convergence(DF, stopped="restart")

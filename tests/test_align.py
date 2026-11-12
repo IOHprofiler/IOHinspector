@@ -3,6 +3,7 @@ import math
 import numpy as np
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 import iohinspector.align
 from iohinspector.align import align_data
@@ -11,9 +12,13 @@ from iohinspector.metrics import (
     get_data_ecdf,
     get_discritized_eaf_single_objective,
     get_eaf_data,
+    get_parameter_sample,
     get_trajectory,
+    get_value_sample,
 )
 from tests.golden.load import golden_renamed, logged
+
+pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
 
 TWO_RUNS = pl.DataFrame(
     {
@@ -167,6 +172,41 @@ def test_fixed_target_inclusive_first_of_ties(maximization):
     assert dict(rows) == expected
 
 
+def test_repeated_values_count_once():
+    # targets from a table of several pairs repeat; each run is counted once
+    assert align_data(TWO_RUNS, [5, 5, 1]).height == 4
+    assert (
+        align_data(TWO_RUNS, [8.0, 8.0], x_col="raw_y", y_col="evaluations").height == 2
+    )
+    summary = aggregate_convergence(
+        TWO_RUNS.with_columns(algorithm_name=pl.lit("A")), budgets=[5, 5]
+    )
+    assert summary["n_runs"].to_list() == [2]
+
+
+@DIRECTIONS
+def test_fixed_target_row_is_the_first_that_reaches(maximization):
+    # AL-3 for the other columns: rows 2 and 3 share the evaluation count and the
+    # best-so-far value; row 2 reached it first. Row 4 is null (no value).
+    sign = -1 if maximization else 1
+    df = pl.DataFrame(
+        {
+            "run_id": [1] * 5,
+            "evaluations": [1, 3, 3, 4, 5],
+            "raw_y": [9.0, 7.0, 7.0, None, 7.0],
+            "p": [1, 2, 3, 4, 5],
+        }
+    ).with_columns(pl.col("raw_y") * sign)
+    result = align_data(
+        df,
+        [8.0 * sign, 7.0 * sign],
+        x_col="raw_y",
+        y_col="evaluations",
+        maximization=maximization,
+    )
+    assert result["p"].to_list() == [2, 2]
+
+
 def test_wide_output():
     result = align_data(TWO_RUNS, [1, 2, 3, 4, 5], output="wide")
     assert {"evaluations", "1", "2"} == set(result.columns)
@@ -181,6 +221,18 @@ def test_group_columns():
     assert _rows(result.rename({"exp_id": "run_id"}), "evaluations", "raw_y") == [
         (1, 1, 5), (1, 2, 3), (2, 1, 7), (2, 2, 6),
     ]  # fmt: skip
+
+
+@pytest.mark.parametrize("x_col", ["evaluations", "raw_y"])
+def test_group_columns_with_null(x_col):
+    # join_asof matches no null key: a run whose group column is null still aligns
+    df = TWO_RUNS.with_columns(sigma=pl.Series([0.1] * 3 + [None] * 3))
+    y_col = "raw_y" if x_col == "evaluations" else "evaluations"
+    x = [5] if x_col == "evaluations" else [18.0]
+    result = align_data(df, x, group_cols=["run_id", "sigma"], x_col=x_col, y_col=y_col)
+    assert result.sort("run_id")[y_col].to_list() == (
+        [6, 16] if y_col == "raw_y" else [1, 4]
+    )
 
 
 def test_turbo_align_is_gone():
@@ -231,3 +283,28 @@ def test_samples_match_iohanalyzer(fixture, metric, x_col, y_col):
     joined = joined.drop_nulls("gold")
     # exact, but IOHanalyzer parses one logged value 1 ulp off (213348.3998485958)
     np.testing.assert_array_max_ulp(joined["ours"], joined["gold"].cast(pl.Float64), 1)
+
+
+def _renamed(frame, old="evaluations", new="evals"):
+    return frame.rename({old: new}) if old in frame.columns else frame
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        lambda d, e: aggregate_convergence(d, eval_var=e, budgets=[1, 3, 5]),
+        lambda d, e: get_value_sample(d, [1, 3, 5], eval_var=e),
+        lambda d, e: get_parameter_sample(d, ["p"], [1, 3, 5], eval_var=e),
+        lambda d, e: get_trajectory(d, evaluation_variable=e),
+        lambda d, e: get_eaf_data(d, eval_var=e),
+        lambda d, e: get_data_ecdf(d, eval_var=e, eval_values=[1, 3, 5]),
+        lambda d, e: get_discritized_eaf_single_objective(
+            d, eval_var=e, eval_values=[1, 3, 5]
+        ),
+    ],
+)
+def test_any_name_of_the_evaluations_column(metric):
+    # the fixed-budget view is chosen by eval_var, not by the name "evaluations"
+    data = TWO_RUNS.with_columns(algorithm_name=pl.lit("A"), p=pl.col("raw_y"))
+    expected = _renamed(metric(data, "evaluations"))
+    assert_frame_equal(metric(_renamed(data), "evals"), expected, check_row_order=False)

@@ -1,101 +1,60 @@
-import numpy as np
+"""The deprecated get_aocc: get_ecdf_auc(continuous=True) on a quality in [0, 1]."""
+
 import polars as pl
+import pytest
 
 from iohinspector.metrics import get_aocc
 
-# Simple dataset with two groups and two run_ids
+# two runs of one algorithm on f1; quality 0.2, 0.5, 0.8 and 0.4, 0.4, 1.0
 DF = pl.DataFrame(
     {
         "run_id": [1, 1, 1, 2, 2, 2],
-        "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
-        "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
-        "evaluations": [0, 5, 10, 0, 5, 10],
-        "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
+        "function_name": ["f1"] * 6,
+        "algorithm_name": ["alg1"] * 6,
+        "evaluations": [1, 5, 9, 1, 5, 9],
+        "eaf": [0.2, 0.5, 0.8, 0.4, 0.4, 1.0],
     }
 )
+pytestmark = pytest.mark.filterwarnings("ignore:get_aocc:DeprecationWarning")
 
 
-def test_basic_aocc():
-    # AOCC should be computed for the group
-    result = get_aocc(DF, eval_max=10)
-    assert isinstance(result, pl.DataFrame)
-
-    assert "AOCC" in result.columns
-    aocc_val = result["AOCC"][0]
-    assert aocc_val == 6.5
-
-    result = get_aocc(DF, eval_max=10)
-    assert isinstance(result, pl.DataFrame)
+def test_deprecated():
+    with pytest.warns(DeprecationWarning, match="get_ecdf_auc"):
+        get_aocc(DF, eval_max=9)
 
 
-def test_multiple_groups():
-    # Add a second group
-    df = DF.with_columns(
-        [pl.Series("function_name", ["f1", "f1", "f1", "f2", "f2", "f2"])]
+def test_mean_area_over_the_runs():
+    # over [1, 9]: run 1 (0.2 * 4 + 0.5 * 4) / 8, run 2 (0.4 * 8) / 8
+    result = get_aocc(DF, eval_max=9)
+    assert result.columns == ["function_name", "algorithm_name", "AOCC"]
+    assert result["AOCC"].item() == pytest.approx((0.35 + 0.4) / 2, 1e-12)
+
+
+def test_groups_and_column():
+    df = DF.with_columns(function_name=pl.Series(["f1"] * 3 + ["f2"] * 3))
+    result = get_aocc(df.rename({"eaf": "q"}), eval_max=9, fval_var="q").sort(
+        "function_name"
     )
-
-    result = get_aocc(df, eval_max=10)
-    assert "AOCC" in result.columns
-    aocc_f1_val = result.filter(pl.col("function_name") == "f1")["AOCC"][0]
-    aocc_f2_val = result.filter(pl.col("function_name") == "f2")["AOCC"][0]
-    assert aocc_f1_val == 5.5
-    assert aocc_f2_val == 7.5
+    assert result["AOCC"].to_list() == pytest.approx([0.35, 0.4], 1e-12)
+    by_algorithm = get_aocc(df, eval_max=9, by=["algorithm_name"])
+    assert by_algorithm["AOCC"].item() == pytest.approx(0.375, 1e-12)
 
 
-def test_custom_fval_col():
-    # Use a different column for fval_var
-    df = DF.rename({"eaf": "custom_col"})
-    result = get_aocc(df, eval_max=10, fval_var="custom_col")
-    assert "AOCC" in result.columns
-    aocc_val = result["AOCC"][0]
-    assert aocc_val == 6.5
-
-
-def test_custom_free_vars():
-    # Use only algorithm_name as free var
-    result = get_aocc(DF, eval_max=10, by=["algorithm_name"])
-    aocc_val = result["AOCC"][0]
-    assert aocc_val == 6.5
-
-
-def test_aocc_with_missing_evaluations():
-    # Remove some evaluation steps to test fill_null
+def test_log_scale_and_late_start():
+    # log10 of [1, 100]: run 1 starts at 10 (0 before), run 2 at 1
     df = pl.DataFrame(
         {
-            "run_id": [1, 1, 1, 2, 2],
-            "function_name": ["f1", "f1", "f1", "f1", "f1"],
-            "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1"],
-            "evaluations": [0, 5, 10, 0, 10],
-            "eaf": [10.0, 8.0, 4.0, 12.0, 6.0],
-        }
-    )
-    result = get_aocc(df, eval_max=10)
-
-    assert "AOCC" in result.columns
-    aocc_val = result["AOCC"][0]
-    assert aocc_val == 6
-
-
-def test_aocc_zero_budget():
-    # Test with max_budget=0 (should handle gracefully)
-    df = DF
-    result = get_aocc(df, eval_max=0)
-    assert "AOCC" in result.columns
-    # AOCC should be nan or 0
-    aocc_val = result["AOCC"][0]
-    assert np.isnan(aocc_val) or aocc_val == 0
-
-
-def test_aocc_log():
-    df = pl.DataFrame(
-        {
-            "run_id": [1, 1, 1, 2, 2, 2],
-            "function_name": ["f1", "f1", "f1", "f1", "f1", "f1"],
-            "algorithm_name": ["alg1", "alg1", "alg1", "alg1", "alg1", "alg1"],
-            "evaluations": [1, 10, 100, 1, 10, 100],
-            "eaf": [10.0, 7.0, 4.0, 12.0, 9.0, 6.0],
+            "run_id": [1, 1, 2],
+            "function_name": ["f1"] * 3,
+            "algorithm_name": ["alg1"] * 3,
+            "evaluations": [10, 100, 1],
+            "eaf": [0.5, 1.0, 0.25],
         }
     )
     result = get_aocc(df, eval_max=100, scale_eval_log=True)
-    aocc_val = result["AOCC"][0]
-    assert aocc_val == 6.5
+    assert result["AOCC"].item() == pytest.approx((0.25 + 0.25) / 2, 1e-12)
+
+
+def test_empty_budget_range():
+    with pytest.raises(ValueError, match="empty"):
+        get_aocc(DF, eval_max=1)

@@ -8,20 +8,17 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import seq_fv
-from .utils import QUANTILES, name_run_sets, runs_of
-
-
-def _index(t: pl.Expr, i: pl.Expr) -> pl.Expr:
-    """``t[i]``, or ``t[0]`` for an index below 0."""
-    return t.get(pl.max_horizontal(i, 0))
+from .utils import QUANTILES, custom, name_run_sets, runs_of
 
 
 def _type3(t: pl.Expr, n: pl.Expr, pct: int) -> pl.Expr:
     """The Hyndman-Fan type 3 ``pct`` % quantile of the first ``n`` values of ``t``,
-    which are sorted: order statistic round-half-even(n p), at least the first."""
+    which are sorted: order statistic round-half-even(n p), at least the first;
+    null when n = 0."""
     q, r = n * pct // 100, n * pct % 100
     rank = q + (r > 50).cast(pl.Int64) + ((r == 50) & (q % 2 == 1)).cast(pl.Int64)
-    return _index(t, pl.min_horizontal(rank, n) - 1)
+    i = pl.max_horizontal(pl.min_horizontal(rank, n) - 1, 0)
+    return pl.when(n > 0).then(t.get(i))
 
 
 @upgrade_hints
@@ -75,7 +72,7 @@ def aggregate_running_time(  # pylint: disable=R0913,R0914,R0917
     """
     # #lizard forgives  (the public signature of 0.0.x plus the RT options)
     if targets is None:
-        targets = seq_fv(data[fval_var], 50, scale_f_log, f_min, f_max)
+        targets = seq_fv(data[fval_var], 50, log=scale_f_log, lower=f_min, upper=f_max)
     hits = align_data(
         data.select("run_id", eval_var, fval_var),
         targets,
@@ -100,34 +97,24 @@ def aggregate_running_time(  # pylint: disable=R0913,R0914,R0917
     ok = t.is_finite()
     n_runs, n_success = pl.len().cast(pl.Int64), ok.sum().cast(pl.Int64)
     n_quantile = n_runs if include_unfinished else n_success
-    middle = [_index(t, (n_success - 1) // 2), _index(t, n_success // 2)]
     aggregations = [
         n_runs.alias("n_runs"),
         n_success.alias("n_success"),
         t.filter(ok).sum().alias("solved"),  # by the sum of hitting times and
         pl.col("charge").filter(~ok).sum().alias("charged"),  # charged budgets
         pl.col("cutoff").max(),
-        ((middle[0] + middle[1]) / 2).alias("median"),
+        t.filter(ok).mean().alias("mean"),
+        t.filter(ok).median().alias("median"),
         t.filter(ok).std().alias("sd"),
         *(_type3(t, n_quantile, pct).alias(f"q{pct}") for pct in QUANTILES),
     ]
     if custom_op is not None:
-        aggregations.append(
-            t.map_batches(
-                custom_op, return_dtype=pl.Float64, returns_scalar=True
-            ).alias(custom_op.__name__)
-        )
+        aggregations.append(custom(custom_op, t))
     n, n_s, solved = pl.col("n_runs"), pl.col("n_success"), pl.col("solved")
-    n_q = n if include_unfinished else n_s
     summary = hits.group_by("run_set", fval_var).agg(aggregations).collect()
-    summary = (
-        summary.with_columns(
-            success_ratio=n_s / n,
-            ERT=(solved + pl.col("charged")) / n_s,
-            **{f"par_{k:g}": (solved + (n - n_s) * k * pl.col("cutoff")) / n},
-            mean=pl.when(n_s > 0).then(solved / n_s),
-            median=pl.when(n_s > 0).then("median"),
-            **{f"q{pct}": pl.when(n_q > 0).then(f"q{pct}") for pct in QUANTILES},
-        )
+    summary = summary.with_columns(
+        success_ratio=n_s / n,
+        ERT=(solved + pl.col("charged")) / n_s,
+        **{f"par_{k:g}": (solved + (n - n_s) * k * pl.col("cutoff")) / n},
     ).drop("solved", "charged", "cutoff")
     return name_run_sets(summary, runs, by, fval_var)

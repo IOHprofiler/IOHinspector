@@ -7,7 +7,7 @@ from collections.abc import Iterable, Sequence
 import numpy as np
 import polars as pl
 
-from ..align import align_data
+from .parameters import get_parameter_sample
 
 __all__ = [
     "get_histogram",
@@ -30,20 +30,20 @@ def get_runtime_sample(  # pylint: disable=too-many-arguments
     eval_var: str = "evaluations",
     maximization: bool = False,
 ) -> pl.DataFrame:
-    """The runtime of every run at every target: ``by`` columns, ``run_id``,
+    """The runtime of every run at every target: ``run_id``, ``by`` columns,
     ``target`` and ``runtime`` (``inf`` when the run never reached the target).
     Use one function and dimension at a time."""
-    aligned = align_data(
+    sample = get_parameter_sample(
         data,
+        [eval_var],
         targets,
-        group_cols=["run_id", *by],
-        x_col=fval_var,
-        y_col=eval_var,
+        by,
+        target=True,
+        eval_var=eval_var,
+        fval_var=fval_var,
         maximization=maximization,
     )
-    return aligned.rename({fval_var: "target", eval_var: "runtime"}).sort(
-        [*by, "run_id", "target"]
-    )
+    return sample.rename({fval_var: "target", eval_var: "runtime"})
 
 
 def get_value_sample(  # pylint: disable=too-many-arguments
@@ -55,20 +55,19 @@ def get_value_sample(  # pylint: disable=too-many-arguments
     eval_var: str = "evaluations",
     maximization: bool = False,
 ) -> pl.DataFrame:
-    """The best value of every run at every budget: ``by`` columns, ``run_id``,
+    """The best value of every run at every budget: ``run_id``, ``by`` columns,
     ``budget`` and ``value`` (null before the run's first logged evaluation,
     AL-5). Use one function and dimension at a time."""
-    aligned = align_data(
+    sample = get_parameter_sample(
         data.cast({eval_var: pl.Int64}),
+        [fval_var],
         budgets,
-        group_cols=["run_id", *by],
-        x_col=eval_var,
-        y_col=fval_var,
+        by,
+        eval_var=eval_var,
+        fval_var=fval_var,
         maximization=maximization,
     )
-    return aligned.rename({eval_var: "budget", fval_var: "value"}).sort(
-        [*by, "run_id", "budget"]
-    )
+    return sample.rename({eval_var: "budget", fval_var: "value"})
 
 
 def nclass_fd(x: np.ndarray) -> int:
@@ -128,10 +127,6 @@ def pretty(  # pylint: disable=too-many-locals
     return np.where(np.abs(breaks) < 1e-14 * unit, 0.0, breaks)
 
 
-def _breaks(x: np.ndarray) -> np.ndarray:
-    return pretty(x.min(), x.max(), nclass_fd(x))
-
-
 def _counts(x: np.ndarray, breaks: np.ndarray) -> np.ndarray:
     """Counts in the bins (a, b], the lowest closed, with R's fuzz of 1e-7
     (``hist.default``)."""
@@ -161,19 +156,21 @@ def get_histogram(  # pylint: disable=too-many-locals
     sample: pl.DataFrame,
     value: str,
     by: Sequence[str] = ("algorithm_name",),
+    *,
     view: Sequence[str] = (),
     bins: str = "equal",
 ) -> pl.DataFrame:
     """Histogram of ``value`` per group of ``by`` and per ``view`` (for example
     ``["target"]``), from the output of ``get_runtime_sample`` or
     ``get_value_sample``. Only defined values count (failed runs have an infinite
-    runtime); ``n_failed`` is the number of runs left out. ``bins="equal"`` (DI-4)
+    runtime); ``n_defined`` values count and ``n_failed`` runs are left out.
+    ``bins="equal"`` (DI-4)
     takes the breaks from the pooled values of the groups of one view;
     ``"per_algorithm"`` takes them from each group. A group with fewer than two
     values has no histogram.
 
     Returns one row per bin: ``view`` and ``by`` columns, ``left``, ``right``,
-    ``mid``, ``width``, ``count``, ``n`` and ``n_failed``."""
+    ``mid``, ``width``, ``count``, ``n_defined`` and ``n_failed``."""
     if bins not in ("equal", "per_algorithm"):
         raise ValueError(f"bins {bins!r}: equal or per_algorithm")
     by, view = list(by), list(view)
@@ -184,17 +181,18 @@ def get_histogram(  # pylint: disable=too-many-locals
             x = _finite(group, value)[value].to_numpy()
             if len(x) < 2:
                 continue
-            edges = _breaks(pooled if bins == "equal" else x)
+            s = pooled if bins == "equal" else x
+            edges = pretty(s.min(), s.max(), nclass_fd(s))
             counts = _counts(x, edges)
             n_failed = len(group) - len(x)
             for i, c in enumerate(counts):
                 rows.append((*key, *gkey, edges[i], edges[i + 1], c, len(x), n_failed))
-    names = [*view, *by, "left", "right", "count", "n", "n_failed"]
+    names = [*view, *by, "left", "right", "count", "n_defined", "n_failed"]
     out = pl.DataFrame(rows, schema=names, orient="row")
     return out.with_columns(
         mid=(pl.col("left") + pl.col("right")) / 2,
         width=pl.col("right") - pl.col("left"),
-    ).select(*view, *by, "left", "right", "mid", "width", "count", "n", "n_failed")
+    ).select(*view, *by, "left", "right", "mid", "width", "count", *names[-2:])
 
 
 def _violin(x: np.ndarray) -> dict:
@@ -211,7 +209,7 @@ def _violin(x: np.ndarray) -> dict:
     else:  # no spread: a zero-width violin at the value
         grid, density = x[:1], np.zeros(1)
     return {
-        "n": n,
+        "n_defined": n,
         "q1": q1,
         "median": med,
         "q3": q3,
@@ -225,10 +223,11 @@ def get_violin(
     sample: pl.DataFrame,
     value: str,
     by: Sequence[str] = ("algorithm_name",),
+    *,
     view: Sequence[str] = (),
 ) -> pl.DataFrame:
     """Violin and box data of ``value`` per group of ``by`` and per ``view``: one
-    row with ``n``, ``n_failed``, the quartiles and median (type 7), the
+    row with ``n_defined``, ``n_failed``, the quartiles and median (type 7), the
     ``bandwidth`` and the lists ``x`` (the grid) and ``density`` (scaled by
     ``n``). Only defined values count."""
     keys = [*view, *by]
@@ -236,6 +235,6 @@ def get_violin(
     for key, group in _split(sample, keys):
         x = _finite(group, value)[value].to_numpy()
         if len(x):
-            rows.append({**dict(zip(keys, key)), **_violin(x)})
-            rows[-1]["n_failed"] = len(group) - len(x)
+            n_failed = {"n_failed": len(group) - len(x)}
+            rows.append({**dict(zip(keys, key)), **_violin(x), **n_failed})
     return pl.DataFrame(rows)

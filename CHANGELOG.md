@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+The core metrics, built to the definitions in `docs/definitions/` (work packages
+I10 to I14): alignment and target grids, runtime and fixed-budget summaries, the
+ECDF with its AUC and AOCC, distributions, and parameters. They were reviewed as a
+whole before the release (I29). The COCO reader also reads the `bbob-new` format.
 
 ### New
 
@@ -11,9 +16,10 @@
   `apply_penalty` penalises infeasible rows before best-so-far: v != 0 by default,
   negative violations included, and a penalty always makes a value worse.
 - `iohinspector.targets` (`docs/definitions/targets.md`): `seq_fv` and `seq_rt`
-  (target and budget grids), `get_ecdf_targets` (per function and dimension:
-  `log-linear`, `linear` or the 51 COCO `bbob` targets) and `get_target_dt` (one
-  default target or budget per pair, with an explicit `perspective`).
+  (target and budget grids; `log`, `lower` and `upper` keyword-only),
+  `get_ecdf_targets` (per function and dimension: `log-linear`, `linear` or the 51
+  COCO `bbob` targets) and `get_target_dt` (one default target or budget per pair,
+  with an explicit `perspective`).
 - Stopped runs (`docs/definitions/alignment.md`, AL-9; `fixed-budget.md`, FB-6):
   with an `evals_used` column (`load(include_columns=["evals_used"])`),
   fixed-budget `align_data` flags each row `stopped` (the budget exceeds the
@@ -44,7 +50,8 @@
     when every value is > 0), `n_runs`, `n_defined`, and with `evals_used`
     `n_active`. New keywords `budgets`, and `stopped="restart"` with `seed`
     for simulated restarts of runs that stopped before a budget.
-  - `get_overview`: per run set `n_runs`, `budget`, the best, worst, mean and
+  - `get_overview(data, by, *, eval_var, fval_var, maximization)`: per run set
+    `n_runs`, `budget`, the best, worst, mean and
     median final values, `n_best`, `worst_recorded`, `min_runtime` and
     `max_runtime`.
   - `scripts/bench_ert.py`: the full-bbob ERT table benchmark.
@@ -53,13 +60,64 @@
   label them `"a, b"` instead of a tuple.
 
 - Distributions (`docs/definitions/distributions.md`): `get_runtime_sample` and
-  `get_value_sample` (raw per-run tables), `get_histogram` (R's `nclass.FD` and
-  `pretty` breaks, right-closed bins; equal pooled bins by default for several
-  groups, DI-4, or `bins="per_algorithm"`) and `get_violin` (Gaussian kernel,
-  Silverman bandwidth, box quartiles). Failed runs are counted in `n_failed`.
+  `get_value_sample` (per-run tables: `run_id`, `by`, `target` and `runtime`, or
+  `budget` and `value`; the lookups of `get_parameter_sample`), `get_histogram`
+  (R's `nclass.FD` and `pretty` breaks, right-closed bins; equal pooled bins by
+  default for several groups, DI-4, or `bins="per_algorithm"`) and `get_violin`
+  (Gaussian kernel, Silverman bandwidth, box quartiles). Both count the values in
+  `n_defined` and the failed runs in `n_failed`.
+
+### Deprecated
+
+- `get_data_ecdf` and `get_aocc` warn (`DeprecationWarning`) and will be removed.
+  Use `get_ecdf(data, continuous=True, x_values=...)` and
+  `get_ecdf_auc(data, continuous=True)`. Both keep their signatures and columns
+  (`eaf`, `AOCC`) and call the new functions (`plot_ecdf` does too, without the
+  warning), so their values follow the definitions; see "Changed".
+
+### Changed
+
+- `get_data_ecdf` (and `plot_ecdf`) is `get_ecdf(continuous=True)` sampled at the
+  budgets (EC-5, EC-6). Its default bounds are each (function, dimension) pair's
+  observed range, not the range of the values at the budgets shared by all
+  functions: with `eval_values` inside the run, or under maximisation, the
+  values change. Each pair has equal weight and only the pairs every group has
+  are used (EC-2); data without `function_id` and `dimension` is one pair, as
+  before. A log range starts at the smallest positive value (TG-3), not at 1e-8.
+  The means of the other numeric columns are no longer returned.
+- `get_aocc` is `get_ecdf_auc(continuous=True)` on its column, read as a quality
+  in [0, 1]: the area runs over [1, eval_max] (was [0, eval_max]) and is divided
+  by eval_max - 1; it is of the best-so-far value, clipped to [0, 1]; a run has 0
+  before its first logged evaluation (was its smallest value); `eval_max <= 1`
+  raises `ValueError` (was NaN).
 
 ### Fixed
 
+- Every fixed-budget metric with an evaluations column not named `evaluations`
+  (`eval_var=`; `aggregate_convergence`, `get_value_sample`,
+  `get_parameter_sample`, `get_trajectory`, `get_eaf_data`, the EAF and
+  `get_data_ecdf`) aligned as if it were fixed-target and returned wrong values.
+  `align_data` takes a keyword `eval_var` and aligns on budgets when
+  `x_col == eval_var`.
+- A target or budget given twice (`targets=` or `budgets=` from a table of
+  several pairs) counted every run twice in `n_runs` and the statistics;
+  `align_data` uses each value once.
+- `by=[]` (one group of all runs) failed in `get_overview`, `get_ecdf` and
+  `get_ecdf_auc`.
+- A run whose `by` value is missing (a descriptor that some runs do not have, such
+  as a parameter of only some algorithms) was not aligned: `get_ecdf`,
+  `get_ecdf_auc`, the runtime, value and parameter samples, `get_data_ecdf` and
+  `get_trajectory` treated it as never reaching a target and having no value.
+  `align_data` now matches runs whose `group_cols` hold nulls.
+- `align_data` at a target: the other columns of a row (such as a parameter) came
+  from the last of the rows with the same evaluation count and best-so-far value,
+  not from the first row that reached the target (AL-3).
+- The continuum ECDF and its AOCC (`get_ecdf`, `get_ecdf_auc` with
+  `continuous=True`) truncated the bounds to integers for integer function values,
+  so a run at the upper bound did not reach quality 1.
+- Log-spaced grids (`seq_fv`, the default ECDF targets) end exactly at the given
+  or observed bounds: 10 ** log10(18) is 17.999999999999996, so a run at the
+  worst observed value missed the easiest target.
 - COCO reader: data files of COCO 2.2.1 (`data_format = 'bbob-new'`, for example
   `bbob/2018/uDE-best_Vodopija`) have six fixed columns before `x1 ... xD`, the
   header's fourth field being a second noise-free column. They failed with

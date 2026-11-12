@@ -59,6 +59,26 @@ def test_runtime_sample_matches_golden(fixture, f, d):
     assert a.equals(b)
 
 
+def test_samples_have_only_their_columns():
+    # other columns of the data are not carried along (null for a failed run)
+    data = pl.DataFrame(
+        {
+            "run_id": [1, 1, 2],
+            "algorithm_name": ["A", "A", "B"],
+            "function_id": [1, 1, 1],
+            "x0": [0.5, 0.25, 0.75],
+            "evaluations": [1, 3, 2],
+            "raw_y": [5.0, 2.0, 4.0],
+        }
+    )
+    runtimes = get_runtime_sample(data, [3.0])
+    assert runtimes.rows() == [(1, "A", 3.0, 3.0), (2, "B", 3.0, math.inf)]
+    assert runtimes.columns == ["run_id", "algorithm_name", "target", "runtime"]
+    values = get_value_sample(data, [1, 2], by=[])
+    assert values.rows() == [(1, 1, 5.0), (1, 2, 5.0), (2, 1, None), (2, 2, 4.0)]
+    assert values.columns == ["run_id", "budget", "value"]
+
+
 @pytest.mark.parametrize("fixture,f,d", cases("FV_sample"))
 def test_value_sample_matches_golden(fixture, f, d):
     ref = golden(fixture, "FV_sample").filter(
@@ -164,7 +184,7 @@ def test_histogram_counts_failed_and_skips_small_groups():
     assert h["algorithm_name"].unique().to_list() == ["a"]  # b has one value
     assert h["n_failed"].unique().to_list() == [1]
     assert h["count"].sum() == 3
-    assert h["n"].unique().to_list() == [3]
+    assert h["n_defined"].unique().to_list() == [3]
 
 
 def test_histogram_view_columns():
@@ -195,4 +215,5 @@ def test_violin():
 def test_violin_degenerate_and_failed():
     s = sample([3.0, 3.0, 3.0, np.inf], ["a"] * 4)
     v = get_violin(s, "v").row(0, named=True)
-    assert (v["n"], v["n_failed"], v["x"], v["density"]) == (3, 1, [3.0], [0.0])
+    assert (v["n_defined"], v["n_failed"]) == (3, 1)
+    assert (v["x"], v["density"]) == ([3.0], [0.0])

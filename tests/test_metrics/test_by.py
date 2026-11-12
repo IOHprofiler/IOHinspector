@@ -4,6 +4,7 @@ import warnings
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from iohinspector import DataManager
 from iohinspector.metrics import (
@@ -11,17 +12,21 @@ from iohinspector.metrics import (
     aggregate_running_time,
     get_data_ecdf,
     get_ecdf,
+    get_ecdf_auc,
     get_overview,
     get_trajectory,
     group_label,
 )
 from tests.golden.load import fixture_path
 
+pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
+
 METRICS = [
     aggregate_convergence,
     aggregate_running_time,
     get_data_ecdf,
     get_ecdf,
+    get_ecdf_auc,
     get_overview,
     get_trajectory,
 ]
@@ -58,9 +63,27 @@ def manager():
     ],
 )
 def test_metrics_group_by_any_descriptor(manager, metric, by, groups):
-    pair = ["function_id", "dimension"] if metric is get_ecdf else []  # its pairs
+    pair = ["function_id", "dimension"] if "_ecdf" in metric.__name__ else []
     df = manager.load(include_columns=list(dict.fromkeys([*by, *pair])))
     assert set(metric(df, by=by).select(by).unique().rows()) == groups
+
+
+@pytest.mark.parametrize("metric", METRICS, ids=lambda f: f.__name__)
+def test_no_by_is_one_group(manager, metric):
+    df = manager.load(include_columns=["function_id", "dimension"])
+    one = metric(df.with_columns(group=pl.lit("all")), by=["group"]).drop("group")
+    assert_frame_equal(metric(df, by=[]), one, check_row_order=False)
+
+
+@pytest.mark.parametrize("metric", METRICS, ids=lambda f: f.__name__)
+def test_a_missing_descriptor_is_a_group_like_any_other(manager, metric):
+    # random search has no variant: its runs are the group null, with their values
+    df = manager.load(include_columns=["variant", "function_id", "dimension"])
+    filled = df.with_columns(pl.col("variant").fill_null("none"))
+    expected = metric(filled, by=["variant"])
+    expected = expected.with_columns(pl.col("variant").replace("none", None))
+    result = metric(df, by=["variant"])
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_group_label():

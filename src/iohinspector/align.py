@@ -9,10 +9,11 @@ from ._upgrade import removed_names, upgrade_hints
 
 __all__ = ["align_data"]
 __getattr__ = removed_names(__name__)
+RUN = "_run"
 
 
 @upgrade_hints
-def align_data(  # pylint: disable=too-many-arguments
+def align_data(  # pylint: disable=R0913,R0914,R0917
     df: pl.DataFrame,
     x_values: Iterable[int | float],
     group_cols: Sequence[str] = ("run_id",),
@@ -20,10 +21,12 @@ def align_data(  # pylint: disable=too-many-arguments
     y_col: str = "raw_y",
     output: str = "long",
     maximization: bool = False,
+    *,
+    eval_var: str = "evaluations",
 ) -> pl.DataFrame:
     """Align every run (a group of ``group_cols``) on the values ``x_values``.
 
-    Fixed budget (``x_col`` is ``"evaluations"``): ``y_col`` becomes the
+    Fixed budget (``x_col`` is ``eval_var``): ``y_col`` becomes the
     best-so-far value of each run, and each run gets the value it had at each
     evaluation in ``x_values``. Fixed target (``x_col`` is a function value
     column): ``x_col`` becomes the best-so-far value, and each run gets the
@@ -42,43 +45,47 @@ def align_data(  # pylint: disable=too-many-arguments
     Args:
         df: at least ``x_col``, ``y_col`` and ``group_cols``, in evaluation order;
             optionally ``evals_used``.
-        x_values: the evaluations, or function values, to align on.
+        x_values: the evaluations, or function values, to align on; a value given
+            twice counts once.
         group_cols: the columns that identify a run.
         x_col: the column to align on.
         y_col: the column to read at each aligned value.
         output: ``"long"``, or ``"wide"`` for one column per run.
         maximization: whether larger function values are better.
+        eval_var: the evaluations column; aligning on it is the fixed-budget view.
 
     Returns:
         pl.DataFrame: one row per run and value of ``x_values`` (long), or one row
             per value of ``x_values`` and one column per run (wide).
     """
     group_cols = list(dict.fromkeys(group_cols))
-    fval = y_col if x_col == "evaluations" else x_col
+    budget = x_col == eval_var
+    fval = y_col if budget else x_col
     best = pl.col(fval).cum_max() if maximization else pl.col(fval).cum_min()
     df = df.with_columns(best.over(group_cols))
-    stopped = x_col == "evaluations" and "evals_used" in df.columns
+    stopped = budget and "evals_used" in df.columns
     if stopped:  # B_i per run, from the run metadata (AL-9)
         runs = df.group_by(group_cols).agg(pl.col("evals_used").max())
         df = df.drop("evals_used")
     else:
         runs = df.select(group_cols).unique()
-    grid = runs.join(
-        pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]}), how="cross"
-    )
-    forward = x_col != "evaluations" and maximization
-    if x_col == "evaluations":  # on a tie, the last row in data order
-        df = df.sort(x_col, maintain_order=True)
-    else:  # on a tie, the first evaluation that reached the target
-        df = df.sort([x_col, y_col], descending=[False, not forward])
+    runs = runs.with_row_index(RUN)  # a key per run: join_asof matches no null
+    keys = runs.select(*group_cols, RUN)
+    df = df.join(keys, on=group_cols, nulls_equal=True, maintain_order="left")
+    x = pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]})
+    grid = runs.join(x.unique(maintain_order=True), how="cross")
+    if not budget:  # the first row with each best-so-far value reaches it (AL-3)
+        df = df.filter(pl.col(fval).is_first_distinct().over(RUN))
+    df = df.drop(group_cols).sort(x_col, maintain_order=True)  # budget: last of ties
     result = grid.sort(x_col).join_asof(
         df,
         on=x_col,
-        by=group_cols,
-        strategy="forward" if forward else "backward",
+        by=RUN,
+        strategy="forward" if maximization and not budget else "backward",
         check_sortedness=False,
     )
-    if x_col != "evaluations":
+    result = result.drop(RUN)
+    if not budget:
         result = result.with_columns(pl.col(y_col).fill_null(np.inf))
     if stopped:
         result = result.with_columns(stopped=pl.col(x_col) > pl.col("evals_used"))

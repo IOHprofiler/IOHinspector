@@ -10,34 +10,35 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import PAIR, get_ecdf_targets, seq_rt
-from .utils import transform_fval
+
+ALL = "_all"  # the one group when ``by`` is empty
 
 
-def _weights(data: pl.DataFrame, by: list[str], pair: list[str], pairs: str):
+def _weights(data: pl.DataFrame, by: list[str], pairs: str):
     """``data`` on the pairs used (EC-2), with ``weight`` 1 / (|P| n): each pair of a
     group of ``by`` has equal weight, and within a pair each run."""
     if pairs not in ("common", "all"):
         raise ValueError(f"pairs {pairs!r}: common or all")
-    groups = [c for c in by if c not in pair]
+    groups = [c for c in by if c not in PAIR]
     if groups:
-        sets = data.select(*groups, *pair).unique()
+        sets = data.select(*groups, *PAIR).unique()
         every = (
-            sets.select(groups).unique().join(sets.select(pair).unique(), how="cross")
+            sets.select(groups).unique().join(sets.select(PAIR).unique(), how="cross")
         )
-        missing = every.join(sets, on=[*groups, *pair], how="anti", nulls_equal=True)
+        missing = every.join(sets, on=[*groups, *PAIR], how="anti", nulls_equal=True)
         if missing.height:
-            _warn_pairs(missing.sort(missing.columns), len(groups), pair, pairs)
+            _warn_pairs(missing.sort(missing.columns), len(groups), pairs)
         if missing.height and pairs == "common":
-            drop = missing.select(pair).unique()
-            data = data.join(drop, on=pair, how="anti", maintain_order="left")
+            drop = missing.select(PAIR).unique()
+            data = data.join(drop, on=PAIR, how="anti", maintain_order="left")
             if data.is_empty():
                 raise ValueError("the groups of by share no pair; use pairs='all'")
-    n_runs = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *pair])))
-    n_pairs = pl.struct(pair).n_unique().over(by)
+    n_runs = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *PAIR])))
+    n_pairs = pl.struct(PAIR).n_unique().over(by)
     return data.with_columns(weight=1 / (n_runs * n_pairs))
 
 
-def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> None:
+def _warn_pairs(missing: pl.DataFrame, n: int, pairs: str) -> None:
     rows = [f"{', '.join(map(str, r[:n]))} has no {r[n:]}" for r in missing.rows()]
     more = f"; and {len(rows) - 10} more" if len(rows) > 10 else ""
     action = (
@@ -47,44 +48,41 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> N
         "so the curves are hard to compare"
     )
     warnings.warn(
-        f"the groups of by do not have the same {tuple(pair)} pairs: {action}. "
+        f"the groups of by do not have the same {tuple(PAIR)} pairs: {action}. "
         + "; ".join(rows[:10])
         + more,
         stacklevel=6,
     )
 
 
-def _hits(  # pylint: disable=R0913,R0917
-    data, targets, keys, pair, maximization, fval_var, eval_var
-):
+def _hits(data, targets, maximization, fval_var, eval_var):
     """Increments ``dy`` = 1/m of each (run, target) pair at its first hitting time
-    (EC-1: inclusive, AL-1; ties to the first row, AL-3)."""
-    parts = targets.partition_by(pair, as_dict=True)
+    (EC-1: inclusive, AL-1; ties to the first row, AL-3), with the other columns of
+    the row that reached it."""
+    parts = targets.partition_by(PAIR, as_dict=True)
     aligned = pl.concat(
         align_data(
             runs,
             parts[key]["target"],
-            group_cols=["run_id", *keys],
             x_col=fval_var,
             y_col=eval_var,
             maximization=maximization,
         ).with_columns(dy=1 / pl.len().over("run_id"))
-        for key, runs in data.partition_by(pair, as_dict=True).items()
+        for key, runs in data.partition_by(PAIR, as_dict=True).items()
     )
     return aligned.filter(pl.col(eval_var).is_finite())
 
 
-def _quality(  # pylint: disable=R0913,R0917
-    data, targets, pair, maximization, scale_f_log, fval_var
-):
+def _quality(data, targets, maximization, scale_f_log, fval_var):
     """Increments ``dy`` of each run's normalised quality q (EC-5): the log10 (or
     linear) distance of its best-so-far value from the worse bound, between the
     pair's smallest and largest target. q is the fraction of a continuum of targets
     between the bounds that the run has reached."""
-    bounds = targets.group_by(pair).agg(
+    bounds = targets.group_by(PAIR).agg(
         lo=pl.col("target").min(), hi=pl.col("target").max()
     )
-    best = pl.col(fval_var).cum_max() if maximization else pl.col(fval_var).cum_min()
+    f = pl.col(fval_var).cast(pl.Float64)  # clip would truncate float bounds to int
+    best = f.cum_max() if maximization else f.cum_min()
     lo, hi = pl.col("lo"), pl.col("hi")
     scale = (lambda e: e.log10()) if scale_f_log else (lambda e: e)
     v = scale(pl.col("best").clip(lo, hi))
@@ -97,7 +95,7 @@ def _quality(  # pylint: disable=R0913,R0917
     )
     previous = pl.col("q").shift(1, fill_value=0).over("run_id")
     return (
-        data.join(bounds, on=pair, maintain_order="left")  # rows in run order
+        data.join(bounds, on=PAIR, maintain_order="left")  # rows in run order
         .with_columns(best=best.over("run_id"))
         .with_columns(q=q)
         .with_columns(dy=pl.col("q") - previous)
@@ -117,30 +115,33 @@ def _increments(  # pylint: disable=R0913,R0914
     divide_by_dimension: bool = False,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
-    pair: Sequence[str] = PAIR,
 ) -> tuple[pl.DataFrame, float]:
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), and the largest budget in the selection."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
-    pair = list(pair)
     if targets is None:
         kind = "log-linear" if scale_f_log else "linear"
-        targets = get_ecdf_targets(data, kind, fval_var=fval_var, pair=pair)
-    targets = targets.cast({c: data.schema[c] for c in pair})
-    used = targets.select(pair).unique()
-    data = data.join(used, on=pair, how="semi", maintain_order="left")
-    data = _weights(data, by, pair, pairs)
+        targets = get_ecdf_targets(data, kind, fval_var=fval_var)
+    targets = targets.cast({c: data.schema[c] for c in PAIR})
+    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    data = _weights(data, by, pairs)
     if continuous:
-        steps = _quality(data, targets, pair, maximization, scale_f_log, fval_var)
+        steps = _quality(data, targets, maximization, scale_f_log, fval_var)
     else:
-        keys = list(dict.fromkeys([*by, *pair, "weight"]))
-        steps = _hits(data, targets, keys, pair, maximization, fval_var, eval_var)
+        steps = _hits(data, targets, maximization, fval_var, eval_var)
     x = pl.col(eval_var).cast(pl.Float64)
     if divide_by_dimension:
         x = x / pl.col("dimension")
     zero = data.select(by).unique().with_columns(x=pl.lit(0.0), inc=pl.lit(0.0))
     steps = steps.select(*by, x=x, inc=pl.col("dy") * pl.col("weight"))
     return pl.concat([zero, steps]), data.select(x.max()).item()
+
+
+def _one_group(data: pl.DataFrame, by: Sequence[str]):
+    """``data`` and ``by`` as a list; without ``by`` one group, a column ``ALL``."""
+    if by:
+        return data, list(by)
+    return data.with_columns(pl.lit(0).alias(ALL)), [ALL]
 
 
 def _cumulate(steps: pl.DataFrame, by: list[str], order: Sequence[str] = ()):
@@ -195,13 +196,12 @@ def get_ecdf(
               ``"all"``: over each group's own pairs. Both warn, naming the
               missing pairs, when the groups' pairs differ (EC-2).
             - ``divide_by_dimension`` (False): x is evaluations / dimension.
-            - ``fval_var`` (``"raw_y"``) and ``pair`` (``("function_id",
-              "dimension")``).
+            - ``fval_var`` (``"raw_y"``).
 
     Returns:
         pl.DataFrame: ``by``, ``eval_var`` (float) and ``ecdf``.
     """
-    by = list(by)
+    data, by = _one_group(data, by)
     steps, _ = _increments(data, targets, by, eval_var=eval_var, **options)
     steps = steps.with_columns(grid=pl.lit(False))
     if x_values is not None:
@@ -213,7 +213,9 @@ def get_ecdf(
         steps = steps.unique([*by, "x"], keep="last", maintain_order=True)
     else:
         steps = steps.filter("grid")
-    return steps.select(*by, pl.col("x").alias(eval_var), "ecdf")
+    return steps.select(*by, pl.col("x").alias(eval_var), "ecdf").drop(
+        ALL, strict=False
+    )
 
 
 @upgrade_hints
@@ -249,7 +251,7 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     Returns:
         pl.DataFrame: ``by`` and ``auc``.
     """
-    by = list(by)
+    data, by = _one_group(data, by)
     steps, x_max = _increments(data, targets, by, **options)
     lo, hi = b_lo, x_max if b_hi is None else b_hi
     if lo >= hi or (scale_eval_log and lo <= 0):
@@ -260,7 +262,7 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     width = x.shift(-1, fill_value=hi).over(by) - x
     steps = _cumulate(steps, by).with_columns(area=pl.col("ecdf") * width)
     auc = pl.col("area").sum() / (hi - lo)
-    return steps.group_by(by, maintain_order=True).agg(auc=auc)
+    return steps.group_by(by, maintain_order=True).agg(auc=auc).drop(ALL, strict=False)
 
 
 def get_rank_table(
@@ -268,7 +270,6 @@ def get_rank_table(
     value: str = "ERT",
     *,
     higher_is_better: bool = False,
-    pair: Sequence[str] = PAIR,
 ) -> pl.DataFrame:
     """``summary`` with the ``rank`` of each row's ``value`` within its pair (EC-8).
 
@@ -282,81 +283,90 @@ def get_rank_table(
     ranked = (-v if higher_is_better else v).rank("average")
     missing = v.count() + (v.null_count() + 1) / 2
     rank = pl.when(v.is_null()).then(missing).otherwise(ranked)
-    return summary.with_columns(rank.over(list(pair)).alias("rank"))
+    return summary.with_columns(rank.over(PAIR).alias("rank"))
 
 
-@upgrade_hints
-def get_data_ecdf(
+def _ecdf_on_grid(  # pylint: disable=R0913,R0914,R0917
     data: pl.DataFrame,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
     by: Sequence[str] = ("algorithm_name",),
-    f_min: int = None,
-    f_max: int = None,
+    f_min: float | None = None,
+    f_max: float | None = None,
     scale_f_log: bool = True,
-    eval_values: Iterable[int] = None,
-    eval_min: int = None,
-    eval_max: int = None,
+    eval_values: Iterable[int] | None = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
     scale_eval_log: bool = True,
     maximization: bool = False,
 ) -> pl.DataFrame:
-    """Generate empirical cumulative distribution function (ECDF) data based on EAF calculations.
-
-    Legacy (0.0.8): the continuum ECDF on a budget grid, with bounds taken from the
-    aligned data and shared by every function, each run weighted equally. Use
-    ``get_ecdf`` (the target ECDF), or ``get_ecdf(..., continuous=True)`` for the
-    continuum ECDF with bounds fixed per pair (``docs/definitions/ecdf.md``, EC-6).
-
-    Args:
-        data (pl.DataFrame): The DataFrame containing the full performance trajectory data.
-        fval_var (str, optional): Which column contains the performance measure values. Defaults to "raw_y".
-        eval_var (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
-        by (Sequence[str], optional): The columns to group by: runs columns or
-            descriptors. Defaults to ["algorithm_name"].
-        f_min (int, optional): Minimum value for function value scaling. If None, uses minimum from data. Defaults to None.
-        f_max (int, optional): Maximum value for function value scaling. If None, uses maximum from data. Defaults to None.
-        scale_f_log (bool, optional): Whether to use logarithmic scaling for function values. Defaults to True.
-        eval_values (Iterable[int], optional): Specific evaluation values to use. If None, generated from eval_min/max. Defaults to None.
-        eval_min (int, optional): Minimum evaluation value. If None, uses minimum from data. Defaults to None.
-        eval_max (int, optional): Maximum evaluation value. If None, uses maximum from data. Defaults to None.
-        scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to True.
-        maximization (bool, optional): Whether the performance measure is being maximized. Defaults to False.
-
-    Returns:
-        pl.DataFrame: A DataFrame containing the ECDF data with aligned evaluation
-            points.
-    """
+    """``get_data_ecdf`` without its warning: the options of 0.0.8 on
+    ``get_ecdf(continuous=True)``, in the 0.0.8 columns (``plot_ecdf``)."""
+    # #lizard forgives  (the public signature of 0.0.8, mapped onto get_ecdf)
+    data = data.with_columns(pl.lit(0).alias(c) for c in PAIR if c not in data)
     if eval_values is None:
-        eval_values = seq_rt(data[eval_var], 50, scale_eval_log, eval_min, eval_max)
-    data_aligned = align_data(
-        data.cast({eval_var: pl.Int64}),
-        eval_values,
-        group_cols=["run_id", *by],
-        x_col=eval_var,
-        y_col=fval_var,
-        maximization=maximization,
-    )
-    dt_ecdf = transform_fval(
-        data_aligned,
-        fval_var=fval_var,
-        maximization=maximization,
-        lb=f_min,
-        ub=f_max,
-        scale_log=scale_f_log,
-    )
-    keys = [eval_var, *by]
-    # polars 2 raises on mean() of non-numeric columns, polars 1 returned null.
-    dt_ecdf = (
-        dt_ecdf.group_by(keys)
-        .agg(
-            [
-                pl.col(c).mean()
-                if dt.is_numeric() or dt == pl.Boolean
-                else pl.lit(None, dtype=dt).alias(c)
-                for c, dt in dt_ecdf.schema.items()
-                if c not in keys and c != "run_id"
-            ]
+        evals = data[eval_var]
+        eval_values = seq_rt(
+            evals, 50, log=scale_eval_log, lower=eval_min, upper=eval_max
         )
-        .sort(eval_var)
+    targets = None  # the bounds: f_min and f_max, else each pair's observed range
+    if f_min is not None or f_max is not None:
+        y = pl.col(fval_var)
+        lo = y.min() if f_min is None else pl.lit(float(f_min))
+        hi = y.max() if f_max is None else pl.lit(float(f_max))
+        targets = data.group_by(PAIR).agg(target=pl.concat_list(lo, hi))
+        targets = targets.explode("target")
+    ecdf = get_ecdf(
+        data,
+        targets,
+        by,
+        x_values=eval_values,
+        eval_var=eval_var,
+        continuous=True,
+        scale_f_log=scale_f_log,
+        maximization=maximization,
+        fval_var=fval_var,
     )
-    return dt_ecdf
+    eaf = ecdf.select(pl.col(eval_var).cast(pl.Int64), *by, eaf="ecdf")
+    return eaf.sort(eval_var, maintain_order=True)
+
+
+@upgrade_hints
+def get_data_ecdf(  # pylint: disable=R0913,R0917,W0613
+    data: pl.DataFrame,
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+    by: Sequence[str] = ("algorithm_name",),
+    f_min: float | None = None,
+    f_max: float | None = None,
+    scale_f_log: bool = True,
+    eval_values: Iterable[int] | None = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
+    scale_eval_log: bool = True,
+    maximization: bool = False,
+) -> pl.DataFrame:
+    """Deprecated in 0.2.0: use ``get_ecdf(data, continuous=True, x_values=...)``.
+
+    The continuum ECDF (EC-5, EC-6) at the budgets ``eval_values`` (by default 50
+    from ``eval_min`` to ``eval_max``, log-spaced with ``scale_eval_log``), between
+    the bounds ``f_min`` and ``f_max`` (log10 with ``scale_f_log``); a bound not
+    given is the observed one of each (function, dimension) pair. Returns
+    ``eval_var``, ``by`` and ``eaf`` as in 0.0.8.
+
+    Since 0.2.0 this is ``get_ecdf``, so it differs from 0.0.8 where 0.0.8 differed
+    from the definitions (``docs/definitions/ecdf.md``): the default bounds are per
+    pair (not shared by all functions; a log range starts at the smallest positive
+    value, TG-3), each pair has equal weight and only the pairs every group has are
+    used (EC-2), and the means of the other columns are gone. Data without
+    ``function_id`` and ``dimension`` is one pair, as before.
+    """
+    # #lizard forgives  (the 0.0.x signature, kept while deprecated)
+    arguments = locals()
+    warnings.warn(
+        "get_data_ecdf is deprecated since 0.2.0; use get_ecdf(data, "
+        "continuous=True, x_values=...)",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return _ecdf_on_grid(**arguments)

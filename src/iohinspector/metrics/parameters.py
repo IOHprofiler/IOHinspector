@@ -12,7 +12,7 @@ import polars as pl
 
 from ..align import align_data
 from ..targets import seq_fv, seq_rt
-from .utils import QUANTILES
+from .utils import describe
 
 
 def get_parameter_sample(  # pylint: disable=too-many-arguments
@@ -32,13 +32,15 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
     forward after the run stopped; null before the run's first row. At target t
     (``target=True``): the value on the first row that reaches t (f <= t, or f >= t
     under maximisation); null when the run never reaches it. Both are lookups on
-    the logged rows; no alignment matrix is built.
+    the logged rows (``align_data``); no alignment matrix is built. The runtime
+    and value samples are the lookups of ``eval_var`` at targets (the hitting
+    time, ``inf`` when never reached) and of ``fval_var`` at budgets (the
+    best-so-far value).
 
     Args:
         data: every logged row, with ``run_id``, ``eval_var``, ``fval_var``, ``by``
             and the ``parameters``.
-        parameters: the columns to look up, other than ``eval_var`` and
-            ``fval_var``.
+        parameters: the columns to look up.
         x_values: the budgets, or the targets; when None 50 log-spaced ones over
             the data (``seq_rt``, ``seq_fv``).
         by: the columns that make a run set, kept in the result.
@@ -56,13 +58,7 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
     data = data.select(*dict.fromkeys([*keys, eval_var, fval_var, *parameters]))
     x_col, y_col = (fval_var, eval_var) if target else (eval_var, fval_var)
     if x_values is None:
-        x_values = (seq_fv if target else seq_rt)(data[x_col], 50, True)
-    if target:  # one row per best-so-far value: the row that first reached it
-        best = (
-            pl.col(fval_var).cum_max() if maximization else pl.col(fval_var).cum_min()
-        )
-        first = (best != best.shift(1)).fill_null(True).over("run_id")
-        data = data.filter(first)
+        x_values = (seq_fv if target else seq_rt)(data[x_col], 50)
     aligned = align_data(
         data,
         x_values,
@@ -70,8 +66,10 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
         x_col=x_col,
         y_col=y_col,
         maximization=maximization,
+        eval_var=eval_var,
     )
-    return aligned.select(*keys, x_col, *parameters).sort(*keys, x_col)
+    sample = aligned.select(*keys, x_col, *parameters)
+    return sample.sort(*keys[1:], "run_id", x_col)  # by first
 
 
 def get_parameter_summary(  # pylint: disable=too-many-arguments
@@ -105,32 +103,19 @@ def get_parameter_summary(  # pylint: disable=too-many-arguments
         fval_var=fval_var,
         maximization=maximization,
     )
-    x_col = fval_var if target else eval_var
-    keys = list(dict.fromkeys([*by, x_col]))
-    long = sample.with_columns(pl.col(parameters).cast(pl.Float64)).unpivot(
-        parameters,
-        index=list(dict.fromkeys(["run_id", *keys])),
-        variable_name="parameter",
+    keys = [c for c in sample.columns if c not in ("run_id", *parameters)]
+    long = sample.cast({p: pl.Float64 for p in parameters}).unpivot(
+        parameters, index=["run_id", *keys], variable_name="parameter"
     )
-    v = pl.col("value")
-    return (
-        long.group_by(*keys, "parameter")
-        .agg(
-            pl.len().alias("n_runs"),
-            v.count().alias("n_defined"),
-            v.mean().alias("mean"),
-            v.median().alias("median"),
-            v.std().alias("sd"),
-            *(v.quantile(pct / 100, "linear").alias(f"q{pct}") for pct in QUANTILES),
-        )
-        .sort(*keys, "parameter")
-    )
+    summaries = long.group_by(*keys, "parameter").agg(describe(pl.col("value")))
+    return summaries.sort(*keys, "parameter")
 
 
 def get_logged_rows(
     data: pl.DataFrame,
     columns: Sequence[str] | None = None,
     by: Sequence[str] = ("algorithm_name",),
+    *,
     eval_var: str = "evaluations",
 ) -> pl.DataFrame:
     """The logged rows of ``columns``, unaligned: the rows where all of them have a

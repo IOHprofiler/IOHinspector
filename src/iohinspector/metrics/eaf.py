@@ -48,11 +48,20 @@ def get_discritized_eaf_single_objective(
 
     if eval_values is None:
         eval_values = seq_rt(
-            data[eval_var], eval_targets, scale_eval_log, eval_min, eval_max
+            data[eval_var],
+            eval_targets,
+            log=scale_eval_log,
+            lower=eval_min,
+            upper=eval_max,
         )
 
     dt_aligned = align_data(
-        data, eval_values, x_col=eval_var, y_col=fval_var, maximization=maximization
+        data,
+        eval_values,
+        x_col=eval_var,
+        y_col=fval_var,
+        maximization=maximization,
+        eval_var=eval_var,
     )
     dt_aligned = transform_fval(
         dt_aligned,
@@ -95,8 +104,12 @@ def get_eaf_data(
         pl.DataFrame: A DataFrame with aligned EAF data; null before a run's first
             logged evaluation (AL-5).
     """
-    evals = seq_rt(data[eval_var], 50, scale_eval_log, eval_min, eval_max)
-    return align_data(data, evals, maximization=maximization)
+    evals = seq_rt(
+        data[eval_var], 50, log=scale_eval_log, lower=eval_min, upper=eval_max
+    )
+    return align_data(
+        data, evals, x_col=eval_var, maximization=maximization, eval_var=eval_var
+    )
 
 
 def _points(data: pl.DataFrame, obj1_var: str, obj2_var: str) -> np.ndarray:
