@@ -10,7 +10,6 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import PAIR, get_ecdf_targets, seq_rt
-from .utils import transform_fval
 
 ALL = "_all"  # the one group when ``by`` is empty
 
@@ -82,7 +81,8 @@ def _quality(data, targets, maximization, scale_f_log, fval_var):
     bounds = targets.group_by(PAIR).agg(
         lo=pl.col("target").min(), hi=pl.col("target").max()
     )
-    best = pl.col(fval_var).cum_max() if maximization else pl.col(fval_var).cum_min()
+    f = pl.col(fval_var).cast(pl.Float64)  # clip would truncate float bounds to int
+    best = f.cum_max() if maximization else f.cum_min()
     lo, hi = pl.col("lo"), pl.col("hi")
     scale = (lambda e: e.log10()) if scale_f_log else (lambda e: e)
     v = scale(pl.col("best").clip(lo, hi))
@@ -286,81 +286,86 @@ def get_rank_table(
     return summary.with_columns(rank.over(PAIR).alias("rank"))
 
 
-@upgrade_hints
-def get_data_ecdf(
+def _ecdf_on_grid(  # pylint: disable=R0913,R0914,R0917
     data: pl.DataFrame,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
     by: Sequence[str] = ("algorithm_name",),
-    f_min: int = None,
-    f_max: int = None,
+    f_min: float | None = None,
+    f_max: float | None = None,
     scale_f_log: bool = True,
-    eval_values: Iterable[int] = None,
-    eval_min: int = None,
-    eval_max: int = None,
+    eval_values: Iterable[int] | None = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
     scale_eval_log: bool = True,
     maximization: bool = False,
 ) -> pl.DataFrame:
-    """Generate empirical cumulative distribution function (ECDF) data based on EAF calculations.
-
-    Legacy (0.0.8): the continuum ECDF on a budget grid, with bounds taken from the
-    aligned data and shared by every function, each run weighted equally. Use
-    ``get_ecdf`` (the target ECDF), or ``get_ecdf(..., continuous=True)`` for the
-    continuum ECDF with bounds fixed per pair (``docs/definitions/ecdf.md``, EC-6).
-
-    Args:
-        data (pl.DataFrame): The DataFrame containing the full performance trajectory data.
-        fval_var (str, optional): Which column contains the performance measure values. Defaults to "raw_y".
-        eval_var (str, optional): Which column contains the evaluation numbers. Defaults to "evaluations".
-        by (Sequence[str], optional): The columns to group by: runs columns or
-            descriptors. Defaults to ["algorithm_name"].
-        f_min (int, optional): Minimum value for function value scaling. If None, uses minimum from data. Defaults to None.
-        f_max (int, optional): Maximum value for function value scaling. If None, uses maximum from data. Defaults to None.
-        scale_f_log (bool, optional): Whether to use logarithmic scaling for function values. Defaults to True.
-        eval_values (Iterable[int], optional): Specific evaluation values to use. If None, generated from eval_min/max. Defaults to None.
-        eval_min (int, optional): Minimum evaluation value. If None, uses minimum from data. Defaults to None.
-        eval_max (int, optional): Maximum evaluation value. If None, uses maximum from data. Defaults to None.
-        scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to True.
-        maximization (bool, optional): Whether the performance measure is being maximized. Defaults to False.
-
-    Returns:
-        pl.DataFrame: A DataFrame containing the ECDF data with aligned evaluation
-            points.
-    """
+    """``get_data_ecdf`` without its warning: the options of 0.0.8 on
+    ``get_ecdf(continuous=True)``, in the 0.0.8 columns (``plot_ecdf``)."""
+    # #lizard forgives  (the public signature of 0.0.8, mapped onto get_ecdf)
+    data = data.with_columns(pl.lit(0).alias(c) for c in PAIR if c not in data)
     if eval_values is None:
+        evals = data[eval_var]
         eval_values = seq_rt(
-            data[eval_var], 50, log=scale_eval_log, lower=eval_min, upper=eval_max
+            evals, 50, log=scale_eval_log, lower=eval_min, upper=eval_max
         )
-    data_aligned = align_data(
-        data.cast({eval_var: pl.Int64}),
-        eval_values,
-        group_cols=["run_id", *by],
-        x_col=eval_var,
-        y_col=fval_var,
-        maximization=maximization,
+    targets = None  # the bounds: f_min and f_max, else each pair's observed range
+    if f_min is not None or f_max is not None:
+        y = pl.col(fval_var)
+        lo = y.min() if f_min is None else pl.lit(float(f_min))
+        hi = y.max() if f_max is None else pl.lit(float(f_max))
+        targets = data.group_by(PAIR).agg(target=pl.concat_list(lo, hi))
+        targets = targets.explode("target")
+    ecdf = get_ecdf(
+        data,
+        targets,
+        by,
+        x_values=eval_values,
         eval_var=eval_var,
-    )
-    dt_ecdf = transform_fval(
-        data_aligned,
-        fval_var=fval_var,
+        continuous=True,
+        scale_f_log=scale_f_log,
         maximization=maximization,
-        lb=f_min,
-        ub=f_max,
-        scale_log=scale_f_log,
+        fval_var=fval_var,
     )
-    keys = [eval_var, *by]
-    # polars 2 raises on mean() of non-numeric columns, polars 1 returned null.
-    dt_ecdf = (
-        dt_ecdf.group_by(keys)
-        .agg(
-            [
-                pl.col(c).mean()
-                if dt.is_numeric() or dt == pl.Boolean
-                else pl.lit(None, dtype=dt).alias(c)
-                for c, dt in dt_ecdf.schema.items()
-                if c not in keys and c != "run_id"
-            ]
-        )
-        .sort(eval_var)
+    eaf = ecdf.select(pl.col(eval_var).cast(pl.Int64), *by, eaf="ecdf")
+    return eaf.sort(eval_var, maintain_order=True)
+
+
+@upgrade_hints
+def get_data_ecdf(  # pylint: disable=R0913,R0917,W0613
+    data: pl.DataFrame,
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+    by: Sequence[str] = ("algorithm_name",),
+    f_min: float | None = None,
+    f_max: float | None = None,
+    scale_f_log: bool = True,
+    eval_values: Iterable[int] | None = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
+    scale_eval_log: bool = True,
+    maximization: bool = False,
+) -> pl.DataFrame:
+    """Deprecated in 0.2.0: use ``get_ecdf(data, continuous=True, x_values=...)``.
+
+    The continuum ECDF (EC-5, EC-6) at the budgets ``eval_values`` (by default 50
+    from ``eval_min`` to ``eval_max``, log-spaced with ``scale_eval_log``), between
+    the bounds ``f_min`` and ``f_max`` (log10 with ``scale_f_log``); a bound not
+    given is the observed one of each (function, dimension) pair. Returns
+    ``eval_var``, ``by`` and ``eaf`` as in 0.0.8.
+
+    Since 0.2.0 this is ``get_ecdf``, so it differs from 0.0.8 where 0.0.8 differed
+    from the definitions (``docs/definitions/ecdf.md``): the default bounds are per
+    pair (not shared by all functions; a log range starts at the smallest positive
+    value, TG-3), each pair has equal weight and only the pairs every group has are
+    used (EC-2), and the means of the other columns are gone. Data without
+    ``function_id`` and ``dimension`` is one pair, as before.
+    """
+    arguments = locals()
+    warnings.warn(
+        "get_data_ecdf is deprecated since 0.2.0; use get_ecdf(data, "
+        "continuous=True, x_values=...)",
+        DeprecationWarning,
+        stacklevel=3,
     )
-    return dt_ecdf
+    return _ecdf_on_grid(**arguments)

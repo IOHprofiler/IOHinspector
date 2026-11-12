@@ -4,7 +4,7 @@ import seaborn as sbs
 import polars as pl
 from typing import Iterable, Optional, Sequence
 from .._upgrade import upgrade_hints
-from ..metrics import get_data_ecdf
+from ..metrics.ecdf import _ecdf_on_grid  # get_data_ecdf without its warning
 from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
 
 
@@ -66,7 +66,7 @@ def plot_ecdf(
             dataframe used to create the plot.
     """
 
-    dt_plot = get_data_ecdf(
+    dt_plot = _ecdf_on_grid(
         data,
         fval_var=fval_var,
         eval_var=eval_var,

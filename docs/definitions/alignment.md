@@ -77,7 +77,8 @@ than an easier one.
 ### Runtime and value samples
 
 The runtime sample of a run set at target t is the table of T_i(t), one row
-per run, with null where the run never reached t. The value sample at budget b
+per run, with ∞ where the run never reached t, as T_i(t) above and the runtime
+summary ([runtime](runtime.md), RT-5) count it (user, 2026-11-12). The value sample at budget b
 is the table of V_i(b), one row per run. Both are tidy tables with the run
 identifiers (`run_id`, instance) and are what the website offers for download.
 

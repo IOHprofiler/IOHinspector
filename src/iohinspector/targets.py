@@ -21,12 +21,14 @@ LOG_FLOOR = 1e-12
 def spaced(lower: float, upper: float, n: int, log: bool = False) -> np.ndarray:
     """``n`` values evenly spaced from ``lower`` to ``upper`` (in log10 when ``log``),
     both ends included, sorted, without duplicates."""
-    if log:
-        if lower <= 0 or upper <= 0:
-            raise ValueError(f"log spacing needs positive bounds, got {lower}, {upper}")
-        lower, upper = np.log10(lower), np.log10(upper)
-    values = np.unique(np.linspace(lower, upper, n))
-    return 10.0**values if log else values
+    if log and (lower <= 0 or upper <= 0):
+        raise ValueError(f"log spacing needs positive bounds, got {lower}, {upper}")
+    ends = np.log10([lower, upper]) if log else (lower, upper)
+    values = np.linspace(*ends, n)
+    values = 10.0**values if log else values
+    if n > 1:  # the ends exactly: 10 ** log10(x) can be 1 ulp off
+        values[[0, -1]] = lower, upper
+    return np.unique(values)
 
 
 def seq_fv(

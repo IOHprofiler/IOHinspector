@@ -297,7 +297,11 @@ separate review answer.
   within 1/m of the AOCC.
 - `get_rank_table(summary, value)`: the ranks of EC-8 for any per-pair
   summary, such as ERT at `get_target_dt`'s targets.
-- `get_data_ecdf` and `get_aocc` are the 0.0.8 functions, unchanged.
+- `get_data_ecdf` and `get_aocc` are deprecated in 0.2.0 (user, 2026-11-12). They
+  keep their signatures and 0.0.8 columns and call `get_ecdf(continuous=True)`
+  and `get_ecdf_auc(continuous=True)`, so they follow EC-2 and EC-5 (EC-6):
+  `get_data_ecdf` has bounds per pair, `get_aocc` integrates its quality column
+  over [1, eval_max] with the best-so-far value and 0 before a run's first row.
 
 The golden tests reproduce IOHanalyzer's ECDF and AUC exactly by moving each
 target to the next float (`f < t` is `f ≤ nextafter(t, −∞)`), and the worked

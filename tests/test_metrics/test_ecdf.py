@@ -11,6 +11,8 @@ from iohinspector.metrics.ecdf import (
 from iohinspector.targets import get_ecdf_targets
 from tests.golden.load import golden, golden_renamed, logged
 
+pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
+
 # A simple synthetic dataset
 DF = pl.DataFrame(
     {
@@ -37,6 +39,13 @@ def test_basic_ecdf():
     np.testing.assert_allclose(algo2_eaf, [0, 0.125, 0.25, 0.375, 0.5])
 
 
+def test_get_data_ecdf_is_deprecated():
+    with pytest.warns(DeprecationWarning, match="get_ecdf"):
+        get_data_ecdf(DF)
+
+
+# Since 0.2.0 get_data_ecdf is get_ecdf(continuous=True): the bounds are the
+# observed range of the pair (2 and 18), not of the values at the budgets.
 def test_ecdf_with_custom_eval_values():
     eval_values = [2, 4]
     result = get_data_ecdf(
@@ -46,21 +55,20 @@ def test_ecdf_with_custom_eval_values():
         result.filter(pl.col("algorithm_name") == "algo1")["eaf"].to_numpy().copy()
     )
     algo1_eaf.sort()
-    np.testing.assert_allclose(algo1_eaf, [2 / 3, 1])
+    np.testing.assert_allclose(algo1_eaf, [10 / 16, 14 / 16])
 
     algo2_eaf = (
         result.filter(pl.col("algorithm_name") == "algo2")["eaf"].to_numpy().copy()
     )
     algo2_eaf.sort()
-    np.testing.assert_allclose(algo2_eaf, [0, 1 / 3])
+    np.testing.assert_allclose(algo2_eaf, [2 / 16, 6 / 16])
 
 
 def test_ecdf_with_maximization():
     result = get_data_ecdf(DF, maximization=True)
-    # eaf_raw_y should be between 0 and 1
+    # best-so-far 10 (algo1) and 18 (algo2) between the bounds 2 and 18, log10
     algo1_eaf = result.filter(pl.col("algorithm_name") == "algo1")["eaf"].to_numpy()
-    # Assert that all values in algo1_eaf are 0 and the array is not empty
-    np.testing.assert_allclose(algo1_eaf, [0, 0, 0, 0, 0])
+    np.testing.assert_allclose(algo1_eaf, [np.log10(5) / np.log10(9)] * 5)
 
     algo2_eaf = result.filter(pl.col("algorithm_name") == "algo2")["eaf"].to_numpy()
     np.testing.assert_allclose(algo2_eaf, [1, 1, 1, 1, 1])
@@ -95,13 +103,13 @@ def test_ecdf_with_eval_min_eval_max():
         result.filter(pl.col("algorithm_name") == "algo1")["eaf"].to_numpy().copy()
     )
     algo1_eaf.sort()
-    np.testing.assert_allclose(algo1_eaf, [2 / 3, 5 / 6, 1])
+    np.testing.assert_allclose(algo1_eaf, [10 / 16, 12 / 16, 14 / 16])
 
     algo2_eaf = (
         result.filter(pl.col("algorithm_name") == "algo2")["eaf"].to_numpy().copy()
     )
     algo2_eaf.sort()
-    np.testing.assert_allclose(algo2_eaf, [0, 1 / 6, 1 / 3])
+    np.testing.assert_allclose(algo2_eaf, [2 / 16, 4 / 16, 6 / 16])
 
 
 def test_run_without_a_value_yet_keeps_its_group():
@@ -252,6 +260,23 @@ def test_continuum_ecdf_quality(maximization):
     one = targets.head(1).with_columns(target=pl.lit(10.0))
     result = get_ecdf(df, one, continuous=True, maximization=maximization)
     assert result.rows() == [("A", 0.0, 0.0), ("A", 10.0, 1.0)]
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_continuum_ecdf_of_integer_values(maximization):
+    # integer values: the bounds 1 and 100 must not be truncated by clip
+    df = _runs([[100, 10, 1] if not maximization else [1, 10, 100]])
+    targets = pl.DataFrame(
+        {"function_id": [1, 1], "dimension": [2, 2], "target": [1.0, 99.5]}
+    )
+    result = get_ecdf(df, targets, continuous=True, maximization=maximization)
+    floats = get_ecdf(
+        df.cast({"raw_y": pl.Float64}),
+        targets,
+        continuous=True,
+        maximization=maximization,
+    )
+    assert result.equals(floats)
 
 
 # AUC (EC-4) and AOCC (EC-5)

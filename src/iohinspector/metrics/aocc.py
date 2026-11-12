@@ -1,45 +1,11 @@
+import warnings
+from collections.abc import Sequence
+
 import polars as pl
-from typing import Sequence
+
 from .._upgrade import upgrade_hints
-from functools import partial
-import numpy as np
-
-
-def _aocc(group: pl.DataFrame, eval_max: int, fval_var: str = "eaf") -> pl.DataFrame:
-    """Internal helper function to calculate AOCC contribution for a single data group.
-
-    Args:
-        group (pl.DataFrame): A single group DataFrame containing evaluation data for one run.
-        eval_max (int): Maximum value of evaluations to consider for AOCC calculation.
-        fval_var (str, optional): Which data column specifies the performance value. Defaults to "eaf".
-
-    Returns:
-        pl.DataFrame: DataFrame with added 'aocc_contribution' column containing normalized area contributions.
-    """
-    group = group.filter(pl.col("evaluations") <= eval_max)
-    # Ensure consistent types for the new_row DataFrame
-    new_row = pl.DataFrame(
-        {
-            "evaluations": [0.0, float(eval_max)],
-            fval_var: [float(group[fval_var].min()), float(group[fval_var].max())],
-        }
-    )
-    group = (
-        pl.concat([group, new_row], how="diagonal")
-        .sort("evaluations")
-        .fill_null(strategy="forward")
-        .fill_null(strategy="backward")
-    )
-
-    return group.with_columns(
-        (
-            (
-                pl.col("evaluations").diff(n=1, null_behavior="ignore")
-                * (pl.col(fval_var).shift(1))
-            )
-            / eval_max
-        ).alias("aocc_contribution")
-    )
+from ..targets import PAIR
+from .ecdf import get_ecdf_auc
 
 
 @upgrade_hints
@@ -50,37 +16,34 @@ def get_aocc(
     by: Sequence[str] = ("function_name", "algorithm_name"),
     scale_eval_log: bool = False,
 ) -> pl.DataFrame:
-    """Calculate Area Over Convergence Curve (AOCC) metric for algorithm performance evaluation.
+    """Deprecated in 0.2.0: use ``get_ecdf_auc(data, continuous=True)`` on the raw
+    function values, which normalises them per (function, dimension) pair (EC-5).
 
-    Legacy (0.0.8): the area under ``fval_var`` as given, over [0, eval_max]. The
-    AOCC of ``docs/definitions/ecdf.md`` (EC-5: best-so-far values, bounds fixed per
-    pair) is ``get_ecdf_auc(data, ..., continuous=True)``.
-
-    Args:
-        data (pl.DataFrame): The data object containing performance evaluation data.
-        eval_max (int): Maximum value of evaluations to use for AOCC calculation.
-        fval_var (str, optional): Which data column specifies the performance value. Defaults to "eaf".
-        by (Sequence[str], optional): The columns to group by: runs columns or
-            descriptors. Defaults to ["function_name", "algorithm_name"].
-        scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to False.
-
-    Returns:
-        pl.DataFrame: A dataframe with the area under the EAF (=area over convergence
-            curve).
+    The mean over the runs of each group of ``by`` of the normalised area under
+    ``fval_var``, a quality in [0, 1] such as the ``eaf`` of ``transform_fval``,
+    over the evaluations [1, ``eval_max``] (log10 with ``scale_eval_log``), in the
+    column ``AOCC``. Since 0.2.0 this is ``get_ecdf_auc``, so unlike 0.0.8 the area
+    starts at evaluation 1 (not 0) and is divided by ``eval_max - 1``; it is of the
+    best-so-far quality, clipped to [0, 1]; a run has 0 before its first logged
+    evaluation (not its smallest value); and an empty range raises ``ValueError``.
     """
-    # Ensure consistent data types for evaluations
-    data = data.with_columns(pl.col("evaluations").cast(pl.Float64))
-
-    if scale_eval_log:
-        data = data.with_columns(pl.col("evaluations").log10().alias("evaluations"))
-        eval_max = np.log10(eval_max)
-    # Group by without strict=False (invalid argument for polars)
-    aocc_contribs = data.group_by("run_id").map_groups(
-        partial(_aocc, eval_max=eval_max, fval_var=fval_var)
+    warnings.warn(
+        "get_aocc is deprecated since 0.2.0; use get_ecdf_auc(data, continuous=True)",
+        DeprecationWarning,
+        stacklevel=3,
     )
-    aoccs = aocc_contribs.group_by(["run_id", *by]).agg(
-        pl.col("aocc_contribution").sum()
+    # one pair unless by names it: the mean over runs, as before
+    data = data.with_columns(pl.lit(0).alias(c) for c in PAIR if c not in by)
+    bounds = pl.DataFrame({"target": [0.0, 1.0]})
+    auc = get_ecdf_auc(
+        data,
+        data.select(PAIR).unique().join(bounds, how="cross"),
+        by,
+        b_hi=eval_max,
+        scale_eval_log=scale_eval_log,
+        continuous=True,
+        scale_f_log=False,
+        maximization=True,
+        fval_var=fval_var,
     )
-    return aoccs.group_by(list(by)).agg(
-        pl.col("aocc_contribution").mean().alias("AOCC")
-    )
+    return auc.rename({"auc": "AOCC"})

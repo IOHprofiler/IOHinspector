@@ -19,6 +19,8 @@ from iohinspector.metrics import (
 )
 from tests.golden.load import fixture_path
 
+pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
+
 METRICS = [
     aggregate_convergence,
     aggregate_running_time,

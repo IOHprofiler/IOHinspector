@@ -31,6 +31,12 @@ def test_seq_fv_log_and_linear():
     assert seq_fv([2, 2], 10).tolist() == [2]  # duplicates removed
 
 
+def test_log_targets_end_exactly_at_the_observed_values():
+    # 10 ** log10(18) is 17.999999999999996: a run at 18 must reach the top target
+    assert seq_fv([2, 18], 10)[[0, -1]].tolist() == [2.0, 18.0]
+    assert seq_fv([2, 18], 1).tolist() == [2.0]
+
+
 def test_seq_fv_log_starts_at_smallest_positive_value():
     # TG-3: f = 0 is replaced by the smallest positive value, a user lower wins
     np.testing.assert_allclose(seq_fv([0, 0.01, 100], 5), [0.01, 0.1, 1, 10, 100])
@@ -70,7 +76,10 @@ def test_ecdf_targets_match_iohanalyzer(fixture, kind):
             # positive logged value
             assert gold[0] == 1e-12
             assert ours[pair][0] == values.filter(values > 0).min()
-            assert (len(ours[pair]), ours[pair][-1]) == (len(gold), gold[-1])
+            assert len(ours[pair]) == len(gold)
+            # the top target is the largest logged value; R's 10^x is 1 ulp off
+            assert ours[pair][-1] == values.max()
+            np.testing.assert_allclose(ours[pair][-1], gold[-1], rtol=1e-15, atol=0)
             continue
         # 10^x and R's text round trip of the logged values differ in the last
         # bit; bbob is built from exact decades (targets.md)

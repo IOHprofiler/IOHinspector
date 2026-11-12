@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+The core metrics, built to the definitions in `docs/definitions/` (work packages
+I10 to I14): alignment and target grids, runtime and fixed-budget summaries, the
+ECDF with its AUC and AOCC, distributions, and parameters. They were reviewed as a
+whole before the release (I29). The COCO reader also reads the `bbob-new` format.
 
 ### New
 
@@ -62,6 +67,30 @@
   (Gaussian kernel, Silverman bandwidth, box quartiles). Both count the values in
   `n_defined` and the failed runs in `n_failed`.
 
+### Deprecated
+
+- `get_data_ecdf` and `get_aocc` warn (`DeprecationWarning`) and will be removed.
+  Use `get_ecdf(data, continuous=True, x_values=...)` and
+  `get_ecdf_auc(data, continuous=True)`. Both keep their signatures and columns
+  (`eaf`, `AOCC`) and call the new functions (`plot_ecdf` does too, without the
+  warning), so their values follow the definitions; see "Changed".
+
+### Changed
+
+- `get_data_ecdf` (and `plot_ecdf`) is `get_ecdf(continuous=True)` sampled at the
+  budgets (EC-5, EC-6). Its default bounds are each (function, dimension) pair's
+  observed range, not the range of the values at the budgets shared by all
+  functions: with `eval_values` inside the run, or under maximisation, the
+  values change. Each pair has equal weight and only the pairs every group has
+  are used (EC-2); data without `function_id` and `dimension` is one pair, as
+  before. A log range starts at the smallest positive value (TG-3), not at 1e-8.
+  The means of the other numeric columns are no longer returned.
+- `get_aocc` is `get_ecdf_auc(continuous=True)` on its column, read as a quality
+  in [0, 1]: the area runs over [1, eval_max] (was [0, eval_max]) and is divided
+  by eval_max - 1; it is of the best-so-far value, clipped to [0, 1]; a run has 0
+  before its first logged evaluation (was its smallest value); `eval_max <= 1`
+  raises `ValueError` (was NaN).
+
 ### Fixed
 
 - Every fixed-budget metric with an evaluations column not named `evaluations`
@@ -83,6 +112,12 @@
 - `align_data` at a target: the other columns of a row (such as a parameter) came
   from the last of the rows with the same evaluation count and best-so-far value,
   not from the first row that reached the target (AL-3).
+- The continuum ECDF and its AOCC (`get_ecdf`, `get_ecdf_auc` with
+  `continuous=True`) truncated the bounds to integers for integer function values,
+  so a run at the upper bound did not reach quality 1.
+- Log-spaced grids (`seq_fv`, the default ECDF targets) end exactly at the given
+  or observed bounds: 10 ** log10(18) is 17.999999999999996, so a run at the
+  worst observed value missed the easiest target.
 - COCO reader: data files of COCO 2.2.1 (`data_format = 'bbob-new'`, for example
   `bbob/2018/uDE-best_Vodopija`) have six fixed columns before `x1 ... xD`, the
   header's fourth field being a second noise-free column. They failed with

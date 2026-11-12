@@ -18,6 +18,8 @@ from iohinspector.metrics import (
 )
 from tests.golden.load import golden_renamed, logged
 
+pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
+
 TWO_RUNS = pl.DataFrame(
     {
         "run_id": [1, 1, 1, 2, 2, 2],

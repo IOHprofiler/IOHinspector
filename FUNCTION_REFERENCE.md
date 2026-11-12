@@ -57,18 +57,11 @@ DataFrames; call `.to_pandas()` for pandas.
 
 ### AOCC
 
-#### `get_aocc(data, eval_var="evaluations", fval_var="raw_y", eval_max=None, maximization=False)`
-Calculate Area Over Convergence Curve (AOCC) for algorithm performance evaluation. Legacy (0.0.8): use `get_ecdf_auc(..., continuous=True)`.
-
-**Args:**
-- `data (pl.DataFrame)`: Input dataframe containing algorithm performance trajectory data.
-- `eval_var (str, optional)`: Which column contains the evaluation counts. Defaults to "evaluations".
-- `fval_var (str, optional)`: Which column contains the function values. Defaults to "raw_y".
-- `eval_max (int, optional)`: Maximum evaluation bound for AOCC calculation. If None, uses data maximum. Defaults to None.
-- `maximization (bool, optional)`: Whether the optimization problem is maximization. Defaults to False.
+#### `get_aocc(data, eval_max, fval_var="eaf", by=["function_name", "algorithm_name"], scale_eval_log=False)`
+Deprecated in 0.2.0: use `get_ecdf_auc(data, continuous=True)` on the raw function values. The mean over the runs of each group of the normalised area under `fval_var` (a quality in [0, 1]) over [1, `eval_max`], computed by `get_ecdf_auc`.
 
 **Returns:**
-- `pl.DataFrame`: DataFrame with AOCC values calculated for each algorithm.
+- `pl.DataFrame`: `by` and `AOCC`.
 
 ---
 
@@ -109,7 +102,7 @@ The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the la
 Adds the `rank` of `value` within each pair: average ranks for ties, `inf` at the bottom, missing values last.
 
 #### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True)`
-Generate Empirical Cumulative Distribution Function (ECDF) data for performance analysis. Legacy (0.0.8): use `get_ecdf`.
+Deprecated in 0.2.0: use `get_ecdf(data, continuous=True, x_values=...)`. The continuum ECDF at the budgets, between `f_min` and `f_max` (each pair's observed range by default), computed by `get_ecdf`.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.
@@ -126,7 +119,7 @@ Generate Empirical Cumulative Distribution Function (ECDF) data for performance 
 - `scale_eval_log (bool, optional)`: Whether evaluation axis should be log-scaled. Defaults to True.
 
 **Returns:**
-- `pl.DataFrame`: DataFrame containing ECDF data with evaluation points and cumulative probabilities.
+- `pl.DataFrame`: `eval_var`, `by` and `eaf`.
 
 ---
 
