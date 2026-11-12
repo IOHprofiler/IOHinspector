@@ -70,6 +70,7 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
         x_col=x_col,
         y_col=y_col,
         maximization=maximization,
+        eval_var=eval_var,
     )
     return aligned.select(*keys, x_col, *parameters).sort(*keys, x_col)
 

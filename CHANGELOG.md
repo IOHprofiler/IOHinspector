@@ -60,6 +60,12 @@
 
 ### Fixed
 
+- Every fixed-budget metric with an evaluations column not named `evaluations`
+  (`eval_var=`; `aggregate_convergence`, `get_value_sample`,
+  `get_parameter_sample`, `get_trajectory`, `get_eaf_data`, the EAF and
+  `get_data_ecdf`) aligned as if it were fixed-target and returned wrong values.
+  `align_data` takes a keyword `eval_var` and aligns on budgets when
+  `x_col == eval_var`.
 - Budget grids (`get_sequence(..., cast_to_int=True)` and the default grids of
   `aggregate_convergence`, `get_data_ecdf` and the EAF) are rounded, not truncated:
   a grid up to 100 ended at 99 (TG-5).

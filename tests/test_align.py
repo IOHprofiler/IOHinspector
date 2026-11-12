@@ -11,7 +11,9 @@ from iohinspector.metrics import (
     get_data_ecdf,
     get_discritized_eaf_single_objective,
     get_eaf_data,
+    get_parameter_sample,
     get_trajectory,
+    get_value_sample,
 )
 from tests.golden.load import golden_renamed, logged
 
@@ -231,3 +233,28 @@ def test_samples_match_iohanalyzer(fixture, metric, x_col, y_col):
     joined = joined.drop_nulls("gold")
     # exact, but IOHanalyzer parses one logged value 1 ulp off (213348.3998485958)
     np.testing.assert_array_max_ulp(joined["ours"], joined["gold"].cast(pl.Float64), 1)
+
+
+def _renamed(frame, old="evaluations", new="evals"):
+    return frame.rename({old: new}) if old in frame.columns else frame
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        lambda d, e: aggregate_convergence(d, eval_var=e, budgets=[1, 3, 5]),
+        lambda d, e: get_value_sample(d, [1, 3, 5], eval_var=e),
+        lambda d, e: get_parameter_sample(d, ["p"], [1, 3, 5], eval_var=e),
+        lambda d, e: get_trajectory(d, evaluation_variable=e),
+        lambda d, e: get_eaf_data(d, eval_var=e),
+        lambda d, e: get_data_ecdf(d, eval_var=e, eval_values=[1, 3, 5]),
+        lambda d, e: get_discritized_eaf_single_objective(
+            d, eval_var=e, eval_values=[1, 3, 5]
+        ),
+    ],
+)
+def test_any_name_of_the_evaluations_column(metric):
+    # the fixed-budget view is chosen by eval_var, not by the name "evaluations"
+    data = TWO_RUNS.with_columns(algorithm_name=pl.lit("A"), p=pl.col("raw_y"))
+    expected = _renamed(metric(data, "evaluations"))
+    assert metric(_renamed(data), "evals").equals(expected)

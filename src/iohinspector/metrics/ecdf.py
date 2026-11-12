@@ -335,6 +335,7 @@ def get_data_ecdf(
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
+        eval_var=eval_var,
     )
     dt_ecdf = transform_fval(
         data_aligned,

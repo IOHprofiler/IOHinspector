@@ -65,6 +65,7 @@ def get_value_sample(  # pylint: disable=too-many-arguments
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
+        eval_var=eval_var,
     )
     return aligned.rename({eval_var: "budget", fval_var: "value"}).sort(
         [*by, "run_id", "budget"]

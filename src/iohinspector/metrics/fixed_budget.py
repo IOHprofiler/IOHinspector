@@ -79,6 +79,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
+        eval_var=eval_var,
     )
     if stopped == "restart":
         aligned = _restart(data, aligned, runs, eval_var, fval_var, maximization, seed)
@@ -164,6 +165,7 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
+        eval_var=eval_var,
     ).rename({fval_var: "restarted"})
     value = pl.when("stopped").then("restarted").otherwise(fval_var)
     return (
