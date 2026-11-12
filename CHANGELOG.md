@@ -5,6 +5,32 @@
 One data model and one way to load and use data. The outward API stays close to
 0.0.x; what changed fails at once with a message that says how to upgrade.
 
+### New
+
+- A stored dataset format (`docs/format.md`): a folder of Parquet tables with a
+  manifest that records every source file and its sha256. Converting is lossless:
+  every data row of the source is kept.
+- `iohinspector convert` and `iohinspector verify` (`docs/convert-verify.md`):
+  convert a file, folder or archive in any supported format, and check a converted
+  dataset against its sources with an independent scanner. On 192M logged
+  evaluations (3.9 GB of IOHexperimenter files), convert takes about 3 minutes, and
+  verify about 3 minutes in bounded memory (peak about 1.4 GB).
+- Readers for Nevergrad CSV, and for any CSV with a column mapping
+  (`docs/readers-csv.md`), next to IOHexperimenter and COCO (`bbob`,
+  `bbob-largescale`, `bbob-noisy`, `bbob-boxed`; `docs/readers-coco.md`).
+- Descriptors: every attribute of a run (algorithm info and parameters, experiment
+  and run attributes, tags from paths or added later) is a typed value that `select`
+  and `by` can use.
+- polars 1.33+ and 2.x are both supported and tested.
+
+### Fixed (readers of 0.0.x)
+
+- IOHexperimenter: runs were split where `evaluations == 1` instead of at header
+  lines, a filter removed rows across run boundaries, the final row of a run could
+  be dropped, f = 0 failed an assertion, and run attributes and maximisation were not
+  fully read.
+- COCO: instance ids were lost, and `.dat` and `.tdat` rows were merged wrongly.
+
 ### Data model
 
 - Data is held as the four tables of dataset format v1 (`docs/format.md`): `runs`,
