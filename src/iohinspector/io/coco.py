@@ -174,7 +174,7 @@ def parse_coco_dat(
                 "the header style changes within the file", display, number
             )
     style = styles[0] if styles else None
-    names = COLUMNS["old" if style == "old" else style or "new"]
+    names = COLUMNS[style or "new"]
     fixed = len(names)
     bad = lines.frame.filter(~pl.col("width").is_in([fixed, fixed + dimension]))
     if not bad.is_empty():
