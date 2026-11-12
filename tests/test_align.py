@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import polars as pl
 import pytest
 
@@ -12,6 +13,7 @@ from iohinspector.metrics import (
     get_eaf_data,
     get_trajectory,
 )
+from tests.golden.load import golden_renamed, logged
 
 TWO_RUNS = pl.DataFrame(
     {
@@ -174,3 +176,43 @@ def test_turbo_align_is_gone():
 def test_removed_arguments_hint():
     with pytest.raises(TypeError, match="no longer warns"):
         align_data(TWO_RUNS, [1], silence_warning=True)
+
+
+# Golden tests against IOHanalyzer's runtime and value samples (WP I03): the
+# hitting times at five targets and the values at five budgets of every run.
+RUN = ["function_id", "dimension", "algorithm_name", "run"]
+
+
+@pytest.mark.parametrize("fixture", ["ioh040_min", "ioh040_max"])
+@pytest.mark.parametrize(
+    ("metric", "x_col", "y_col"),
+    [("RT_sample", "raw_y", "evaluations"), ("FV_sample", "evaluations", "raw_y")],
+)
+def test_samples_match_iohanalyzer(fixture, metric, x_col, y_col):
+    df = logged(fixture).with_columns(
+        pl.col("evaluations").cast(pl.Int64), run=pl.col("source_run_index") + 1
+    )
+    names = {"target": "raw_y", "runtime": "evaluations", "RT": "gold", "f(x)": "gold"}
+    gold = golden_renamed(fixture, metric).rename(names, strict=False)
+    gold = gold.cast({x_col: pl.Int64} if x_col == "evaluations" else {})
+    pair = RUN[:2]
+    ours = pl.concat(
+        align_data(
+            group,
+            gold.join(group.select(pair).unique(), on=pair)[x_col].unique(),
+            group_cols=["run_id", *RUN],
+            x_col=x_col,
+            y_col=y_col,
+            maximization=fixture == "ioh040_max",
+        )
+        for _, group in df.group_by(pair)
+    )
+    # a target never reached: inf here, NA in IOHanalyzer
+    ours = ours.select(*RUN, x_col, ours=pl.col(y_col).cast(pl.Float64))
+    ours = ours.with_columns(pl.col("ours").replace(math.inf, None))
+    joined = gold.join(ours, on=[*RUN, x_col], how="left")
+    assert joined.height == gold.height
+    assert joined["ours"].is_null().to_list() == joined["gold"].is_null().to_list()
+    joined = joined.drop_nulls("gold")
+    # exact, but IOHanalyzer parses one logged value 1 ulp off (213348.3998485958)
+    np.testing.assert_array_max_ulp(joined["ours"], joined["gold"].cast(pl.Float64), 1)

@@ -22,11 +22,18 @@ Definitions: `docs/definitions/alignment.md` (AL-*), `targets.md` (TG-*),
   (fixed target, fixed budget, ECDF, EAF) now use them: one generator.
   Golden tests in `tests/test_targets.py` against `targets_*`, `budgets_*`,
   `target_dt_*`; the f = 0 xfail in `tests/io/test_ioh_defects.py` passes.
+- step 4: `test_samples_match_iohanalyzer` (`tests/test_align.py`): every run's
+  hitting times (`RT_sample`, 750 rows, 164 never reached) and values at
+  budgets (`FV_sample`, 750 rows) on `ioh040_min` and `ioh040_max` match
+  IOHanalyzer exactly, except one value IOHanalyzer parses 1 ulp off. The
+  goldens hold no run without a value yet, so AL-5 is covered by unit tests
+  only. Helpers `logged` and `golden_renamed` in `tests/golden/load.py`.
 
 ## Next step
-Step 4: golden tests of `align_data` against `RT_sample` and `FV_sample`
-(`tests/golden/iohanalyzer/ioh040_{min,max}`), mapping IOHanalyzer's `run`
-to `source_run_index`.
+Step 5 (D17): one shared `by` handling for every metric: resolve descriptor
+names to columns, group keys and labels from a template; tests with `by` set
+to a parameter, to function and to a user tag. Check first what I26 already
+did (grep `by` in `src/iohinspector/metrics`, `manager.py`).
 
 ## Decisions
 - `n_runs`/`n_defined` names follow fixed-budget.md; I11 adds the rest of the

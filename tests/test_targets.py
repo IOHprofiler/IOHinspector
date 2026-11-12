@@ -12,7 +12,7 @@ from iohinspector.targets import (
     seq_fv,
     seq_rt,
 )
-from tests.golden.load import golden, logged
+from tests.golden.load import golden_renamed, logged
 
 FIXTURES = pytest.mark.parametrize("fixture", ["ioh040_min", "ioh040_max"])
 PAIR = ["function_id", "dimension"]
@@ -20,7 +20,6 @@ PAIR = ["function_id", "dimension"]
 
 def _per_pair(df: pl.DataFrame, column: str) -> dict:
     """``{(function, dimension): sorted values}`` of a golden or our table."""
-    df = df.rename({"funcId": "function_id", "DIM": "dimension"}, strict=False)
     df = df.with_columns(pl.col(PAIR).cast(pl.Int64))
     grouped = df.group_by(PAIR).agg(pl.col(column).unique().sort()).rows()
     return {(f, d): np.array(values) for f, d, values in grouped}
@@ -62,7 +61,7 @@ def test_ecdf_targets_match_iohanalyzer(fixture, kind):
     df = logged(fixture)
     ours = _per_pair(get_ecdf_targets(df, kind), "target")
     name = {"log-linear": "log_linear"}.get(kind, kind)
-    expected = _per_pair(golden(fixture, f"targets_{name}"), "target")
+    expected = _per_pair(golden_renamed(fixture, f"targets_{name}"), "target")
     assert ours.keys() == expected.keys()
     for pair, gold in expected.items():
         values = df.filter(function_id=pair[0], dimension=pair[1])["raw_y"]
@@ -88,7 +87,7 @@ def test_budgets_match_iohanalyzer(fixture, log):
         for (f, d), group in df.group_by(PAIR)
     }
     expected = _per_pair(
-        golden(fixture, f"budgets_{'log' if log else 'linear'}"), "budget"
+        golden_renamed(fixture, f"budgets_{'log' if log else 'linear'}"), "budget"
     )
     assert ours.keys() == expected.keys()
     for pair, gold in expected.items():
@@ -101,7 +100,7 @@ def test_target_dt_matches_iohanalyzer(fixture, perspective):
     maximization = fixture == "ioh040_max"
     ours = get_target_dt(logged(fixture), perspective, maximization)
     which = "by_FV" if perspective == "fixed_target" else "by_RT"
-    gold = golden(fixture, f"target_dt_{which}")
+    gold = golden_renamed(fixture, f"target_dt_{which}")
     ours, gold = (
         {pair: values.item() for pair, values in _per_pair(t, "target").items()}
         for t in (ours, gold)
