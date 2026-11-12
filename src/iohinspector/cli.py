@@ -95,7 +95,11 @@ def _upload(args: argparse.Namespace) -> int:
     token = args.token or os.environ.get("IOH_TOKEN")
     if not token:
         raise UploadError("no token: pass --token or set IOH_TOKEN")
-    mapping = json.loads(Path(args.mapping).read_text()) if args.mapping else None
+    mapping = (
+        json.loads(Path(args.mapping).read_text(encoding="utf-8"))
+        if args.mapping
+        else None
+    )
     dataset_id = upload(
         args.source,
         token=token,

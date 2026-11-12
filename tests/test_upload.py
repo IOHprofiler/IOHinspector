@@ -67,23 +67,23 @@ def _handler(fake: Fake):
             if self.command == "POST" and self.path.endswith("/uploads"):
                 fake.started = json.loads(self._body())
                 fake.size = fake.started["size"]
-                return self._reply(200, fake.info())
-            if self.command == "GET":
-                return self._reply(200, fake.info())
-            if self.command == "PUT":
-                offset = int(self.path.split("offset=")[1])
-                if offset != len(fake.data):
-                    return self._reply(409, {"detail": "continues elsewhere"})
-                fake.data += self._body()
-                if len(fake.data) == fake.size:
-                    fake.state = "ready"
-                return self._reply(200, fake.info())
-            fake.confirmed = json.loads(self._body())
-            fake.state = "done"
+            elif self.command == "PUT":
+                return self._put()
+            elif self.command == "POST":
+                fake.confirmed = json.loads(self._body())
+                fake.state = "done"
             return self._reply(200, fake.info())
 
-        do_GET = do_PUT = do_POST = _serve
+        def _put(self):
+            if int(self.path.split("offset=")[1]) != len(fake.data):
+                return self._reply(409, {"detail": "continues elsewhere"})
+            fake.data += self._body()
+            if len(fake.data) == fake.size:
+                fake.state = "ready"
+            return self._reply(200, fake.info())
 
+    for verb in ("GET", "PUT", "POST"):  # http.server calls do_<VERB>
+        setattr(Handler, f"do_{verb}", Handler._serve)
     return Handler
 
 
@@ -104,7 +104,7 @@ def _archive(tmp_path: Path) -> Path:
 
 
 def _run(fake, path, **kw):
-    return up.upload(path, token="ioh_secret", url=fake.url, poll=0, **kw)
+    return up.upload(path, token="ioh_secret", url=fake.url, poll=0, **kw)  # nosec B106
 
 
 def test_upload_in_chunks_and_confirm(server, archive, capsys):
@@ -199,3 +199,8 @@ def test_cli_errors(server, archive, monkeypatch, capsys):
     argv = ["upload", str(archive), "--url", server.url, "--token", "ioh_secret"]
     assert main(argv + ["--no-check"]) == 2
     assert "507" in capsys.readouterr().err
+
+
+def test_only_http_urls(archive):
+    with pytest.raises(up.UploadError, match="not an http"):
+        up.upload(archive, token="t", url="file:///etc", check=False)  # nosec B106

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -29,7 +30,12 @@ _WORKING = ("queued", "processing", "storing")
 
 
 class UploadError(RuntimeError):
-    """The upload cannot go on; the message says why."""
+    """The upload cannot go on; the message says why. ``code`` is the HTTP status
+    when the server refused."""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _log(message: str) -> None:
@@ -38,6 +44,8 @@ def _log(message: str) -> None:
 
 class _Client:
     def __init__(self, url: str, token: str) -> None:
+        if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+            raise UploadError(f"not an http(s) URL: {url}")
         self.base = url.rstrip("/") + _API
         self.token = token
 
@@ -58,7 +66,7 @@ class _Client:
             f"{self.base}{path}{query}", body, headers, method=method
         )
         try:
-            with urllib.request.urlopen(request, timeout=300) as response:
+            with urllib.request.urlopen(request, timeout=300) as response:  # nosec B310
                 return json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as exc:
             raise _refusal(exc) from None
@@ -77,9 +85,7 @@ def _refusal(exc: urllib.error.HTTPError) -> UploadError:
         429: "too many uploads today; try again tomorrow",
         507: "the server's disk is full; try again later",
     }.get(exc.code, "")
-    error = UploadError(f"HTTP {exc.code}: {detail or hint or exc.reason}")
-    error.code = exc.code  # type: ignore[attr-defined]
-    return error
+    return UploadError(f"HTTP {exc.code}: {detail or hint or exc.reason}", exc.code)
 
 
 def _archive(path: Path) -> Path:
@@ -169,6 +175,7 @@ def upload(  # pylint: disable=too-many-arguments,too-many-locals
 ) -> str:
     """Upload ``path`` (a file, folder or archive) and confirm it; returns the new
     dataset's id. Run again after an interruption to continue."""
+    # #lizard forgives  (the command's options, passed on as they are)
     source = Path(path)
     if not source.exists():
         raise FileNotFoundError(source)

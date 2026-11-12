@@ -6,7 +6,7 @@
 
 - `iohinspector upload SOURCE`: uploads a file, folder (zipped first) or archive to
   an IOHanalyzer website with a personal upload token (`--token` or `IOH_TOKEN`,
-  `--url` or `IOH_URL`; default https://coaxium.liacs.nl). It converts and verifies
+  `--url` or `IOH_URL`; default `https://coaxium.liacs.nl`). It converts and verifies
   locally first and refuses to upload when verify fails, sends the original in
   chunks with progress on stderr, continues after an interruption, and confirms
   the upload with `--title`, `--visibility`, `--tag`, `--rename`, `--compare-by`.
