@@ -1,6 +1,6 @@
 # WP I14: Parameters, positions and constraint penalties
 Branch: wp/I14-parameters
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1: `metrics/parameters.py`: `get_parameter_sample`, `get_parameter_summary`,
@@ -11,8 +11,11 @@ Status: in progress
   (equal where the run logged b; elsewhere IOHanalyzer's value is the run's next
   logged row), positions, Parameter_correlation and penalty_*_FV_matrix.
 
+- step 3: "Implementation (I14)" in `docs/definitions/parameters.md`, CHANGELOG,
+  FUNCTION_REFERENCE.
+
 ## Next step
-Step 3: definitions page "what was built", CHANGELOG entry.
+Done: controller opens the PR and requests dvermetten's review (D6).
 
 ## Decisions
 - `QUANTILES` is defined in `parameters.py` because I11 (which adds the same tuple
