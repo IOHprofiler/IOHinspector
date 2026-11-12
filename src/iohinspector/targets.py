@@ -6,6 +6,7 @@ Ports of IOHanalyzer's ``seq_FV``, ``seq_RT``, ``get_ECDF_targets`` and
 
 import warnings
 from collections.abc import Iterable, Sequence
+from decimal import Decimal, localcontext
 
 import numpy as np
 import polars as pl
@@ -69,8 +70,15 @@ def seq_rt(
 
 
 def bbob_targets() -> np.ndarray:
-    """The 51 COCO targets 10^(2 - k/5), k = 0..50, from 1e2 down to 1e-8."""
-    return 10.0 ** (2 - np.arange(51) / 5)
+    """The 51 COCO targets 10^(2 - k/5), k = 0..50, from 1e2 down to 1e-8.
+
+    Computed in decimal and rounded once to float, so every target is the
+    correctly rounded value on every platform (numpy's power can be 1 ulp off).
+    """
+    with localcontext() as ctx:
+        ctx.prec = 40
+        exponents = (Decimal(10 - k) / 5 for k in range(51))
+        return np.array([float(Decimal(10) ** e) for e in exponents])
 
 
 def get_ecdf_targets(
@@ -103,6 +111,7 @@ def get_ecdf_targets(
 def get_target_dt(  # pylint: disable=too-many-arguments
     data: pl.DataFrame,
     perspective: str,
+    *,
     maximization: bool = False,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",

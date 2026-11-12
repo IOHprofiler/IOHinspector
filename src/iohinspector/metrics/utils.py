@@ -1,9 +1,10 @@
-import numpy as np
-import polars as pl
 import string
 import warnings
 from collections.abc import Sequence
 from typing import Iterable, Optional, Union, Dict
+
+import numpy as np
+import polars as pl
 
 from moocore import (
     filter_dominated,

@@ -98,7 +98,7 @@ def test_budgets_match_iohanalyzer(fixture, log):
 @pytest.mark.parametrize("perspective", ["fixed_target", "fixed_budget"])
 def test_target_dt_matches_iohanalyzer(fixture, perspective):
     maximization = fixture == "ioh040_max"
-    ours = get_target_dt(logged(fixture), perspective, maximization)
+    ours = get_target_dt(logged(fixture), perspective, maximization=maximization)
     which = "by_FV" if perspective == "fixed_target" else "by_RT"
     gold = golden_renamed(fixture, f"target_dt_{which}")
     ours, gold = (
