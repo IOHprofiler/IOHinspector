@@ -12,9 +12,7 @@ import polars as pl
 
 from ..align import align_data
 from ..targets import seq_fv, seq_rt
-
-#: The probabilities of the quantile columns ``q2`` ... ``q98``, in percent (PA-2).
-QUANTILES = (2, 5, 10, 25, 50, 75, 90, 95, 98)
+from .utils import QUANTILES
 
 
 def get_parameter_sample(  # pylint: disable=too-many-arguments
