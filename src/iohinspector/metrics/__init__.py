@@ -5,9 +5,15 @@ from .utils import (
     add_normalized_objectives,
     transform_fval,
 )
-from .fixed_budget import aggregate_convergence
+from .fixed_budget import aggregate_convergence, get_overview
 from .fixed_target import aggregate_running_time
 from .aocc import get_aocc
+from .distributions import (
+    get_histogram,
+    get_runtime_sample,
+    get_value_sample,
+    get_violin,
+)
 from .ecdf import get_data_ecdf, get_ecdf, get_ecdf_auc, get_rank_table
 from .eaf import (
     get_discritized_eaf_single_objective,
@@ -39,11 +45,16 @@ __all__ = [
     "get_ecdf_auc",
     "get_heatmap_single_run_data",
     "get_rank_table",
+    "get_overview",
+    "get_histogram",
     "get_robustrank_changes",
     "get_robustrank_over_time",
+    "get_runtime_sample",
     "get_sequence",
     "get_tournament_ratings",
     "get_trajectory",
+    "get_value_sample",
+    "get_violin",
     "group_label",
     "normalize_objectives",
     "transform_fval",

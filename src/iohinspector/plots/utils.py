@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Sequence, Union, Dict, Any
+from typing import Optional, Tuple, Sequence, Union, Dict, Any, Iterable
 from dataclasses import fields
 from typing import TypeVar
 
@@ -298,6 +298,13 @@ def _hue(df: Any, by: Sequence[str]) -> Any:
     if len(by) == 1:
         return by[0]
     return pl.from_pandas(df[by]).select(group_label(by)).to_series().to_numpy()
+
+
+def _check_measures(df: pl.DataFrame, measures: Iterable[str]) -> None:
+    """Fail when a measure is not a column of the summary ``df``."""
+    unknown = sorted(set(measures) - set(df.columns))
+    if unknown:
+        raise ValueError(f"unknown measures {unknown}; the summary has {df.columns}")
 
 
 def _save_fig(fig=None, file_name: str = None, plot_args: BasePlotArgs = None):

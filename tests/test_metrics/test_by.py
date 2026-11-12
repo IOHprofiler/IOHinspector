@@ -11,6 +11,7 @@ from iohinspector.metrics import (
     aggregate_running_time,
     get_data_ecdf,
     get_ecdf,
+    get_overview,
     get_trajectory,
     group_label,
 )
@@ -21,6 +22,7 @@ METRICS = [
     aggregate_running_time,
     get_data_ecdf,
     get_ecdf,
+    get_overview,
     get_trajectory,
 ]
 
