@@ -3,6 +3,10 @@ from typing import Optional, Tuple, Sequence, Union, Dict, Any
 from dataclasses import fields
 from typing import TypeVar
 
+import polars as pl
+
+from ..metrics.utils import group_label
+
 T = TypeVar("T", bound="BasePlotArgs")
 
 
@@ -289,9 +293,11 @@ class ScatterPlotArgs(BasePlotArgs):
 
 def _hue(df: Any, by: Sequence[str]) -> Any:
     """The seaborn ``hue`` for the groups ``by`` of the pandas frame ``df``: the
-    column, or a tuple per row for several columns."""
+    column, or a label per row (``group_label``) for several columns."""
     by = list(by)
-    return by[0] if len(by) == 1 else df[by].apply(tuple, axis=1)
+    if len(by) == 1:
+        return by[0]
+    return pl.from_pandas(df[by]).select(group_label(by)).to_series().to_numpy()
 
 
 def _save_fig(fig=None, file_name: str = None, plot_args: BasePlotArgs = None):

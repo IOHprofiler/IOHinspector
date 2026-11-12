@@ -28,18 +28,29 @@ Definitions: `docs/definitions/alignment.md` (AL-*), `targets.md` (TG-*),
   IOHanalyzer exactly, except one value IOHanalyzer parses 1 ulp off. The
   goldens hold no run without a value yet, so AL-5 is covered by unit tests
   only. Helpers `logged` and `golden_renamed` in `tests/golden/load.py`.
+- step 5 (D17): descriptor names already resolve to columns in the data
+  layer (`StoredDataset.run_columns`, `DataManager.load(include_columns=by)`);
+  every metric already groups on `by`. Added `metrics.group_label(by,
+  template)` (`{name}` placeholders, as `tags_from_path`), used by the plots'
+  hue for several `by` columns. `tests/test_metrics/test_by.py`: four metrics
+  grouped by algorithm, a numeric parameter (`sigma0`), function, a user tag
+  and tag + dimension; runs without the descriptor form the null group.
 
 ## Next step
-Step 5 (D17): one shared `by` handling for every metric: resolve descriptor
-names to columns, group keys and labels from a template; tests with `by` set
-to a parameter, to function and to a user tag. Check first what I26 already
-did (grep `by` in `src/iohinspector/metrics`, `manager.py`).
+All steps are committed except AL-9 (open question below). When AL-9 is
+answered: implement it in `align_data`, then finish (PR body from these
+notes, delete WP_NOTES.md, D6 review request).
 
 ## Decisions
 - `n_runs`/`n_defined` names follow fixed-budget.md; I11 adds the rest of the
   FB summary (`n_active`, quantiles).
 - Metric default grids stay over the whole frame, as before; per-pair grids in
   the metrics are I11/I12 (the generators are per pair already).
+- Plot-level label templates (a `label=` argument on each plot) belong to the
+  plotting WP (iohinspector.md, BBOB-style ECDF item 3); I10 gives the shared
+  `group_label`.
+- No fixture has algorithm parameters as descriptors; the parameter test uses
+  a typed tag (`sigma0:float`), which takes the same path.
 - Golden target tolerances: linear and log-linear rtol 1e-15 (IOHanalyzer reads
   values back from text row names, 1 ulp off), bbob 4e-15 (built from exact
   decades, IOHanalyzer goes through log10).

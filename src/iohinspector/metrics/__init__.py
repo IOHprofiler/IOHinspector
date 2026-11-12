@@ -1,5 +1,6 @@
 from .utils import (
     get_sequence,
+    group_label,
     normalize_objectives,
     add_normalized_objectives,
     transform_fval,
@@ -40,6 +41,7 @@ __all__ = [
     "get_sequence",
     "get_tournament_ratings",
     "get_trajectory",
+    "group_label",
     "normalize_objectives",
     "transform_fval",
 ]

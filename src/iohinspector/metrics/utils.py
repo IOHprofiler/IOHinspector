@@ -1,6 +1,8 @@
 import numpy as np
 import polars as pl
+import string
 import warnings
+from collections.abc import Sequence
 from typing import Iterable, Optional, Union, Dict
 
 from moocore import (
@@ -33,6 +35,24 @@ def get_sequence(
     if cast_to_int:
         return seq_rt([min, max], len, scale_log)
     return spaced(min, max, len, scale_log)
+
+
+def group_label(by: Sequence[str], template: str | None = None) -> pl.Expr:
+    """The label of each row's group of ``by`` (D17), from ``template``: text with
+    ``{name}`` placeholders for ``by`` columns, such as ``"{algorithm_name}
+    (sigma {sigma})"``. The default joins the values with ``", "``; a missing value
+    reads ``null``. The expression is named ``label``.
+    """
+    if template is None:
+        template = ", ".join(f"{{{name}}}" for name in by)
+    parts = []
+    for text, name, spec, conversion in string.Formatter().parse(template):
+        if spec or conversion:
+            raise ValueError(f"label template {template!r}: only {{name}} placeholders")
+        parts.append(pl.lit(text))
+        if name is not None:
+            parts.append(pl.col(name).cast(pl.String).fill_null("null"))
+    return pl.concat_str(parts).alias("label")
 
 
 def normalize_objectives(
