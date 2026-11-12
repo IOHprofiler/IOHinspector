@@ -29,7 +29,7 @@ BY = ["algorithm_name", "function_id", "dimension"]
 def write(folder: Path, algorithms: int, rows: int, seed: int = 1) -> None:
     """``runs.parquet`` and ``trace.parquet`` of the synthetic set."""
     rng = np.random.default_rng(seed)
-    a, f, d, r = np.meshgrid(
+    a, f, d, _ = np.meshgrid(
         np.arange(algorithms), np.arange(1, 25), [2, 3, 5, 10, 20, 40], np.arange(15)
     )
     n = a.size

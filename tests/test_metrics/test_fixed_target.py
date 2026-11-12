@@ -1,6 +1,6 @@
 import numpy as np
-import pytest
 import polars as pl
+import pytest
 
 from iohinspector.metrics.fixed_target import aggregate_running_time
 
