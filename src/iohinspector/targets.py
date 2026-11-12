@@ -93,20 +93,15 @@ def get_ecdf_targets(
     """Targets per (function, dimension) pair (TG-1, TG-2): ``kind``
     ``"log-linear"`` or ``"linear"`` (``n`` targets over the pair's observed
     values), or ``"bbob"`` (the 51 COCO targets)."""
-
-    def targets(values: list[float]) -> list[float]:
-        if kind == "bbob":
-            return bbob_targets().tolist()
-        if kind not in ("log-linear", "linear"):
-            raise ValueError(f"kind {kind!r}: log-linear, linear or bbob")
-        return seq_fv(values, n, log=kind == "log-linear").tolist()
-
+    if kind not in ("log-linear", "linear", "bbob"):
+        raise ValueError(f"kind {kind!r}: log-linear, linear or bbob")
     grouped = data.group_by(PAIR, maintain_order=True).agg(pl.col(fval_var))
-    return pl.DataFrame(
-        [(*key, t) for *key, values in grouped.iter_rows() for t in targets(values)],
-        schema=[*PAIR, "target"],
-        orient="row",
-    ).sort(PAIR, maintain_order=True)
+    targets = [
+        bbob_targets() if kind == "bbob" else seq_fv(v, n, log=kind == "log-linear")
+        for v in grouped[fval_var]
+    ]
+    targets = grouped.drop(fval_var).with_columns(target=pl.Series(targets))
+    return targets.explode("target").sort(PAIR, maintain_order=True)
 
 
 def get_target_dt(  # pylint: disable=too-many-arguments
@@ -129,16 +124,14 @@ def get_target_dt(  # pylint: disable=too-many-arguments
         return data.group_by(PAIR).agg(target.alias("target")).sort(PAIR)
     if perspective != "fixed_target":
         raise ValueError(f"perspective {perspective!r}: fixed_target or fixed_budget")
-    y = pl.col(fval_var)
-    final = y.max() if maximization else y.min()
+    best = pl.max if maximization else pl.min
     quantile = pl.col("final").quantile(0.98 if maximization else 0.02, "linear")
-    best = pl.col("target").max() if maximization else pl.col("target").min()
     return (
         data.group_by([*PAIR, *by, "run_id"])
-        .agg(final.alias("final"))
+        .agg(best(fval_var).alias("final"))
         .group_by([*PAIR, *by])
         .agg(quantile.alias("target"))
         .group_by(PAIR)
-        .agg(best)
+        .agg(best("target"))
         .sort(PAIR)
     )

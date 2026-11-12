@@ -138,53 +138,35 @@ def normalize_objectives(
     Returns:
         pl.DataFrame: The original dataframe with new normalized objective columns added.
     """
-    result = data.clone()
-    n_objectives = len(obj_vars)
-
+    result = data
     ndpoints = None
     if only_nondominated and len(obj_vars) > 1:
-        obj_vals = np.array(result[obj_vars])
-        ndpoints = filter_dominated(obj_vals)
+        ndpoints = filter_dominated(np.array(result[obj_vars]))
 
     for i, col in enumerate(obj_vars):
-        # Determine log scaling
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
         is_max = maximize[col] if isinstance(maximize, dict) else maximize
-
-        # Get bounds
-        lb, ub = None, None
-        if bounds and col in bounds:
-            lb, ub = bounds[col]
+        lb, ub = bounds[col] if bounds and col in bounds else (None, None)
         if lb is None:
             lb = result[col].min() if ndpoints is None else ndpoints[:, i].min()
         if ub is None:
             ub = result[col].max() if ndpoints is None else ndpoints[:, i].max()
-        # Log scale if needed
+        v = pl.col(col)
         if use_log:
             if lb <= 0:
                 warnings.warn(
                     f"Lower bound for column '{col}' <= 0; resetting to 1e-8 for log-scaling."
                 )
                 lb = 1e-8
-            lb, ub = np.log10(lb), np.log10(ub)
-            norm_expr = ((pl.col(col).log10() - lb) / (ub - lb)).clip(0, 1)
-        else:
-            norm_expr = ((pl.col(col) - lb) / (ub - lb)).clip(0, 1)
-
-        # Reverse if minimization
-        if not is_max:
+            lb, ub, v = np.log10(lb), np.log10(ub), v.log10()
+        norm_expr = ((v - lb) / (ub - lb)).clip(0, 1)
+        if not is_max:  # minimisation: the lower bound is the best
             norm_expr = 1 - norm_expr
-        # Add normalized column with appropriate name
-        if n_objectives > 1:
-            if keep_original:
-                norm_expr = norm_expr.alias(f"{prefix}_{col}")
-            else:
-                idx = list(obj_vars).index(col) + 1
-                norm_expr = norm_expr.alias(f"{prefix}{idx}")
+        if len(obj_vars) == 1:
+            name = prefix
         else:
-            # If only one objective, use the prefix directly
-            norm_expr = norm_expr.alias(prefix)
-        result = result.with_columns(norm_expr)
+            name = f"{prefix}_{col}" if keep_original else f"{prefix}{i + 1}"
+        result = result.with_columns(norm_expr.alias(name))
 
     return result
 

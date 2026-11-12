@@ -26,9 +26,14 @@ Status: in progress
   null: a run with a missing `by` descriptor never reached anything (ECDF, samples,
   get_data_ecdf, trajectory). Now one key per run (row index of the runs, joined
   with nulls_equal). Tests, CHANGELOG. bench_ert unchanged (noise 5-7 s here).
+- step 8a: the `pair` option is gone (get_ecdf, get_ecdf_auc, get_ecdf_targets,
+  get_target_dt, get_rank_table): pairs are always (function_id, dimension).
+- step 8b: smaller get_ecdf_targets (no nested function, kind checked first),
+  get_target_dt, get_parameter_summary, histogram breaks and violin rows; legacy
+  normalize_objectives without its duplicated branches.
 
 ## Next step
-Step 8: final review pass (lint, pyright, polars 1), line counts, notes.
+Step 8c: lint (ruff, pylint/prospector), pyright, tests on polars 1; line counts.
 
 ## Plan
 1. align_data eval_var bug (done)

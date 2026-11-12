@@ -127,10 +127,6 @@ def pretty(  # pylint: disable=too-many-locals
     return np.where(np.abs(breaks) < 1e-14 * unit, 0.0, breaks)
 
 
-def _breaks(x: np.ndarray) -> np.ndarray:
-    return pretty(x.min(), x.max(), nclass_fd(x))
-
-
 def _counts(x: np.ndarray, breaks: np.ndarray) -> np.ndarray:
     """Counts in the bins (a, b], the lowest closed, with R's fuzz of 1e-7
     (``hist.default``)."""
@@ -184,7 +180,8 @@ def get_histogram(  # pylint: disable=too-many-locals
             x = _finite(group, value)[value].to_numpy()
             if len(x) < 2:
                 continue
-            edges = _breaks(pooled if bins == "equal" else x)
+            s = pooled if bins == "equal" else x
+            edges = pretty(s.min(), s.max(), nclass_fd(s))
             counts = _counts(x, edges)
             n_failed = len(group) - len(x)
             for i, c in enumerate(counts):
@@ -237,6 +234,6 @@ def get_violin(
     for key, group in _split(sample, keys):
         x = _finite(group, value)[value].to_numpy()
         if len(x):
-            rows.append({**dict(zip(keys, key)), **_violin(x)})
-            rows[-1]["n_failed"] = len(group) - len(x)
+            n_failed = {"n_failed": len(group) - len(x)}
+            rows.append({**dict(zip(keys, key)), **_violin(x), **n_failed})
     return pl.DataFrame(rows)

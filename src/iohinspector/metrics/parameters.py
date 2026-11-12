@@ -103,12 +103,9 @@ def get_parameter_summary(  # pylint: disable=too-many-arguments
         fval_var=fval_var,
         maximization=maximization,
     )
-    x_col = fval_var if target else eval_var
-    keys = list(dict.fromkeys([*by, x_col]))
-    long = sample.with_columns(pl.col(parameters).cast(pl.Float64)).unpivot(
-        parameters,
-        index=list(dict.fromkeys(["run_id", *keys])),
-        variable_name="parameter",
+    keys = [c for c in sample.columns if c not in ("run_id", *parameters)]
+    long = sample.cast({p: pl.Float64 for p in parameters}).unpivot(
+        parameters, index=["run_id", *keys], variable_name="parameter"
     )
     summaries = long.group_by(*keys, "parameter").agg(describe(pl.col("value")))
     return summaries.sort(*keys, "parameter")
