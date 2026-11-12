@@ -5,7 +5,13 @@ import seaborn as sbs
 from typing import Iterable, Sequence
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_target import aggregate_running_time
-from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
+from .utils import (
+    LinePlotArgs,
+    _check_measures,
+    _create_plot_args,
+    _hue,
+    _save_fig,
+)
 
 
 @upgrade_hints
@@ -40,10 +46,12 @@ def plot_single_function_fixed_target(
         f_min (float, optional): Minimum function value bound for target range. If None, uses data minimum. Defaults to None.
         f_max (float, optional): Maximum function value bound for target range. If None, uses data maximum. Defaults to None.
         scale_f_log (bool, optional): Whether function values should be log-scaled for target sampling. Defaults to True.
-        eval_max (int, optional): Maximum evaluation budget to consider. If None, uses data maximum. Defaults to None.
+        eval_max (int, optional): The budget cap C of ``aggregate_running_time``: a
+            target reached later counts as missed. Defaults to None (no cap).
         maximization (bool, optional): Whether the optimization problem is maximization. Defaults to False.
-        measures (Iterable[str], optional): Running time measures to plot. Valid options are "ERT" (Expected Running Time),
-            "mean", "PAR-10", "min", "max". Defaults to ["ERT"].
+        measures (Iterable[str], optional): Running time measures to plot: columns of
+            ``aggregate_running_time``, such as "ERT" (Expected Running Time),
+            "mean", "median", "par_10" or "q50". Defaults to ["ERT"].
         ax (matplotlib.axes._axes.Axes, optional): Matplotlib axes to plot on. If None, creates new figure. Defaults to None.
         file_name (str, optional): Path to save the plot. If None, plot is not saved. Defaults to None.
         plot_args (dict | LinePlotArgs, optional): Plot styling arguments. Can include:
@@ -74,7 +82,7 @@ def plot_single_function_fixed_target(
         eval_max=eval_max,
         maximization=maximization,
     )
-
+    _check_measures(dt_agg, measures)
     dt_plot = (
         dt_agg.unpivot(index=[fval_var, *by])
         .filter(pl.col("variable").is_in(list(measures)))

@@ -14,6 +14,24 @@
   evaluations the run used) and `aggregate_convergence` reports `n_active`;
   `load(x_values=...)` always adds `stopped`. `load(monotonic=True)` marks each
   run's last logged row `is_final`. No rows are added.
+- Runtime and fixed-budget summaries as defined in `docs/definitions/runtime.md`
+  and `fixed-budget.md` (WP I11):
+  - `aggregate_running_time`: per run set and target `n_runs`, `n_success`,
+    `success_ratio`, `ERT`, `par_{k}` (`k=10` by default), `mean`, `median`
+    and `sd` of the successful runs, and the Hyndman-Fan type 3 quantiles `q2`
+    ... `q98`, which count an unfinished run as `inf` unless
+    `include_unfinished=False`. A failed run is charged its own `evals_used`
+    (`load(include_columns=["evals_used"])`), or else its last logged
+    evaluation; `eval_max` is a budget cap. New keyword `targets`.
+  - `aggregate_convergence`: per run set and budget `mean`, `median`, `sd`, the
+    type 7 quantiles `q2` ... `q98`, `best`, `worst`, `geometric_mean` (only
+    when every value is > 0), `n_runs`, `n_defined`, and with `evals_used`
+    `n_active`. New keywords `budgets`, and `stopped="restart"` with `seed`
+    for simulated restarts of runs that stopped before a budget.
+  - `get_overview`: per run set `n_runs`, `budget`, the best, worst, mean and
+    median final values, `n_best`, `worst_recorded`, `min_runtime` and
+    `max_runtime`.
+  - `scripts/bench_ert.py`: the full-bbob ERT table benchmark.
 - `metrics.group_label(by, template)`: a label per group of `by` from a template
   such as `"{algorithm_name} (sigma {sigma0})"`. Plots grouped by several columns
   label them `"a, b"` instead of a tuple.
@@ -32,6 +50,23 @@
 - Log-spaced default targets (`aggregate_running_time`) start at the smallest
   positive value when the data reaches 0 or less, instead of failing an assertion
   (TG-3). `get_sequence` raises `ValueError` for a log range with a bound <= 0.
+
+- `aggregate_running_time` and `aggregate_convergence` follow the definitions,
+  and some columns are renamed:
+
+  | Before | Now |
+  |---|---|
+  | `PAR-10` (10 × the largest evaluation of the whole frame) | `par_10` (10 × the largest `evals_used` of the run set) |
+  | `success_count` | `n_success` |
+  | `std` | `sd` |
+  | runtime `mean`, `median`, `std` over all runs (`inf` with one failure) | over the successful runs |
+  | runtime `min`, `max` | the quantiles `q2` ... `q98` |
+  | fixed-budget `min`, `max` | `best`, `worst` |
+
+  ERT charged every failed run the largest evaluation of the whole frame (all
+  algorithms and functions); it now charges the run its own budget (RT-1). The
+  geometric mean is null unless every value is > 0 (FB-3). The plots
+  (`measures`) fail on a name that is not a column.
 
 - Alignment: before a run's first logged evaluation its value is null, not `inf`
   (`docs/definitions/alignment.md`, AL-5). Under maximisation `inf` counted as the best
