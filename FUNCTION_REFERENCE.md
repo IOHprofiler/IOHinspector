@@ -57,7 +57,7 @@ DataFrames; call `.to_pandas()` for pandas.
 ### AOCC
 
 #### `get_aocc(data, eval_var="evaluations", fval_var="raw_y", eval_max=None, maximization=False)`
-Calculate Area Over Convergence Curve (AOCC) for algorithm performance evaluation.
+Calculate Area Over Convergence Curve (AOCC) for algorithm performance evaluation. Legacy (0.0.8): use `get_ecdf_auc(..., continuous=True)`.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing algorithm performance trajectory data.
@@ -92,8 +92,23 @@ Generate attractor network analysis from optimization algorithm trajectory data.
 
 ### ECDF
 
+Definitions: `docs/definitions/ecdf.md` (EC-1 to EC-8).
+
+#### `get_ecdf(data, targets=None, by=["algorithm_name"], *, x_values=None, continuous=False, scale_f_log=True, maximization=False, pairs="common", divide_by_dimension=False, fval_var="raw_y", eval_var="evaluations")`
+The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive) within x evaluations, averaged over the (function, dimension) pairs of each group with equal weight. Exact: one row per step, or sampled at `x_values`. `targets` per pair comes from `targets.get_ecdf_targets` (default 10 log-linear per pair). `continuous=True` gives the continuum ECDF (normalised quality between each pair's smallest and largest target). `pairs="common"` keeps the pairs every group has, `"all"` each group's own pairs; both warn when they differ.
+
+**Returns:** `pl.DataFrame` with `by`, `eval_var` and `ecdf`.
+
+#### `get_ecdf_auc(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, **options)`
+The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the largest budget), on a linear or log10 axis; `options` as in `get_ecdf`. With `continuous=True` it is the AOCC, the limit of the target AUC as the number of targets grows.
+
+**Returns:** `pl.DataFrame` with `by` and `auc`.
+
+#### `get_rank_table(summary, value="ERT", *, higher_is_better=False, pair=["function_id", "dimension"])`
+Adds the `rank` of `value` within each pair: average ranks for ties, `inf` at the bottom, missing values last.
+
 #### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True)`
-Generate Empirical Cumulative Distribution Function (ECDF) data for performance analysis.
+Generate Empirical Cumulative Distribution Function (ECDF) data for performance analysis. Legacy (0.0.8): use `get_ecdf`.
 
 **Args:**
 - `data (pl.DataFrame)`: Input dataframe containing optimization algorithm trajectory data.

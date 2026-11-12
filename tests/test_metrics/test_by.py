@@ -10,6 +10,7 @@ from iohinspector.metrics import (
     aggregate_convergence,
     aggregate_running_time,
     get_data_ecdf,
+    get_ecdf,
     get_overview,
     get_trajectory,
     group_label,
@@ -20,6 +21,7 @@ METRICS = [
     aggregate_convergence,
     aggregate_running_time,
     get_data_ecdf,
+    get_ecdf,
     get_overview,
     get_trajectory,
 ]
@@ -56,7 +58,8 @@ def manager():
     ],
 )
 def test_metrics_group_by_any_descriptor(manager, metric, by, groups):
-    df = manager.load(include_columns=by)
+    pair = ["function_id", "dimension"] if metric is get_ecdf else []  # its pairs
+    df = manager.load(include_columns=list(dict.fromkeys([*by, *pair])))
     assert set(metric(df, by=by).select(by).unique().rows()) == groups
 
 

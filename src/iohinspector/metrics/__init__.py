@@ -14,7 +14,7 @@ from .distributions import (
     get_value_sample,
     get_violin,
 )
-from .ecdf import get_data_ecdf
+from .ecdf import get_data_ecdf, get_ecdf, get_ecdf_auc, get_rank_table
 from .eaf import (
     get_discritized_eaf_single_objective,
     get_eaf_data,
@@ -41,8 +41,11 @@ __all__ = [
     "get_eaf_data",
     "get_eaf_diff_data",
     "get_eaf_pareto_data",
-    "get_overview",
+    "get_ecdf",
+    "get_ecdf_auc",
     "get_heatmap_single_run_data",
+    "get_rank_table",
+    "get_overview",
     "get_histogram",
     "get_robustrank_changes",
     "get_robustrank_over_time",

@@ -263,6 +263,12 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 
 - Q-EC-1: Which data gave 0.67 and 0.90? If it can be found, I12 should add it
   as a second golden case.
+- Q-EC-3: IOHanalyzer also has a fixed-budget ECDF (`generate_data.ECDF` with
+  `which = 'by_FV'`, `R/DataSetList.R` 1414–1424: over a grid of values x, the
+  fraction of (run, budget) pairs in which the run reached x in fewer
+  evaluations than the budget, `RT < budget`) and its AUC. This page does not
+  define it, so I12 does not implement it. Is it needed, and inclusive (T ≤ b)
+  as in EC-1?
 
 ## Questions answered by the D6 review
 
@@ -273,6 +279,29 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 Remaining points for H1: none. EC-5's bounds follow the EAF answer (Q-EA-1);
 that is a consequence of AOCC and the continuum ECDF being equal, not a
 separate review answer.
+
+## Implementation (I12)
+
+`iohinspector.metrics`, in `metrics/ecdf.py`:
+
+- `get_ecdf(data, targets, by)`: the target ECDF (EC-1), exact at its steps or
+  sampled at `x_values` (EC-3), averaged over pairs as in EC-2
+  (`pairs = "common" | "all"`), optionally over evaluations / dimension.
+  `continuous=True` is the continuum ECDF (EC-6) with the bounds of EC-5 taken
+  from the targets: each pair's smallest and largest target. The default
+  targets give the observed range per pair; `get_ecdf_targets(data, "bbob")`
+  gives the BBOB bounds 1e-8 and 1e2.
+- `get_ecdf_auc(...)`: the AUC of EC-4; with `continuous=True` it is the AOCC
+  of EC-5. Both integrate one step function exactly, so the equivalence holds
+  by construction; a test checks that the AUC over m log-spaced targets is
+  within 1/m of the AOCC.
+- `get_rank_table(summary, value)`: the ranks of EC-8 for any per-pair
+  summary, such as ERT at `get_target_dt`'s targets.
+- `get_data_ecdf` and `get_aocc` are the 0.0.8 functions, unchanged.
+
+The golden tests reproduce IOHanalyzer's ECDF and AUC exactly by moving each
+target to the next float (`f < t` is `f ≤ nextafter(t, −∞)`), and the worked
+example above gives 0.70, 0.733 and 0.75.
 
 ## Test tolerance
 
