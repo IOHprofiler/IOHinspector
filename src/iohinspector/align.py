@@ -44,7 +44,8 @@ def align_data(  # pylint: disable=too-many-arguments
     Args:
         df: at least ``x_col``, ``y_col`` and ``group_cols``, in evaluation order;
             optionally ``evals_used``.
-        x_values: the evaluations, or function values, to align on.
+        x_values: the evaluations, or function values, to align on; a value given
+            twice counts once.
         group_cols: the columns that identify a run.
         x_col: the column to align on.
         y_col: the column to read at each aligned value.
@@ -67,9 +68,8 @@ def align_data(  # pylint: disable=too-many-arguments
         df = df.drop("evals_used")
     else:
         runs = df.select(group_cols).unique()
-    grid = runs.join(
-        pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]}), how="cross"
-    )
+    x = pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]})
+    grid = runs.join(x.unique(maintain_order=True), how="cross")
     forward = not budget and maximization
     if budget:  # on a tie, the last row in data order
         df = df.sort(x_col, maintain_order=True)

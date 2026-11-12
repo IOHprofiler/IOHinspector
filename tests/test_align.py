@@ -3,6 +3,7 @@ import math
 import numpy as np
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 import iohinspector.align
 from iohinspector.align import align_data
@@ -169,6 +170,18 @@ def test_fixed_target_inclusive_first_of_ties(maximization):
     assert dict(rows) == expected
 
 
+def test_repeated_values_count_once():
+    # targets from a table of several pairs repeat; each run is counted once
+    assert align_data(TWO_RUNS, [5, 5, 1]).height == 4
+    assert (
+        align_data(TWO_RUNS, [8.0, 8.0], x_col="raw_y", y_col="evaluations").height == 2
+    )
+    summary = aggregate_convergence(
+        TWO_RUNS.with_columns(algorithm_name=pl.lit("A")), budgets=[5, 5]
+    )
+    assert summary["n_runs"].to_list() == [2]
+
+
 def test_wide_output():
     result = align_data(TWO_RUNS, [1, 2, 3, 4, 5], output="wide")
     assert {"evaluations", "1", "2"} == set(result.columns)
@@ -257,4 +270,4 @@ def test_any_name_of_the_evaluations_column(metric):
     # the fixed-budget view is chosen by eval_var, not by the name "evaluations"
     data = TWO_RUNS.with_columns(algorithm_name=pl.lit("A"), p=pl.col("raw_y"))
     expected = _renamed(metric(data, "evaluations"))
-    assert metric(_renamed(data), "evals").equals(expected)
+    assert_frame_equal(metric(_renamed(data), "evals"), expected, check_row_order=False)

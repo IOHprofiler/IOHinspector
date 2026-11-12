@@ -47,7 +47,7 @@ def name_run_sets(
     keys = list(dict.fromkeys([*by, *x]))
     names = runs.select("run_set", *dict.fromkeys(by)).unique("run_set")
     summary = summary.join(names, on="run_set").drop("run_set")
-    return summary.select(*keys, pl.exclude(*keys)).sort(*keys)
+    return summary.select(*keys, pl.exclude(keys)).sort(keys)
 
 
 def get_sequence(

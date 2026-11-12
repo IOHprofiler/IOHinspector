@@ -12,6 +12,8 @@ from ..align import align_data
 from ..targets import PAIR, get_ecdf_targets, seq_rt
 from .utils import transform_fval
 
+ALL = "_all"  # the one group when ``by`` is empty
+
 
 def _weights(data: pl.DataFrame, by: list[str], pair: list[str], pairs: str):
     """``data`` on the pairs used (EC-2), with ``weight`` 1 / (|P| n): each pair of a
@@ -143,6 +145,13 @@ def _increments(  # pylint: disable=R0913,R0914
     return pl.concat([zero, steps]), data.select(x.max()).item()
 
 
+def _one_group(data: pl.DataFrame, by: Sequence[str]):
+    """``data`` and ``by`` as a list; without ``by`` one group, a column ``ALL``."""
+    if by:
+        return data, list(by)
+    return data.with_columns(pl.lit(0).alias(ALL)), [ALL]
+
+
 def _cumulate(steps: pl.DataFrame, by: list[str], order: Sequence[str] = ()):
     return steps.sort([*by, "x", *order]).with_columns(
         ecdf=pl.col("inc").cum_sum().over(by)
@@ -201,7 +210,7 @@ def get_ecdf(
     Returns:
         pl.DataFrame: ``by``, ``eval_var`` (float) and ``ecdf``.
     """
-    by = list(by)
+    data, by = _one_group(data, by)
     steps, _ = _increments(data, targets, by, eval_var=eval_var, **options)
     steps = steps.with_columns(grid=pl.lit(False))
     if x_values is not None:
@@ -213,7 +222,9 @@ def get_ecdf(
         steps = steps.unique([*by, "x"], keep="last", maintain_order=True)
     else:
         steps = steps.filter("grid")
-    return steps.select(*by, pl.col("x").alias(eval_var), "ecdf")
+    return steps.select(*by, pl.col("x").alias(eval_var), "ecdf").drop(
+        ALL, strict=False
+    )
 
 
 @upgrade_hints
@@ -249,7 +260,7 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     Returns:
         pl.DataFrame: ``by`` and ``auc``.
     """
-    by = list(by)
+    data, by = _one_group(data, by)
     steps, x_max = _increments(data, targets, by, **options)
     lo, hi = b_lo, x_max if b_hi is None else b_hi
     if lo >= hi or (scale_eval_log and lo <= 0):
@@ -260,7 +271,7 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     width = x.shift(-1, fill_value=hi).over(by) - x
     steps = _cumulate(steps, by).with_columns(area=pl.col("ecdf") * width)
     auc = pl.col("area").sum() / (hi - lo)
-    return steps.group_by(by, maintain_order=True).agg(auc=auc)
+    return steps.group_by(by, maintain_order=True).agg(auc=auc).drop(ALL, strict=False)
 
 
 def get_rank_table(

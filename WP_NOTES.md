@@ -5,10 +5,11 @@ Status: in progress
 ## Done
 - step 1: align_data chose the fixed-budget view by the column name "evaluations";
   every metric with another `eval_var` was wrong. Keyword `eval_var`. Test, CHANGELOG.
+- step 2: repeated x_values counted runs twice (align_data dedups); `by=[]` crashed
+  in get_overview, get_ecdf, get_ecdf_auc. Tests, CHANGELOG.
 
 ## Next step
-Step 2: fix `by=()` (get_overview, get_ecdf, get_ecdf_auc crash) and duplicate
-x_values in align_data (counted twice).
+Step 3: samples return only their documented columns.
 
 ## Plan
 1. align_data eval_var bug (done)

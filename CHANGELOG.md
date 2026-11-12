@@ -66,6 +66,11 @@
   `get_data_ecdf`) aligned as if it were fixed-target and returned wrong values.
   `align_data` takes a keyword `eval_var` and aligns on budgets when
   `x_col == eval_var`.
+- A target or budget given twice (`targets=` or `budgets=` from a table of
+  several pairs) counted every run twice in `n_runs` and the statistics;
+  `align_data` uses each value once.
+- `by=[]` (one group of all runs) failed in `get_overview`, `get_ecdf` and
+  `get_ecdf_auc`.
 - Budget grids (`get_sequence(..., cast_to_int=True)` and the default grids of
   `aggregate_convergence`, `get_data_ecdf` and the EAF) are rounded, not truncated:
   a grid up to 100 ended at 99 (TG-5).
