@@ -21,6 +21,7 @@ def get_discritized_eaf_single_objective(
     f_max=1e2,
     scale_f_log: bool = True,
     f_targets=101,
+    maximization: bool = False,
 ) -> pl.DataFrame:
     """Generate discretized EAF data for single-objective optimization problems.
 
@@ -37,6 +38,7 @@ def get_discritized_eaf_single_objective(
         f_max (float, optional): Maximum function value for scaling. Defaults to 1e2.
         scale_f_log (bool, optional): Whether to use logarithmic scaling for function values. Defaults to True.
         f_targets (int, optional): Number of function value targets to generate. Defaults to 101.
+        maximization (bool, optional): Whether larger function values are better.
 
     Returns:
         pl.DataFrame: The discretized EAF: an ``eaf_target`` column and one column per
@@ -52,12 +54,15 @@ def get_discritized_eaf_single_objective(
             eval_min, eval_max, eval_targets, scale_log=scale_eval_log, cast_to_int=True
         )
 
-    dt_aligned = align_data(data, eval_values, x_col=eval_var, y_col=fval_var)
+    dt_aligned = align_data(
+        data, eval_values, x_col=eval_var, y_col=fval_var, maximization=maximization
+    )
     dt_aligned = transform_fval(
         dt_aligned,
         lb=f_min,
         ub=f_max,
         scale_log=scale_f_log,
+        maximization=maximization,
         fval_var=fval_var,
     )
     targets = pl.DataFrame({"eaf_target": np.linspace(0, 1, f_targets)})
@@ -77,6 +82,7 @@ def get_eaf_data(
     eval_min: int = None,
     eval_max: int = None,
     scale_eval_log: bool = True,
+    maximization: bool = False,
 ) -> pl.DataFrame:
     """Generate aligned EAF data for visualization and analysis.
 
@@ -86,9 +92,11 @@ def get_eaf_data(
         eval_min (int, optional): Minimum evaluation value. If None, uses minimum from data.
         eval_max (int, optional): Maximum evaluation value. If None, uses maximum from data.
         scale_eval_log (bool, optional): Whether to use logarithmic scaling for evaluations. Defaults to True.
+        maximization (bool, optional): Whether larger function values are better.
 
     Returns:
-        pl.DataFrame: A DataFrame with aligned EAF data.
+        pl.DataFrame: A DataFrame with aligned EAF data; null before a run's first
+            logged evaluation (AL-5).
     """
 
     if eval_min is None:
@@ -97,7 +105,7 @@ def get_eaf_data(
         eval_max = data[eval_var].max()
 
     evals = get_sequence(eval_min, eval_max, 50, scale_eval_log, True).astype("uint64")
-    return align_data(data, evals)
+    return align_data(data, evals, maximization=maximization)
 
 
 def _points(data: pl.DataFrame, obj1_var: str, obj2_var: str) -> np.ndarray:

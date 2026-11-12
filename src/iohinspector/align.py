@@ -27,9 +27,10 @@ def align_data(  # pylint: disable=too-many-arguments
     best-so-far value of each run, and each run gets the value it had at each
     evaluation in ``x_values``. Fixed target (``x_col`` is a function value
     column): ``x_col`` becomes the best-so-far value, and each run gets the
-    ``y_col`` (evaluations) at which it first reached each target. A value that
-    does not exist yet (before the first evaluation, or a target never reached) is
-    ``inf``. Works in one join for all runs.
+    ``y_col`` (evaluations) at which it first reached each target, ``inf`` for a
+    target it never reached. Before a run's first logged evaluation its value is
+    null (``docs/definitions/alignment.md``, AL-5): metrics leave it out of their
+    statistics but count the run. Works in one join for all runs.
 
     Args:
         df: at least ``x_col``, ``y_col`` and ``group_cols``, in evaluation order.
@@ -60,17 +61,15 @@ def align_data(  # pylint: disable=too-many-arguments
         df = df.sort(x_col, maintain_order=True)
     else:  # on a tie, the first evaluation that reached the target
         df = df.sort([x_col, y_col], descending=[False, not forward])
-    result = (
-        grid.sort(x_col)
-        .join_asof(
-            df,
-            on=x_col,
-            by=group_cols,
-            strategy="forward" if forward else "backward",
-            check_sortedness=False,
-        )
-        .with_columns(pl.col(y_col).fill_null(np.inf))
+    result = grid.sort(x_col).join_asof(
+        df,
+        on=x_col,
+        by=group_cols,
+        strategy="forward" if forward else "backward",
+        check_sortedness=False,
     )
+    if x_col != "evaluations":
+        result = result.with_columns(pl.col(y_col).fill_null(np.inf))
     if output == "long":
         return result
     return result.pivot(index=x_col, on=group_cols, values=y_col)

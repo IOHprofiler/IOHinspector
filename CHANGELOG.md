@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Alignment: before a run's first logged evaluation its value is null, not `inf`
+  (`docs/definitions/alignment.md`, AL-5). Under maximisation `inf` counted as the best
+  value; 0.1.0 listed this as a known issue. Every metric that aligns leaves such a
+  run out of its statistics but counts it: `aggregate_convergence` (new columns
+  `n_runs` and `n_defined`), `get_data_ecdf` and the single-objective EAF (it reached
+  nothing), `get_trajectory`, `get_eaf_data` and `load(x_values=...)` (null).
+  `get_discritized_eaf_single_objective` and `get_eaf_data` take `maximization`.
+  This only matters when a budget comes before a run's first logged evaluation
+  (IOHexperimenter and COCO always log evaluation 1).
+
 ## 0.1.0
 
 One data model and one way to load and use data. The outward API stays close to
@@ -119,13 +133,3 @@ reached), any `group_cols`, and a wide output per group.
 | fixed target: on a tie (the best-so-far value repeats, for example the final row of a monotonic frame) the old `align_data` could take a later row | the first evaluation that reached the target. This changes `aggregate_running_time` where the old result was a later evaluation (one target of the test data: minimum 100 becomes 82, ERT 1500 becomes 1482) |
 | `load(x_values=...)` on maximisation runs | aligned per run with its own direction |
 | `get_data_ecdf`: a run with no value yet at a budget formed its own group with a null `by` value | it stays in its own group |
-
-### Known issue
-
-A run has no value at a budget before its first logged evaluation. Alignment fills that
-gap with `inf`, as 0.0.x did. When minimising, `inf` is the worst value, which is
-correct. When maximising, `inf` counts as the best value, so the fixed-budget summary
-reports it as such. This only matters when the budget grid starts before a run's first
-logged evaluation (IOHexperimenter and COCO always log evaluation 1). The agreed rule
-(`docs/definitions/alignment.md`, AL-5) is that such a value is missing, left out of
-the statistics but counted. It comes with the alignment work for 0.2.0.

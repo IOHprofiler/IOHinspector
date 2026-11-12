@@ -99,9 +99,11 @@ def plot_eaf_single_objective(
             )
         )
 
+    # a run with no value yet (null, AL-5) has attained nothing: the worst value
+    worst = df.with_columns(pl.col(fval_var).fill_null(np.inf))
     for quant, color in zip(quantiles, colors):
         poly = np.array(
-            df.group_by(eval_var).quantile(quant).sort(eval_var)[eval_var, fval_var]
+            worst.group_by(eval_var).quantile(quant).sort(eval_var)[eval_var, fval_var]
         )
         poly = np.append(poly, np.array([[max(poly[:, 0]), f_max]]), axis=0)
         poly = np.append(poly, np.array([[min(poly[:, 0]), f_max]]), axis=0)

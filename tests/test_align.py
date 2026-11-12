@@ -5,6 +5,13 @@ import pytest
 
 import iohinspector.align
 from iohinspector.align import align_data
+from iohinspector.metrics import (
+    aggregate_convergence,
+    get_data_ecdf,
+    get_discritized_eaf_single_objective,
+    get_eaf_data,
+    get_trajectory,
+)
 
 TWO_RUNS = pl.DataFrame(
     {
@@ -35,9 +42,75 @@ def test_fixed_budget_computes_best_so_far():
     assert align_data(df, [1, 2, 3])["raw_y"].to_list() == [5, 5, 5]
 
 
-def test_before_the_first_evaluation_is_inf():
-    df = pl.DataFrame({"run_id": [1], "evaluations": [3], "raw_y": [1.0]})
-    assert align_data(df, [1, 3])["raw_y"].to_list() == [math.inf, 1.0]
+# AL-5: run 2 is first logged at evaluation 5, so it has no value at budget 1
+LATE = pl.DataFrame(
+    {
+        "run_id": [1, 1, 2, 2],
+        "algorithm_name": ["A"] * 4,
+        "evaluations": [1, 10, 5, 10],
+        "raw_y": [4.0, 2.0, 3.0, 1.0],
+    }
+)
+DIRECTIONS = pytest.mark.parametrize("maximization", [False, True])
+
+
+def _at(df, evaluation, run_id=None):
+    df = df.filter(pl.col("evaluations") == evaluation)
+    return df if run_id is None else df.filter(pl.col("run_id") == run_id)
+
+
+@DIRECTIONS
+def test_before_the_first_evaluation_is_null(maximization):
+    df = align_data(LATE, [1, 5], maximization=maximization).sort("run_id")
+    assert _at(df, 1)["raw_y"].to_list() == [4.0, None]
+    assert _at(df, 5)["raw_y"].to_list() == [4.0, 3.0]
+    wide = align_data(LATE, [1], output="wide", maximization=maximization)
+    assert wide.select("1", "2").row(0) == (4.0, None)
+
+
+@DIRECTIONS
+def test_fixed_budget_leaves_out_but_counts(maximization):
+    result = _at(aggregate_convergence(LATE, maximization=maximization), 1)
+    assert result.select("mean", "min", "max", "n_runs", "n_defined").row(0) == (
+        4.0, 4.0, 4.0, 2, 1,
+    )  # fmt: skip
+
+
+@DIRECTIONS
+def test_ecdf_counts_a_run_without_a_value_as_reaching_nothing(maximization):
+    result = get_data_ecdf(
+        LATE,
+        f_min=1,
+        f_max=4,
+        scale_f_log=False,
+        eval_values=[1],
+        maximization=maximization,
+    )
+    reached = 1.0 if maximization else 0.0  # run 1 is at 4, the bound
+    assert result["eaf"].to_list() == [reached / 2]
+
+
+@DIRECTIONS
+def test_eaf_counts_a_run_without_a_value_as_reaching_nothing(maximization):
+    result = get_discritized_eaf_single_objective(
+        LATE,
+        eval_values=[1],
+        f_min=1,
+        f_max=4,
+        scale_f_log=False,
+        f_targets=2,
+        maximization=maximization,
+    )
+    assert result["1"].to_list() == [1.0, 0.5 if maximization else 0.0]
+    aligned = get_eaf_data(LATE, eval_min=1, eval_max=1, maximization=maximization)
+    assert _at(aligned, 1, run_id=2)["raw_y"].to_list() == [None]
+
+
+@DIRECTIONS
+def test_trajectory_is_null_before_the_first_evaluation(maximization):
+    result = get_trajectory(LATE, maximization=maximization)
+    assert _at(result, 4, run_id=2)["raw_y"].to_list() == [None]
+    assert _at(result, 5, run_id=2)["raw_y"].to_list() == [3.0]
 
 
 @pytest.mark.parametrize(
