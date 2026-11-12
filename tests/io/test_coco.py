@@ -29,6 +29,11 @@ OLD = (
     "% function evaluation | noise-free fitness - Fopt ({fopt}) | best noise-free "
     "fitness - Fopt | measured fitness | best measured fitness | x1 | x2..."
 )
+BBOB_NEW = (
+    "% f evaluations | g evaluations | best noise-free fitness - Fopt | noise-free "
+    "fitness - Fopt (1.000000000000e+00) | measured fitness | best measured "
+    "fitness | x1 | x2..."
+)
 HEADER = (
     "suite = 'bbob', funcId = 1, DIM = 2, Precision = 1.000e-08, algId = 'alg', "
     "coco_version = '2.6', logger = 'bbob', data_format = 'bbob-new2'"
@@ -312,6 +317,30 @@ def test_old_header_style(tmp_path):
     assert values["algorithm_info"] == "0001 ALPS"
     assert values["final_delta_f"] == "-1e-08"
     assert "coco_version" not in values
+
+
+def test_bbob_new_layout(tmp_path):
+    """COCO 2.2.1 (``bbob-new``): six fixed columns, then x1 ... xD."""
+    result = read_coco(ROOT / "golden" / "fixtures" / "coco_bbob_new", "n")
+    assert result.runs.height == 3
+    run = result.runs.filter(pl.col("source_run_index") == 0)["run_id"][0]
+    first = result.trace.filter(run_id=run).sort("row").row(0, named=True)
+    assert (first["evaluations"], first["g_evaluations"]) == (1, 0)
+    assert first["raw_y"] == 162.5314186
+    assert first["measured_f"] == 107.5914186
+    assert {"raw_y", "current_delta_f", "measured_f", "best_measured_f"} <= set(
+        result.trace.columns
+    )
+    assert result.positions.height == result.trace.height
+    result.write(tmp_path / "ds")
+    assert validate_dataset(tmp_path / "ds").ok
+
+
+def test_bbob_new_wrong_width(tmp_path):
+    dat = run_text(1.0, ["1 0 +1.0e+00 +1.0e+00 +1.0e+00"])
+    dat = dat.replace(NEW.format(fopt="1.000000000000e+00"), BBOB_NEW)
+    with pytest.raises(ReaderError, match="5 fields; .* has 6 or 8"):
+        read_coco(write_coco(tmp_path, {"dat": dat}), "w")
 
 
 def test_noisy_suite_inferred(tmp_path):

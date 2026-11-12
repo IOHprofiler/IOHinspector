@@ -56,6 +56,7 @@ CORPUS = {
     "ioh040_max": lambda tmp: _copy(GOLDEN / "ioh040_max", tmp),
     "coco": lambda tmp: _copy(TESTS / "test_coco_data", tmp),
     "coco_old": lambda tmp: _copy(GOLDEN / "coco_old", tmp),
+    "coco_bbob_new": lambda tmp: _copy(GOLDEN / "coco_bbob_new", tmp),
     "nevergrad": lambda tmp: _copy(TESTS / "io" / "data" / "nevergrad_sample.csv", tmp),
     "custom_csv": lambda tmp: _custom_csv(tmp / "custom"),
 }

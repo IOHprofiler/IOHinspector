@@ -22,14 +22,18 @@ In short:
   primary source file of a run.
 
 A data file holds the runs of one function and dimension one after the other.
-Each run starts with a header line; then come data lines of five columns, plus
-the position ``x1 ... xD`` when the logger wrote it::
+Each run starts with a header line; then come data lines of five columns (six
+with ``bbob-new``, below), plus the position ``x1 ... xD`` when the logger wrote
+it::
 
     % f evaluations | g evaluations | best noise-free fitness - Fopt (7.948e+01)
       + sum g_i+ | measured fitness | best measured fitness or single-digit
       g-values | x1 | x2...
 
-(one line; wrapped here). Loggers before COCO 2 write ``% function evaluation |
+(one line; wrapped here). COCO 2.2.1 (``data_format = 'bbob-new'``) writes
+``f evaluations | g evaluations | best noise-free fitness - Fopt | noise-free
+fitness - Fopt (F) | measured fitness | best measured fitness | x1 | x2...``; the
+header's fourth field decides. Loggers before COCO 2 write ``% function evaluation |
 noise-free fitness - Fopt (7.948e+01) | best noise-free fitness - Fopt |
 measured fitness | best measured fitness | x1 | x2...``. The Fopt in the header
 is the run's optimal value. Other ``%`` lines are comments, such as ``% restart:
@@ -80,8 +84,17 @@ PRECISION = {"notation": "scientific", "digits": 9}
 #: Header keys stored as runs columns rather than descriptors.
 RUN_HEADER_KEYS = ("funcId", "DIM", "algId", "suite", "folder")
 FINAL_KEY = "final_delta_f"
-#: Column names of the two header styles; ``raw_y`` is the best Δf.
+#: Column names of the header styles; ``raw_y`` is the best Δf. ``bbob-new``
+#: (COCO 2.2.1 ``data_format``) adds the current noise-free Δf after it.
 COLUMNS = {
+    "bbob-new": (
+        "evaluations",
+        "g_evaluations",
+        "raw_y",
+        "current_delta_f",
+        "measured_f",
+        "best_measured_f",
+    ),
     "new": ("evaluations", "g_evaluations", "raw_y", "measured_f", "best_measured_f"),
     "old": ("evaluations", "current_delta_f", "raw_y", "measured_f", "best_measured_f"),
 }
@@ -100,13 +113,15 @@ _SUMMARIES = {
 
 
 def header_style(line: str) -> str | None:
-    """``new`` or ``old`` for a column header line, None for other ``%`` lines."""
+    """``new``, ``bbob-new`` or ``old`` for a column header line, None for other
+    ``%`` lines. ``bbob-new`` names a second noise-free column after the best."""
     text = line.lstrip()
     if not text.startswith("%"):
         return None
     text = text[1:].strip().lower()
     if text.startswith("f evaluations"):
-        return "new"
+        parts = text.split("|")
+        return "bbob-new" if parts[3:4] and "noise-free" in parts[3] else "new"
     if text.startswith("function evaluation"):
         return "old"
     return None
@@ -158,17 +173,18 @@ def parse_coco_dat(
             raise ReaderError(
                 "the header style changes within the file", display, number
             )
-    bad = lines.frame.filter(~pl.col("width").is_in([5, 5 + dimension]))
+    style = styles[0] if styles else None
+    names = COLUMNS["old" if style == "old" else style or "new"]
+    fixed = len(names)
+    bad = lines.frame.filter(~pl.col("width").is_in([fixed, fixed + dimension]))
     if not bad.is_empty():
         raise ReaderError(
-            f"{bad['width'][0]} fields; a {dimension}-D data line has 5 or "
-            f"{5 + dimension}",
+            f"{bad['width'][0]} fields; a {dimension}-D data line has {fixed} or "
+            f"{fixed + dimension}",
             display,
             bad["line"][0],
         )
-    style = styles[0] if styles else None
     fopt = [_fopt(text, display, number) for number, text in lines.headers]
-    names = COLUMNS["old" if style == "old" else "new"]
     frame = _columns(lines, names, dimension, display)
     return CocoDat(display, kind, style, lines, fopt, frame)
 
@@ -183,11 +199,12 @@ def _columns(
             pl.Series(n, [], dtype=_dtype(n)) for n in names
         )
     ]
-    for width in (5, 5 + dimension) if dimension else (5,):
+    fixed = len(names)
+    for width in (fixed, fixed + dimension) if dimension else (fixed,):
         part = base.filter(pl.col("width") == width)
         if part.is_empty():
             continue
-        fields = [*names, *(f"x{i}" for i in range(width - 5))]
+        fields = [*names, *(f"x{i}" for i in range(width - fixed))]
         numbers = part["line"].to_list()
         typed = [
             (check_integers if name in INTEGER_COLUMNS else check_floats)(
