@@ -124,8 +124,9 @@ def test_trace_batches_split_runs(tmp_path, monkeypatch, name):
 
 def test_verify_memory_does_not_grow_with_the_data(tmp_path):
     """Eight times the rows, in files of the same size, cost ``verify`` little
-    more memory (I27). Before I27 they cost about 500 MB more; now about 100 MB,
-    which is the allocators warming up."""
+    more memory (I27). Before I27 they cost about 500 MB more; now 100 to 260 MB
+    (the allocators warming up, which varies with the platform), so the bound sits
+    halfway, at 375 MB."""
     pytest.importorskip("resource")
     ioh = pytest.importorskip("ioh")
     peak = (
@@ -154,7 +155,7 @@ def test_verify_memory_does_not_grow_with_the_data(tmp_path):
         child = subprocess.run(cmd, capture_output=True, check=True)  # nosec B603
         peaks.append(int(child.stdout))
     unit = 1 if sys.platform == "darwin" else 1024
-    assert (peaks[1] - peaks[0]) * unit < 250 * 2**20, peaks
+    assert (peaks[1] - peaks[0]) * unit < 375 * 2**20, peaks
 
 
 def test_every_reader_kind_has_a_scanner():
