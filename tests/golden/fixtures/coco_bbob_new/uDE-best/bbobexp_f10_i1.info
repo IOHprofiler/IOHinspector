@@ -1,0 +1,3 @@
+suite = 'bbob', funcId = 10, DIM = 2, Precision = 1.000e-008, algId = 'uDE-best', coco_version = '2.2.1', logger = 'bbob', data_format = 'bbob-new'
+% uDE-best: Differential Evolution with 'best' strategy, updated version of DE-best, as submitted by Vodopija, Tusar, and Filipic after BBOB-2018
+data_f10/bbobexp_f10_DIM2_i1.dat, 1:1105|6.5e-009, 2:1406|2.6e-009, 3:1378|8.5e-009

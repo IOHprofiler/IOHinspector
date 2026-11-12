@@ -40,6 +40,7 @@ Up to three data files share a stem, each with its own trigger:
 | Logger, years | `.info` header | Data header | Data files | Seen in |
 |---|---|---|---|---|
 | `bbob` 2009–2018 (C, Python, MATLAB) | `funcId`, `DIM`, `Precision`, `algId` | old: `% function evaluation \| noise-free fitness - Fopt (F) \| best noise-free fitness - Fopt \| measured fitness \| best measured fitness \| x1 \| x2...` | `.dat`, `.tdat`; `.rdat` from 2013, with `% restart` lines from 2015 | bbob 2009–2018, bbob-noisy 2009–2016, bbob/incomplete 2014 |
+| COCO 2.2.1 (`data_format = 'bbob-new'`) | as COCO 2 | bbob-new: `% f evaluations \| g evaluations \| best noise-free fitness - Fopt \| noise-free fitness - Fopt (F) \| measured fitness \| best measured fitness \| x1 \| x2...` (six fixed columns) | as COCO 2 | bbob 2018 (uDE-best) |
 | COCO 2 (`data_format = 'bbob-new2'`) 2019– | adds `suite`, `coco_version` (may be empty), `logger`, `data_format` | new: `% f evaluations \| g evaluations \| best noise-free fitness - Fopt (F) + sum g_i+ \| measured fitness \| best measured fitness or single-digit g-values \| x1 \| x2...` | `.dat`, `.tdat`, `.rdat` (often headers only); `.mdat` (bbob-largescale 2024), `.cdat` (bbob-boxed 2023) | bbob 2019–2023, bbob-largescale 2019–2024, bbob-boxed 2023–2024, bbob/incomplete 2019 |
 
 Quirks in the sample and the scan, each covered by a test:
@@ -70,7 +71,8 @@ Quirks in the sample and the scan, each covered by a test:
 | data column 1 | `trace.evaluations` |
 | data column 2 | `g_evaluations` (new header, int64) or `current_delta_f` (old header: the evaluation's noise-free Δf) |
 | data column 3 | `trace.raw_y`: the best noise-free Δf so far (plus the constraint sum, zero on these suites) |
-| data columns 4 and 5 | `measured_f`, `best_measured_f` (the measured value includes the noise on `bbob-noisy`) |
+| data column 4, `bbob-new` header only | `current_delta_f`: the evaluation's noise-free Δf, as in the old header |
+| data columns 4 and 5 (5 and 6 with `bbob-new`) | `measured_f`, `best_measured_f` (the measured value includes the noise on `bbob-noisy`) |
 | `x1 … xD` | `positions.parquet`, `x0 … x(D-1)`, for the rows that have them |
 
 `raw_y` holds Δf = f − Fopt, the value COCO's targets apply to (`docs/definitions/alignment.md`, AL-7) and the column cocopp and IOHanalyzer read. Raw f is `raw_y + optimum`; the logger wrote Δf with ten significant digits, which the measured value (`%+10.9e` of f itself) cannot give for small Δf. `best_y` is null: the `.info` value is rounded to two digits and, for old loggers, relative to the final target, so it is kept as the descriptor `final_delta_f` instead.
