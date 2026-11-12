@@ -6,6 +6,7 @@ import pytest
 from iohinspector import DataManager, align_data, plot_ecdf
 from iohinspector.convert import convert
 from iohinspector.io import ReaderError
+from tests.golden.load import fixture_path
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.realpath(os.path.join(BASE_DIR, "test_data"))
@@ -148,6 +149,15 @@ def test_align(manager):
     df = align_data(df, evals)
     assert set(df["evaluations"].unique()) == set(evals)
     assert df["run_id"].n_unique() * len(evals) == df.shape[0]
+
+
+def test_load_x_values_before_the_first_evaluation_is_null():
+    m = DataManager()
+    for name in ("ioh040_min", "ioh040_max"):  # both directions (AL-5)
+        m.add_folder(fixture_path(name))
+    df = m.load(x_values=[0, 1])
+    assert df.filter(evaluations=0)["raw_y"].null_count() == m.n_runs
+    assert df.filter(evaluations=1)["raw_y"].null_count() == 0
 
 
 def test_plot_ecdf(manager):

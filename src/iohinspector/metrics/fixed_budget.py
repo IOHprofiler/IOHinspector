@@ -31,7 +31,9 @@ def aggregate_convergence(
 
     Returns:
         pl.DataFrame: A DataFrame with aggregated performance statistics (mean, min,
-            max, median, std, geometric_mean).
+            max, median, std, geometric_mean) over the runs that have a value at the
+            budget, ``n_runs`` and ``n_defined`` (the runs that have a value; a run has
+            none before its first logged evaluation, AL-5).
     """
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
@@ -58,6 +60,8 @@ def aggregate_convergence(
         pl.median(fval_var).alias("median"),
         pl.std(fval_var).alias("std"),
         pl.col(fval_var).log().mean().exp().alias("geometric_mean"),
+        pl.len().alias("n_runs"),
+        pl.col(fval_var).count().alias("n_defined"),
     ]
 
     if custom_op is not None:

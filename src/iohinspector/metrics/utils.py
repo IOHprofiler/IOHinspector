@@ -183,7 +183,8 @@ def transform_fval(
         fval_var (str, optional): Which column contains the function values to transform. Defaults to "raw_y".
 
     Returns:
-        pl.DataFrame: The original dataframe with normalized function values in a new 'eaf' column.
+        pl.DataFrame: The original dataframe with normalized function values in a new
+            'eaf' column. A run with no value yet (null, AL-5) has reached nothing: 0.
     """
     bounds = {fval_var: (lb, ub)}
     res = normalize_objectives(
@@ -194,4 +195,4 @@ def transform_fval(
         maximize=maximization,
         prefix="eaf",
     )
-    return res
+    return res.with_columns(pl.col("eaf").fill_null(0.0))
