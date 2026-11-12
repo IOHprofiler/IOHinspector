@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from iohinspector.metrics.ecdf import get_data_ecdf, get_ecdf
+from iohinspector.metrics.ecdf import get_data_ecdf, get_ecdf, get_ecdf_auc
 from iohinspector.targets import get_ecdf_targets
 
 # A simple synthetic dataset
@@ -246,3 +246,43 @@ def test_continuum_ecdf_quality(maximization):
     one = targets.head(1).with_columns(target=pl.lit(10.0))
     result = get_ecdf(df, one, continuous=True, maximization=maximization)
     assert result.rows() == [("A", 0.0, 0.0), ("A", 10.0, 1.0)]
+
+
+# AUC (EC-4) and AOCC (EC-5)
+
+
+def test_auc_is_the_exact_normalised_area():
+    # ECDF 0.1 on [1, 10), 22/30 on [10, 100]
+    auc = get_ecdf_auc(THREE)["auc"].item()
+    assert auc == pytest.approx((0.1 * 9 + 22 / 30 * 90) / 99, 1e-12)
+    auc = get_ecdf_auc(THREE, b_lo=5, b_hi=1000)["auc"].item()
+    assert auc == pytest.approx((0.1 * 5 + 22 / 30 * 990) / 995, 1e-12)
+    log = get_ecdf_auc(THREE, scale_eval_log=True)["auc"].item()
+    assert log == pytest.approx((0.1 + 22 / 30) / 2, 1e-12)
+    over = get_ecdf_auc(THREE, divide_by_dimension=True)["auc"].item()
+    assert over == pytest.approx((0.1 * 4 + 22 / 30 * 45) / 49, 1e-12)
+    with pytest.raises(ValueError, match="empty"):
+        get_ecdf_auc(THREE, b_lo=100, b_hi=10)
+    with pytest.raises(ValueError, match="positive"):
+        get_ecdf_auc(THREE, b_lo=0, scale_eval_log=True)
+
+
+def test_aocc_is_the_mean_area_under_the_quality():
+    # q: run 1 0.5, run 2 0.75, run 3 1 from evaluation 10 on (bounds 1e-4, 1e4)
+    aocc = get_ecdf_auc(THREE, continuous=True)["auc"].item()
+    assert aocc == pytest.approx(0.75 * 90 / 99, 1e-12)
+    log = get_ecdf_auc(THREE, continuous=True, scale_eval_log=True)
+    assert log["auc"].item() == pytest.approx(0.375, 1e-12)
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_aocc_is_the_limit_of_the_target_auc(maximization):
+    # EC-5 equivalence: the AUC over m log-spaced targets tends to the AOCC
+    rng = np.random.default_rng(1)
+    df = _runs((10 ** rng.uniform(-6, 3, (8, 30))).tolist(), range(1, 31))
+    options = {"scale_eval_log": True, "maximization": maximization}
+    aocc = get_ecdf_auc(df, continuous=True, **options)["auc"].item()
+    for m in (10, 1001):  # each run's fraction of targets is within 1/m of q
+        targets = get_ecdf_targets(df, n=m)
+        auc = get_ecdf_auc(df, targets, **options)["auc"].item()
+        assert abs(auc - aocc) < 1 / m

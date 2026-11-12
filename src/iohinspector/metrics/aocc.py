@@ -52,6 +52,10 @@ def get_aocc(
 ) -> pl.DataFrame:
     """Calculate Area Over Convergence Curve (AOCC) metric for algorithm performance evaluation.
 
+    Legacy (0.0.8): the area under ``fval_var`` as given, over [0, eval_max]. The
+    AOCC of ``docs/definitions/ecdf.md`` (EC-5: best-so-far values, bounds fixed per
+    pair) is ``get_ecdf_auc(data, ..., continuous=True)``.
+
     Args:
         data (pl.DataFrame): The data object containing performance evaluation data.
         eval_max (int): Maximum value of evaluations to use for AOCC calculation.

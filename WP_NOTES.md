@@ -7,10 +7,11 @@ Status: in progress
   at `x_values`), continuum ECDF (`continuous=True`, EC-5/EC-6), aggregation
   over pairs (EC-2, `pairs="common"|"all"`, warns). Also `get_ecdf_auc` and
   `get_rank_table` are written (tests in steps 2 and 3).
+- step 2/4: tests of `get_ecdf_auc` (EC-4), AOCC (`continuous=True`, EC-5) and
+  the equivalence (target AUC within 1/m of the AOCC); legacy note on `get_aocc`.
 
 ## Next step
-Step 2: tests of `get_ecdf_auc` (EC-4) and AOCC (`continuous=True`, EC-5),
-with the numerical equivalence test.
+Step 3: tests of `get_rank_table` (EC-8), including the golden `Aggr_*` ranks.
 
 ## Decisions
 - Venv: `uv venv .venv --python 3.14 && uv pip install -e ".[dev]"` (polars 2.1).
