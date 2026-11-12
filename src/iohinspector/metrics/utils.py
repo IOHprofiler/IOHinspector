@@ -1,6 +1,6 @@
 import string
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Iterable, Optional, Union, Dict
 
 import numpy as np
@@ -16,6 +16,26 @@ from ..targets import seq_rt, spaced
 #: The probabilities of the quantile columns ``q2`` ... ``q98``, in percent: the
 #: nine of IOHanalyzer (``docs/definitions/runtime.md`` RT-5, ``fixed-budget.md`` FB-2).
 QUANTILES = (2, 5, 10, 25, 50, 75, 90, 95, 98)
+
+
+def describe(v: pl.Expr) -> list[pl.Expr]:
+    """``n_runs``, ``n_defined`` (non-null), ``mean``, ``median``, ``sd`` and the
+    type 7 quantiles ``q2`` ... ``q98`` of ``v`` per group (FB-2, PA-2)."""
+    return [
+        pl.len().alias("n_runs"),
+        v.count().alias("n_defined"),
+        v.mean().alias("mean"),
+        v.median().alias("median"),
+        v.std().alias("sd"),
+        *(v.quantile(pct / 100, "linear").alias(f"q{pct}") for pct in QUANTILES),
+    ]
+
+
+def custom(op: Callable[[pl.Series], float], v: pl.Expr) -> pl.Expr:
+    """The statistic ``op`` of ``v`` per group, named after ``op``."""
+    return v.map_batches(op, return_dtype=pl.Float64, returns_scalar=True).alias(
+        op.__name__
+    )
 
 
 def runs_of(

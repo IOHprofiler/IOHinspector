@@ -15,7 +15,7 @@ from iohinspector.metrics import (
     get_parameter_sample,
     get_parameter_summary,
 )
-from iohinspector.metrics.parameters import QUANTILES
+from iohinspector.metrics.utils import QUANTILES
 from tests.golden.load import fixture_path, golden, logged
 
 # Run 1 logs evaluation 3 twice; its parameter p is not monotone. Run 2 starts at 2,

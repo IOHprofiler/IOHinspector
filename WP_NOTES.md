@@ -11,10 +11,14 @@ Status: in progress
   (is_first_distinct) instead of a two-key sort; that fixed the carried columns on
   ties (test) and replaces parameters' own copy. get_runtime_sample and
   get_value_sample are lookups of get_parameter_sample, with only their columns.
+- step 5: `describe` (n_runs, n_defined, mean, median, sd, type 7 quantiles) and
+  `custom` (custom_op column) in metrics/utils, used by aggregate_convergence,
+  get_parameter_summary and aggregate_running_time; the runtime summary computes
+  mean, median and null quantiles in the aggregation (no post-processing).
+  bench_ert full size: 5.1-5.4 s before and after (noise).
 
 ## Next step
-Step 5: one type-7 summary for aggregate_convergence and get_parameter_summary,
-one custom_op column; simpler aggregate_running_time post-processing.
+Step 6: API review: keyword-only options of the functions new since 0.1.0.
 
 ## Plan
 1. align_data eval_var bug (done)

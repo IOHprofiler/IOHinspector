@@ -12,7 +12,7 @@ import polars as pl
 
 from ..align import align_data
 from ..targets import seq_fv, seq_rt
-from .utils import QUANTILES
+from .utils import describe
 
 
 def get_parameter_sample(  # pylint: disable=too-many-arguments
@@ -110,19 +110,8 @@ def get_parameter_summary(  # pylint: disable=too-many-arguments
         index=list(dict.fromkeys(["run_id", *keys])),
         variable_name="parameter",
     )
-    v = pl.col("value")
-    return (
-        long.group_by(*keys, "parameter")
-        .agg(
-            pl.len().alias("n_runs"),
-            v.count().alias("n_defined"),
-            v.mean().alias("mean"),
-            v.median().alias("median"),
-            v.std().alias("sd"),
-            *(v.quantile(pct / 100, "linear").alias(f"q{pct}") for pct in QUANTILES),
-        )
-        .sort(*keys, "parameter")
-    )
+    summaries = long.group_by(*keys, "parameter").agg(describe(pl.col("value")))
+    return summaries.sort(*keys, "parameter")
 
 
 def get_logged_rows(
