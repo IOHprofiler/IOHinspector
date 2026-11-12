@@ -22,9 +22,13 @@ Status: in progress
   `get_logged_rows` (eval_var). Histogram and violin `n` is `n_defined` (as the
   summaries). Tests: maximisation mirrors minimisation (fixed budget, restarts,
   overview); quantiles null without success when include_unfinished=False.
+- step 7: align_data matched runs with join_asof `by=group_cols`, which matches no
+  null: a run with a missing `by` descriptor never reached anything (ECDF, samples,
+  get_data_ecdf, trajectory). Now one key per run (row index of the runs, joined
+  with nulls_equal). Tests, CHANGELOG. bench_ert unchanged (noise 5-7 s here).
 
 ## Next step
-Step 7: final review pass (lint, pyright, polars 1), line counts, notes.
+Step 8: final review pass (lint, pyright, polars 1), line counts, notes.
 
 ## Plan
 1. align_data eval_var bug (done)

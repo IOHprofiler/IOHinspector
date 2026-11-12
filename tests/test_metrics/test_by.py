@@ -73,6 +73,17 @@ def test_no_by_is_one_group(manager, metric):
     assert_frame_equal(metric(df, by=[]), one, check_row_order=False)
 
 
+@pytest.mark.parametrize("metric", METRICS, ids=lambda f: f.__name__)
+def test_a_missing_descriptor_is_a_group_like_any_other(manager, metric):
+    # random search has no variant: its runs are the group null, with their values
+    df = manager.load(include_columns=["variant", "function_id", "dimension"])
+    filled = df.with_columns(pl.col("variant").fill_null("none"))
+    expected = metric(filled, by=["variant"])
+    expected = expected.with_columns(pl.col("variant").replace("none", None))
+    result = metric(df, by=["variant"])
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
 def test_group_label():
     df = pl.DataFrame({"algorithm_name": ["es", "rs"], "sigma0": [0.1, None]})
     by = ["algorithm_name", "sigma0"]

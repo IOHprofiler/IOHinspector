@@ -9,6 +9,7 @@ from ._upgrade import removed_names, upgrade_hints
 
 __all__ = ["align_data"]
 __getattr__ = removed_names(__name__)
+RUN = "_run"
 
 
 @upgrade_hints
@@ -68,17 +69,22 @@ def align_data(  # pylint: disable=too-many-arguments
         df = df.drop("evals_used")
     else:
         runs = df.select(group_cols).unique()
+    runs = runs.with_row_index(RUN)  # a key per run: join_asof matches no null
+    keys = runs.select(*group_cols, RUN)
+    df = df.join(keys, on=group_cols, nulls_equal=True, maintain_order="left")
     x = pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]})
     grid = runs.join(x.unique(maintain_order=True), how="cross")
     if not budget:  # the first row with each best-so-far value reaches it (AL-3)
-        df = df.filter(pl.col(fval).is_first_distinct().over(group_cols))
+        df = df.filter(pl.col(fval).is_first_distinct().over(RUN))
+    df = df.drop(group_cols).sort(x_col, maintain_order=True)  # budget: last of ties
     result = grid.sort(x_col).join_asof(
-        df.sort(x_col, maintain_order=True),  # budget: on a tie, the last row
+        df,
         on=x_col,
-        by=group_cols,
+        by=RUN,
         strategy="forward" if maximization and not budget else "backward",
         check_sortedness=False,
     )
+    result = result.drop(RUN)
     if not budget:
         result = result.with_columns(pl.col(y_col).fill_null(np.inf))
     if stopped:

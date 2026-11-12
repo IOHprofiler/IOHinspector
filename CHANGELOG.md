@@ -74,6 +74,11 @@
   `align_data` uses each value once.
 - `by=[]` (one group of all runs) failed in `get_overview`, `get_ecdf` and
   `get_ecdf_auc`.
+- A run whose `by` value is missing (a descriptor that some runs do not have, such
+  as a parameter of only some algorithms) was not aligned: `get_ecdf`,
+  `get_ecdf_auc`, the runtime, value and parameter samples, `get_data_ecdf` and
+  `get_trajectory` treated it as never reaching a target and having no value.
+  `align_data` now matches runs whose `group_cols` hold nulls.
 - `align_data` at a target: the other columns of a row (such as a parameter) came
   from the last of the rows with the same evaluation count and best-so-far value,
   not from the first row that reached the target (AL-3).

@@ -221,6 +221,18 @@ def test_group_columns():
     ]  # fmt: skip
 
 
+@pytest.mark.parametrize("x_col", ["evaluations", "raw_y"])
+def test_group_columns_with_null(x_col):
+    # join_asof matches no null key: a run whose group column is null still aligns
+    df = TWO_RUNS.with_columns(sigma=pl.Series([0.1] * 3 + [None] * 3))
+    y_col = "raw_y" if x_col == "evaluations" else "evaluations"
+    x = [5] if x_col == "evaluations" else [18.0]
+    result = align_data(df, x, group_cols=["run_id", "sigma"], x_col=x_col, y_col=y_col)
+    assert result.sort("run_id")[y_col].to_list() == (
+        [6, 16] if y_col == "raw_y" else [1, 4]
+    )
+
+
 def test_turbo_align_is_gone():
     with pytest.raises(ImportError, match="use align_data"):
         _ = iohinspector.align.turbo_align
