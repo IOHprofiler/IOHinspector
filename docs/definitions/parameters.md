@@ -215,6 +215,40 @@ Remaining points for H1: the default feasibility rule v ≠ 0 and the size |v|^p
 negative violations; the review asked only that negative values be supported.
 Whether load-type violations need a different default is for the user to see.
 
+## Implementation (I14)
+
+`iohinspector.metrics`, in `metrics/parameters.py`. Every function takes all
+logged rows (`DataManager.load(monotonic=False)`), not a best-so-far load.
+
+- `get_parameter_sample(data, parameters, x_values, by, target=False)`: PA-1,
+  one row per run and budget, or per run and target with `target=True`. Both
+  are `align_data` lookups on the logged rows. By budget the as-of join takes
+  the last row at or before b (on equal evaluations, the last in source order).
+  By target the rows are first cut to those where the best-so-far value
+  changes, so the join finds the first row that reaches t. A run that never
+  reaches t gets null.
+- `get_parameter_summary(...)`: PA-2, per group of `by`, budget or target and
+  `parameter`: `n_runs`, `n_defined`, `mean`, `median`, `sd`, `q2` … `q98`.
+- `get_logged_rows(data, columns, by)`: PA-3 and positions. It returns the rows
+  where every named column has a value, unaligned. The default columns are the
+  positions `x0` … (`positions.parquet`, joined by `load`).
+- `apply_penalty(data, method, *, factor, exponent, feasible, maximization)`: PA-4
+  and PA-6. It replaces f by g(f, v). `method` is `ignore`, `relative`,
+  `absolute` or `value`. `feasible` is `"zero"` (default), `"nonpositive"` or a
+  function of the violation expression, for load-type thresholds. Metrics then
+  compute best-so-far values from the penalised rows.
+
+Golden tests (`tests/test_metrics/test_parameters.py`) match IOHanalyzer
+exactly where the definitions agree:
+
+- samples and summaries by budget and by target on the legacy `extdata`
+  fixture;
+- summaries by budget on `ioh040_cons`, which logs every evaluation;
+- samples by budget on the JSON fixtures, where the run logged b. Elsewhere
+  IOHanalyzer's value is the run's next logged row, the documented difference;
+- positions (less IOHanalyzer's dropped last row), correlation rows, and the
+  penalised best-so-far values.
+
 ## Test tolerance
 
 Looked-up values are stored values and must match exactly. Summaries must

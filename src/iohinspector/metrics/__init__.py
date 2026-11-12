@@ -29,6 +29,12 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
+from .parameters import (
+    apply_penalty,
+    get_logged_rows,
+    get_parameter_sample,
+    get_parameter_summary,
+)
 
 __all__ = [
     "add_normalized_objectives",
@@ -58,4 +64,8 @@ __all__ = [
     "group_label",
     "normalize_objectives",
     "transform_fval",
+    "apply_penalty",
+    "get_logged_rows",
+    "get_parameter_sample",
+    "get_parameter_summary",
 ]

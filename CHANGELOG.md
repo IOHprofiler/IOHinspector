@@ -4,6 +4,12 @@
 
 ### New
 
+- Parameters, positions and constraint penalties (`docs/definitions/parameters.md`):
+  `metrics.get_parameter_sample` and `get_parameter_summary` give parameter
+  values at budgets (the last row at or before b) or targets (the first row that
+  reaches t). `get_logged_rows` gives the raw rows for correlations and positions.
+  `apply_penalty` penalises infeasible rows before best-so-far: v != 0 by default,
+  negative violations included, and a penalty always makes a value worse.
 - `iohinspector.targets` (`docs/definitions/targets.md`): `seq_fv` and `seq_rt`
   (target and budget grids), `get_ecdf_targets` (per function and dimension:
   `log-linear`, `linear` or the 51 COCO `bbob` targets) and `get_target_dt` (one

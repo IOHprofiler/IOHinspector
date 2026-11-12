@@ -12,6 +12,7 @@ This document provides a comprehensive reference of all functions available in t
   - [Fixed Budget](#fixed-budget)
   - [Fixed Target](#fixed-target)
   - [Multi-Objective](#multi-objective)
+  - [Parameters, positions and penalties](#parameters-positions-and-penalties)
   - [Ranking](#ranking)
   - [Single Run](#single-run)
   - [Trajectory](#trajectory)
@@ -251,6 +252,26 @@ Calculate multi-objective quality indicator values over evaluation time.
 
 **Returns:**
 - `pl.DataFrame`: DataFrame with indicator values calculated at different evaluation points.
+
+---
+
+### Parameters, positions and penalties
+
+Definitions: `docs/definitions/parameters.md` (PA-1 to PA-6). These functions take every logged row: `DataManager.load(monotonic=False)`.
+
+#### `get_parameter_sample(data, parameters, x_values=None, by=["algorithm_name"], *, target=False, eval_var="evaluations", fval_var="raw_y", maximization=False)`
+Each run's parameter values at budgets (the last logged row at or before b, carried forward; null before the first row) or, with `target=True`, at targets (the first row that reaches t; null if never). `x_values` defaults to 50 log-spaced budgets or targets.
+
+**Returns:** `pl.DataFrame` with `run_id`, `by`, the budget (`eval_var`) or target (`fval_var`) and the `parameters`.
+
+#### `get_parameter_summary(data, parameters, x_values=None, by=["algorithm_name"], *, target=False, ...)`
+Per group, budget or target and `parameter`: `n_runs`, `n_defined`, `mean`, `median`, `sd` and the type 7 quantiles `q2` ... `q98`, over the runs with a value.
+
+#### `get_logged_rows(data, columns=None, by=["algorithm_name"], eval_var="evaluations")`
+The raw rows where every one of `columns` has a value: two columns for a correlation scatter (no coefficient), or by default the positions `x0` ... of each run.
+
+#### `apply_penalty(data, method="relative", *, factor=1.0, exponent=1.0, feasible="zero", maximization=False, violation="violation", fval_var="raw_y")`
+Replaces each function value of an infeasible row by its penalised value: `relative` f + c·|v|^p, `absolute` f + c, `value` c, or `ignore`. A penalty always makes a value worse (subtracted when maximising). `feasible` is `"zero"` (v = 0 is feasible), `"nonpositive"` or a function of the violation expression. Metrics on the result compute best-so-far values from the penalised rows.
 
 ---
 
