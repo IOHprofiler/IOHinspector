@@ -3,7 +3,8 @@
 Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Fixed-budget summary, overviews".
-Implemented in: I11.
+Implemented in: I11 (`iohinspector.metrics.aggregate_convergence` and
+`get_overview`).
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
 
 The fixed-budget view asks which function value a run set has reached after b
