@@ -1,6 +1,6 @@
 # WP I10: Alignment and target grids
 Branch: wp/I10-alignment
-Status: in progress
+Status: blocked on AL-9 (steps 1-5 committed)
 
 Definitions: `docs/definitions/alignment.md` (AL-*), `targets.md` (TG-*),
 `fixed-budget.md` (FB-*), `ecdf.md` (EC-*).
