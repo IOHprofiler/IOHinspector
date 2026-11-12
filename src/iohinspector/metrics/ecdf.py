@@ -28,7 +28,8 @@ def _weights(data: pl.DataFrame, by: list[str], pair: list[str], pairs: str):
         if missing.height:
             _warn_pairs(missing.sort(missing.columns), len(groups), pair, pairs)
         if missing.height and pairs == "common":
-            data = data.join(missing.select(pair).unique(), on=pair, how="anti")
+            drop = missing.select(pair).unique()
+            data = data.join(drop, on=pair, how="anti", maintain_order="left")
             if data.is_empty():
                 raise ValueError("the groups of by share no pair; use pairs='all'")
     n_runs = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *pair])))
@@ -49,7 +50,7 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> N
         f"the groups of by do not have the same {tuple(pair)} pairs: {action}. "
         + "; ".join(rows[:10])
         + more,
-        stacklevel=5,
+        stacklevel=6,
     )
 
 
@@ -92,7 +93,7 @@ def _quality(data, targets, pair, maximization, scale_f_log, fval_var):
     )
     previous = pl.col("q").shift(1, fill_value=0).over("run_id")
     return (
-        data.join(bounds, on=pair)
+        data.join(bounds, on=pair, maintain_order="left")  # rows in run order
         .with_columns(best=best.over("run_id"))
         .with_columns(q=q)
         .with_columns(dy=pl.col("q") - previous)
@@ -121,7 +122,8 @@ def _increments(  # pylint: disable=too-many-arguments
         kind = "log-linear" if scale_f_log else "linear"
         targets = get_ecdf_targets(data, kind, fval_var=fval_var, pair=pair)
     targets = targets.cast({c: data.schema[c] for c in pair})
-    data = data.join(targets.select(pair).unique(), on=pair, how="semi")
+    used = targets.select(pair).unique()
+    data = data.join(used, on=pair, how="semi", maintain_order="left")
     data = _weights(data, by, pair, pairs)
     if continuous:
         steps = _quality(data, targets, pair, maximization, scale_f_log, fval_var)

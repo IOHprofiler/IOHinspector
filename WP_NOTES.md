@@ -38,6 +38,8 @@ None: ready for the controller (push, PR, dvermetten review).
 - `get_data_ecdf` and `get_aocc` stay unchanged (legacy, docstring says so); no
   DeprecationWarning yet, because `plot_ecdf` still uses `get_data_ecdf` until
   the figures move (I19/I20).
+- Joins on the trace keep the left row order (`maintain_order="left"`), because
+  best-so-far (here and in `align_data`) is a cumulative min in row order.
 - `get_rank_table` ranks a given summary table; it does not compute ERT or the
   fixed-budget mean (I11's code, not merged). The website joins I11's ERT at
   `get_target_dt`'s targets with it.
