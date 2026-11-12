@@ -2,7 +2,21 @@
 
 ## Unreleased
 
+### New
+
+- `iohinspector.targets` (`docs/definitions/targets.md`): `seq_fv` and `seq_rt`
+  (target and budget grids), `get_ecdf_targets` (per function and dimension:
+  `log-linear`, `linear` or the 51 COCO `bbob` targets) and `get_target_dt` (one
+  default target or budget per pair, with an explicit `perspective`).
+
 ### Fixed
+
+- Budget grids (`get_sequence(..., cast_to_int=True)` and the default grids of
+  `aggregate_convergence`, `get_data_ecdf` and the EAF) are rounded, not truncated:
+  a grid up to 100 ended at 99 (TG-5).
+- Log-spaced default targets (`aggregate_running_time`) start at the smallest
+  positive value when the data reaches 0 or less, instead of failing an assertion
+  (TG-3). `get_sequence` raises `ValueError` for a log range with a bound <= 0.
 
 - Alignment: before a run's first logged evaluation its value is null, not `inf`
   (`docs/definitions/alignment.md`, AL-5). Under maximisation `inf` counted as the best

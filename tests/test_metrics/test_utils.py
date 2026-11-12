@@ -68,7 +68,7 @@ def test_len_one():
 
 
 def test_log_min_zero_raises():
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError, match="positive"):
         get_sequence(0, 10, 5, scale_log=True)
 
 
@@ -96,9 +96,10 @@ def test_log_scale_non_integer_len():
     np.testing.assert_allclose(seq, expected, rtol=1e-6)
 
 
-def test_cast_to_int_with_duplicates():
+def test_cast_to_int_rounds_with_duplicates():
+    # TG-5: rounded, not truncated, so the upper end 0.9 is the budget 1
     seq = get_sequence(0, 0.9, 10, scale_log=False, cast_to_int=True)
-    np.testing.assert_array_equal(seq, np.array([0]))
+    np.testing.assert_array_equal(seq, np.array([0, 1]))
 
 
 def test_basic_normalization():

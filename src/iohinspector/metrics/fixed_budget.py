@@ -1,8 +1,8 @@
 import polars as pl
 from typing import Callable, Sequence
-from .utils import get_sequence
 from .._upgrade import upgrade_hints
 from ..align import align_data
+from ..targets import seq_rt
 
 
 @upgrade_hints
@@ -38,12 +38,7 @@ def aggregate_convergence(
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
 
-    # Getting alligned data (to check if e.g. limits should be args for this function)
-    if eval_min is None:
-        eval_min = data[eval_var].min()
-    if eval_max is None:
-        eval_max = data[eval_var].max()
-    x_values = get_sequence(eval_min, eval_max, 50, scale_log=True, cast_to_int=True)
+    x_values = seq_rt(data[eval_var], 50, True, eval_min, eval_max)
     group_variables = [*by, eval_var]
     data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),

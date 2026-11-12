@@ -115,17 +115,13 @@ def test_manager_loads_f_zero(ioh_logs):
     assert zeros["evaluations"].to_list() == [2, 4, 2, 4]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="metrics.utils.get_sequence asserts min > 0 under log scale; "
-    "target grids are I10 (docs/definitions/targets.md, TG-3)",
-)
 def test_runtime_summary_on_f_zero(ioh_logs):
     from iohinspector.metrics import aggregate_running_time
 
+    # TG-3: log-spaced targets start at the smallest positive value, not at 0
     df = load(ioh_logs / "f_zero", monotonic=True, include_meta_data=True)
-    aggregate_running_time(df)
+    targets = aggregate_running_time(df, by=[])["raw_y"]
+    assert targets.min() == df.filter(pl.col("raw_y") > 0)["raw_y"].min()
 
 
 # --- Run attributes and maximisation are not fully read --------------------------

@@ -16,15 +16,26 @@ Definitions: `docs/definitions/alignment.md` (AL-*), `targets.md` (TG-*),
   CHANGELOG: "Unreleased" fix entry replaces the 0.1.0 known issue.
 - step 1: tests for the fixed-target rules (AL-1 inclusive, AL-3 first of
   ties, AL-6 raw input, both directions). `align_data` already met them.
+- step 3: `iohinspector.targets`: `spaced`, `seq_fv` (TG-1, TG-3), `seq_rt`
+  (TG-5), `bbob_targets`, `get_ecdf_targets` (per pair, TG-2), `get_target_dt`
+  (`perspective`, TG-4, TG-6). `get_sequence` and the metric default grids
+  (fixed target, fixed budget, ECDF, EAF) now use them: one generator.
+  Golden tests in `tests/test_targets.py` against `targets_*`, `budgets_*`,
+  `target_dt_*`; the f = 0 xfail in `tests/io/test_ioh_defects.py` passes.
 
 ## Next step
-Step 3: `iohinspector.targets` (TG-1..TG-6): `seq_FV`, `seq_RT`,
-`get_ECDF_targets`, `get_target_dt` and the bbob grid, with golden tests
-against `targets_*`, `budgets_*` and `target_dt_*`.
+Step 4: golden tests of `align_data` against `RT_sample` and `FV_sample`
+(`tests/golden/iohanalyzer/ioh040_{min,max}`), mapping IOHanalyzer's `run`
+to `source_run_index`.
 
 ## Decisions
 - `n_runs`/`n_defined` names follow fixed-budget.md; I11 adds the rest of the
   FB summary (`n_active`, quantiles).
+- Metric default grids stay over the whole frame, as before; per-pair grids in
+  the metrics are I11/I12 (the generators are per pair already).
+- Golden target tolerances: linear and log-linear rtol 1e-15 (IOHanalyzer reads
+  values back from text row names, 1 ulp off), bbob 4e-15 (built from exact
+  decades, IOHanalyzer goes through log10).
 
 ## Open questions / Blocked
 - AL-9 (keep every run's final evaluation, `is_final`) is not specified enough

@@ -1,8 +1,8 @@
 import polars as pl
 from typing import Callable, Sequence
-from .utils import get_sequence
 from .._upgrade import upgrade_hints
 from ..align import align_data
+from ..targets import seq_fv
 
 
 @upgrade_hints
@@ -26,7 +26,8 @@ def aggregate_running_time(
         fval_var (str, optional): Which column contains the function values. Defaults to "raw_y".
         by (Sequence[str], optional): The columns to group by: runs columns or
             descriptors. Defaults to ["algorithm_name"].
-        f_min (float, optional): Minimum function value to use. If None, uses minimum from data. Defaults to None.
+        f_min (float, optional): Minimum function value to use. If None, uses minimum
+            from data; under log scale the smallest positive value (TG-3).
         f_max (float, optional): Maximum function value to use. If None, uses maximum from data. Defaults to None.
         scale_f_log (bool, optional): Whether to use logarithmic scaling for function values. Defaults to True.
         eval_max (int, optional): Maximum evaluation value to consider. If None, uses maximum from data. Defaults to None.
@@ -38,12 +39,7 @@ def aggregate_running_time(
             max, median, std, success_ratio, ERT, PAR-10).
     """
 
-    # Getting alligned data (to check if e.g. limits should be args for this function)
-    if f_min is None:
-        f_min = data[fval_var].min()
-    if f_max is None:
-        f_max = data[fval_var].max()
-    f_values = get_sequence(f_min, f_max, 50, scale_log=scale_f_log)
+    f_values = seq_fv(data[fval_var], 50, scale_f_log, f_min, f_max)
     group_variables = [*by, fval_var]
     data_aligned = align_data(
         data,
