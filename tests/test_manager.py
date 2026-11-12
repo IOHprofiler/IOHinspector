@@ -1,6 +1,7 @@
 import os
 import warnings
 
+import polars as pl
 import pytest
 
 from iohinspector import DataManager, align_data, plot_ecdf
@@ -104,10 +105,10 @@ def test_select(manager):
     # final row of each of the 15 runs (defect fixed in WP I05).
     for monotonic in (False, True):
         df = selection.load(monotonic=monotonic)
-        assert df.shape == (84, 3)
+        assert df.shape == (84, 3 + monotonic)  # monotonic: is_final
         assert df["run_id"].n_unique() == 15
     df = selection.load(monotonic=True, include_meta_data=True)
-    assert df.shape == (84, manager.overview.width + 2)
+    assert df.shape == (84, manager.overview.width + 3)
 
     nothing = manager.select(function_ids=[0])
     assert not nothing.any
@@ -135,7 +136,7 @@ def test_select_run_ids(manager):
 
 def test_load_columns(manager):
     df = manager.select(function_ids=[1]).load(include_columns=["function_id"])
-    assert df.columns == ["run_id", "function_id", "evaluations", "raw_y"]
+    assert df.columns == ["run_id", "function_id", "evaluations", "raw_y", "is_final"]
     assert manager.load(x_values=[1])["evaluations"].unique().to_list() == [1]
     assert len(DataManager().load()) == 0
 
@@ -151,13 +152,37 @@ def test_align(manager):
     assert df["run_id"].n_unique() * len(evals) == df.shape[0]
 
 
-def test_load_x_values_before_the_first_evaluation_is_null():
+@pytest.fixture(scope="module")
+def both_directions():
     m = DataManager()
-    for name in ("ioh040_min", "ioh040_max"):  # both directions (AL-5)
+    for name in ("ioh040_min", "ioh040_max"):
         m.add_folder(fixture_path(name))
+    return m
+
+
+def test_load_x_values_before_the_first_evaluation_is_null(both_directions):
+    m = both_directions  # AL-5
     df = m.load(x_values=[0, 1])
     assert df.filter(evaluations=0)["raw_y"].null_count() == m.n_runs
     assert df.filter(evaluations=1)["raw_y"].null_count() == 0
+
+
+def test_load_marks_the_last_logged_row_and_stopped_runs(both_directions):
+    # AL-9: is_final on each run's last logged row only; stopped where b > B_i
+    m = both_directions
+    runs = m.overview.select("run_id", "evals_used", "maximization")
+    df = m.load().join(runs, on="run_id")
+    final = df.filter("is_final")
+    assert final.height == m.n_runs == final["run_id"].n_unique()
+    last = df.group_by("run_id").agg(pl.col("evaluations").max())
+    assert final.join(last, on=["run_id", "evaluations"]).height == m.n_runs
+    assert set(final["maximization"]) == {False, True}
+    b = int(runs["evals_used"].min())
+    df = m.load(x_values=[b, b + 1]).join(runs, on="run_id")
+    assert "is_final" not in df.columns and df.height == 2 * m.n_runs
+    expected = pl.col("evaluations") > pl.col("evals_used")
+    assert df["stopped"].to_list() == df.select(expected).to_series().to_list()
+    assert df.filter(evaluations=b + 1)["stopped"].any()
 
 
 def test_plot_ecdf(manager):

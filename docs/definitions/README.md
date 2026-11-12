@@ -77,7 +77,7 @@ golden tests name the decision there.
 | AL-6 | Best-so-far always computed from raw rows | no |
 | AL-7 | COCO targets apply to Δf = f − f_opt | no |
 | AL-8 | No tolerance on the hit rule for COCO-derived data | no (cocopp: yes) |
-| AL-9 | Alignment keeps every run's final evaluation (`is_final`) | – |
+| AL-9 | Fixed-budget rows flag `stopped` (b > `evals_used`); monotonic load marks the last logged row `is_final` | – |
 
 ### Runtime ([runtime](runtime.md))
 

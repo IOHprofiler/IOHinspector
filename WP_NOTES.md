@@ -1,9 +1,10 @@
 # WP I10: Alignment and target grids
 Branch: wp/I10-alignment
-Status: blocked on AL-9 (steps 1-5 committed)
+Status: ready for review
 
-Definitions: `docs/definitions/alignment.md` (AL-*), `targets.md` (TG-*),
-`fixed-budget.md` (FB-*), `ecdf.md` (EC-*).
+Implements [alignment.md](https://github.com/IOHprofiler/IOHinspector/blob/wp/I10-alignment/docs/definitions/alignment.md) (AL-*),
+[targets.md](https://github.com/IOHprofiler/IOHinspector/blob/wp/I10-alignment/docs/definitions/targets.md) (TG-*) and
+[fixed-budget.md](https://github.com/IOHprofiler/IOHinspector/blob/wp/I10-alignment/docs/definitions/fixed-budget.md) (FB-1, FB-6).
 
 ## Done
 - step 2 (AL-5): `align_data` leaves a fixed-budget value null before a run's
@@ -36,10 +37,13 @@ Definitions: `docs/definitions/alignment.md` (AL-*), `targets.md` (TG-*),
   grouped by algorithm, a numeric parameter (`sigma0`), function, a user tag
   and tag + dimension; runs without the descriptor form the null group.
 
-## Next step
-All steps are committed except AL-9 (open question below). When AL-9 is
-answered: implement it in `align_data`, then finish (PR body from these
-notes, delete WP_NOTES.md, D6 review request).
+- AL-9 (user, 2026-11-12, option B): fixed-budget `align_data` flags each
+  row `stopped` = (b > B_i) when the frame has `evals_used` (run metadata);
+  without it there is no flag (the last logged evaluation is not B_i for
+  sources that do not log the final evaluation). `load(x_values)` adds
+  `evals_used` itself; `load(monotonic=True)` marks each run's last logged row
+  `is_final`. No rows added. `aggregate_convergence` reports `n_active` when
+  the flag is there (FB-6). alignment.md AL-9 and fixed-budget.md FB-6 updated.
 
 ## Decisions
 - `n_runs`/`n_defined` names follow fixed-budget.md; I11 adds the rest of the
@@ -55,17 +59,5 @@ notes, delete WP_NOTES.md, D6 review request).
   values back from text row names, 1 ulp off), bbob 4e-15 (built from exact
   decades, IOHanalyzer goes through log10).
 
-## Open questions / Blocked
-- AL-9 (keep every run's final evaluation, `is_final`) is not specified enough
-  to implement without guessing: `align_data` gets a frame of trace rows, and
-  B_i is run metadata (`evals_used`), which the frame does not carry unless
-  loaded with `include_meta_data`. Unsettled: (a) where B_i comes from in
-  `align_data` (a column such as `evals_used`, falling back to the last logged
-  evaluation?); (b) whether the extra row at B_i goes into every caller's
-  output (it adds a row per run outside the grid, so every per-grid-point
-  summary, trajectory and `load(x_values)` would have to filter it out); (c)
-  whether a grid point equal to B_i is that row. Proposal: `align_data` adds,
-  per run, a row at B_i (`evals_used` if present, else the last logged
-  evaluation) with `is_final=True`, grid rows `is_final=False`; summaries
-  drop `is_final` rows and I11 uses them for `n_active` (FB-6). Needs
-  dvermetten's yes before it is built.
+## Open questions
+- none

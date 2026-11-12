@@ -8,6 +8,12 @@
   (target and budget grids), `get_ecdf_targets` (per function and dimension:
   `log-linear`, `linear` or the 51 COCO `bbob` targets) and `get_target_dt` (one
   default target or budget per pair, with an explicit `perspective`).
+- Stopped runs (`docs/definitions/alignment.md`, AL-9; `fixed-budget.md`, FB-6):
+  with an `evals_used` column (`load(include_columns=["evals_used"])`),
+  fixed-budget `align_data` flags each row `stopped` (the budget exceeds the
+  evaluations the run used) and `aggregate_convergence` reports `n_active`;
+  `load(x_values=...)` always adds `stopped`. `load(monotonic=True)` marks each
+  run's last logged row `is_final`. No rows are added.
 - `metrics.group_label(by, template)`: a label per group of `by` from a template
   such as `"{algorithm_name} (sigma {sigma0})"`. Plots grouped by several columns
   label them `"a, b"` instead of a tuple.
