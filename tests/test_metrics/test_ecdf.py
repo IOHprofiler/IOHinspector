@@ -390,8 +390,9 @@ def test_auc_matches_iohanalyzer_trapezoid(fixture):
     ours = (
         _golden_ecdf(fixture, "ECDF_by_RT", BY_PAIR)
         .sort(BY_PAIR + ["evaluations"])
+        .with_columns(area=area)
         .group_by(BY_PAIR)
-        .agg(raw=area.sum(), x=x.max())
+        .agg(raw=pl.col("area").sum(), x=x.max())
     )
     for metric, ours_auc in [("AUC_by_RT_raw", "raw"), ("AUC_by_RT", "normalised")]:
         gold = _golden(fixture, metric)

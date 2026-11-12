@@ -251,8 +251,9 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     if scale_eval_log:
         x, lo, hi = x.log10(), math.log10(lo), math.log10(hi)
     width = x.shift(-1, fill_value=hi).over(by) - x
-    area = (pl.col("ecdf") * width).sum() / (hi - lo)
-    return _cumulate(steps, by).group_by(by, maintain_order=True).agg(auc=area)
+    steps = _cumulate(steps, by).with_columns(area=pl.col("ecdf") * width)
+    auc = pl.col("area").sum() / (hi - lo)
+    return steps.group_by(by, maintain_order=True).agg(auc=auc)
 
 
 def get_rank_table(
