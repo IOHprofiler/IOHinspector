@@ -361,6 +361,7 @@ def get_data_ecdf(  # pylint: disable=R0913,R0917,W0613
     used (EC-2), and the means of the other columns are gone. Data without
     ``function_id`` and ``dimension`` is one pair, as before.
     """
+    # #lizard forgives  (the 0.0.x signature, kept while deprecated)
     arguments = locals()
     warnings.warn(
         "get_data_ecdf is deprecated since 0.2.0; use get_ecdf(data, "

@@ -61,6 +61,7 @@ DataFrames; call `.to_pandas()` for pandas.
 Deprecated in 0.2.0: use `get_ecdf_auc(data, continuous=True)` on the raw function values. The mean over the runs of each group of the normalised area under `fval_var` (a quality in [0, 1]) over [1, `eval_max`], computed by `get_ecdf_auc`.
 
 **Returns:**
+
 - `pl.DataFrame`: `by` and `AOCC`.
 
 ---

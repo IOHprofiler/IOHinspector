@@ -163,7 +163,8 @@ def get_histogram(  # pylint: disable=too-many-locals
     """Histogram of ``value`` per group of ``by`` and per ``view`` (for example
     ``["target"]``), from the output of ``get_runtime_sample`` or
     ``get_value_sample``. Only defined values count (failed runs have an infinite
-    runtime); ``n_defined`` values count and ``n_failed`` runs are left out. ``bins="equal"`` (DI-4)
+    runtime); ``n_defined`` values count and ``n_failed`` runs are left out.
+    ``bins="equal"`` (DI-4)
     takes the breaks from the pooled values of the groups of one view;
     ``"per_algorithm"`` takes them from each group. A group with fewer than two
     values has no histogram.

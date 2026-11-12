@@ -13,7 +13,7 @@ RUN = "_run"
 
 
 @upgrade_hints
-def align_data(  # pylint: disable=R0913,R0914
+def align_data(  # pylint: disable=R0913,R0914,R0917
     df: pl.DataFrame,
     x_values: Iterable[int | float],
     group_cols: Sequence[str] = ("run_id",),
