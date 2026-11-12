@@ -152,6 +152,7 @@ def get_logged_rows(
 def apply_penalty(  # pylint: disable=too-many-arguments
     data: pl.DataFrame,
     method: str = "relative",
+    *,
     factor: float = 1.0,
     exponent: float = 1.0,
     feasible: str | Callable[[pl.Expr], pl.Expr] = "zero",

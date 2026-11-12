@@ -255,7 +255,7 @@ Per group, budget or target and `parameter`: `n_runs`, `n_defined`, `mean`, `med
 #### `get_logged_rows(data, columns=None, by=["algorithm_name"], eval_var="evaluations")`
 The raw rows where every one of `columns` has a value: two columns for a correlation scatter (no coefficient), or by default the positions `x0` ... of each run.
 
-#### `apply_penalty(data, method="relative", factor=1.0, exponent=1.0, feasible="zero", maximization=False, violation="violation", fval_var="raw_y")`
+#### `apply_penalty(data, method="relative", *, factor=1.0, exponent=1.0, feasible="zero", maximization=False, violation="violation", fval_var="raw_y")`
 Replaces each function value of an infeasible row by its penalised value: `relative` f + c·|v|^p, `absolute` f + c, `value` c, or `ignore`. A penalty always makes a value worse (subtracted when maximising). `feasible` is `"zero"` (v = 0 is feasible), `"nonpositive"` or a function of the violation expression. Metrics on the result compute best-so-far values from the penalised rows.
 
 ---

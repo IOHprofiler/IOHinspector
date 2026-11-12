@@ -232,7 +232,7 @@ logged rows (`DataManager.load(monotonic=False)`), not a best-so-far load.
 - `get_logged_rows(data, columns, by)`: PA-3 and positions. It returns the rows
   where every named column has a value, unaligned. The default columns are the
   positions `x0` … (`positions.parquet`, joined by `load`).
-- `apply_penalty(data, method, factor, exponent, feasible, maximization)`: PA-4
+- `apply_penalty(data, method, *, factor, exponent, feasible, maximization)`: PA-4
   and PA-6. It replaces f by g(f, v). `method` is `ignore`, `relative`,
   `absolute` or `value`. `feasible` is `"zero"` (default), `"nonpositive"` or a
   function of the violation expression, for load-type thresholds. Metrics then
