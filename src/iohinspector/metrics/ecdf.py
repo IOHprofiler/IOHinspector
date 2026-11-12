@@ -53,6 +53,7 @@ def get_data_ecdf(
     data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),
         eval_values,
+        group_cols=["run_id", *by],
         x_col=eval_var,
         y_col=fval_var,
         maximization=maximization,
