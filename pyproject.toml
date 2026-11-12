@@ -9,7 +9,7 @@ authors = [
   { name="Diederick Vermetten", email="d.vermetten@gmail.com" },
   { name="Jacob de Nobel", email="jacobdenobel@gmail.com" },
 ]
-description = "Package for managing IOH data"
+description = "Load, convert and analyse benchmark data of iterative optimization heuristics (IOHexperimenter, COCO, Nevergrad, CSV)"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [

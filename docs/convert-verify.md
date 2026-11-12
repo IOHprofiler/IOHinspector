@@ -34,7 +34,7 @@ A tag replaces a descriptor of the same key that the source gave. `algorithm_nam
 
 ### Memory
 
-The CSV converters stream their file. The other readers build their tables in memory and hand them to the writer, which sorts and writes with bounded memory; so the memory needed is that of the reader's tables for the input.
+The CSV converters stream their file. The other readers build their tables in memory and hand them to the writer, which sorts and writes with bounded memory; so the memory needed is that of the reader's tables for the input. `verify` reads the dataset in batches of whole runs and each source file line by line, so its memory does not grow with the dataset (a peak of about 1.4 GB for 192M rows).
 
 ## verify
 
