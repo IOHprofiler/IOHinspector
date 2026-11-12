@@ -105,7 +105,7 @@ The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the la
 
 **Returns:** `pl.DataFrame` with `by` and `auc`.
 
-#### `get_rank_table(summary, value="ERT", *, higher_is_better=False, pair=["function_id", "dimension"])`
+#### `get_rank_table(summary, value="ERT", *, higher_is_better=False)`
 Adds the `rank` of `value` within each pair: average ranks for ties, `inf` at the bottom, missing values last.
 
 #### `get_data_ecdf(data, fval_var="raw_y", eval_var="evaluations", by=["algorithm_name"], maximization=False, f_min=None, f_max=None, scale_f_log=True, eval_values=None, eval_min=None, eval_max=None, scale_eval_log=True)`

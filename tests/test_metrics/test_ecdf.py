@@ -327,7 +327,8 @@ def test_rank_table_matches_iohanalyzer(fixture, metric):
     # values carry RT-1 (and Aggr_funcId mixes the dimensions' targets), so the
     # ranks are compared on its own values
     gold = golden(fixture, metric)
-    ours = get_rank_table(gold.drop("rank"), "value", pair=["DIM", "funcId"])
+    summary = gold.drop("rank").rename({"DIM": "dimension", "funcId": "function_id"})
+    ours = get_rank_table(summary, "value")
     assert ours["rank"].to_list() == gold["rank"].to_list()
 
 

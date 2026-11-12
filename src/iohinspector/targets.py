@@ -13,7 +13,7 @@ import polars as pl
 
 __all__ = ["bbob_targets", "get_ecdf_targets", "get_target_dt", "seq_fv", "seq_rt"]
 
-PAIR = ("function_id", "dimension")
+PAIR = ["function_id", "dimension"]
 #: Lower end of log-spaced targets when the data has no positive value (TG-3).
 LOG_FLOOR = 1e-12
 
@@ -89,12 +89,10 @@ def get_ecdf_targets(
     *,
     n: int = 10,
     fval_var: str = "raw_y",
-    pair: Sequence[str] = PAIR,
 ) -> pl.DataFrame:
     """Targets per (function, dimension) pair (TG-1, TG-2): ``kind``
     ``"log-linear"`` or ``"linear"`` (``n`` targets over the pair's observed
     values), or ``"bbob"`` (the 51 COCO targets)."""
-    pair = list(pair)
 
     def targets(values: list[float]) -> list[float]:
         if kind == "bbob":
@@ -103,12 +101,12 @@ def get_ecdf_targets(
             raise ValueError(f"kind {kind!r}: log-linear, linear or bbob")
         return seq_fv(values, n, log=kind == "log-linear").tolist()
 
-    grouped = data.group_by(pair, maintain_order=True).agg(pl.col(fval_var))
+    grouped = data.group_by(PAIR, maintain_order=True).agg(pl.col(fval_var))
     return pl.DataFrame(
         [(*key, t) for *key, values in grouped.iter_rows() for t in targets(values)],
-        schema=[*pair, "target"],
+        schema=[*PAIR, "target"],
         orient="row",
-    ).sort(pair, maintain_order=True)
+    ).sort(PAIR, maintain_order=True)
 
 
 def get_target_dt(  # pylint: disable=too-many-arguments
@@ -119,7 +117,6 @@ def get_target_dt(  # pylint: disable=too-many-arguments
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
     by: Sequence[str] = ("algorithm_name",),
-    pair: Sequence[str] = PAIR,
 ) -> pl.DataFrame:
     """One default target per (function, dimension) pair (TG-4, TG-6).
 
@@ -127,10 +124,9 @@ def get_target_dt(  # pylint: disable=too-many-arguments
     of the runs' final best values, 98 % when maximising; then the best of these.
     ``"fixed_budget"``: the largest logged evaluation of the pair.
     """
-    pair = list(pair)
     if perspective == "fixed_budget":
         target = pl.col(eval_var).max().cast(pl.Float64)
-        return data.group_by(pair).agg(target.alias("target")).sort(pair)
+        return data.group_by(PAIR).agg(target.alias("target")).sort(PAIR)
     if perspective != "fixed_target":
         raise ValueError(f"perspective {perspective!r}: fixed_target or fixed_budget")
     y = pl.col(fval_var)
@@ -138,11 +134,11 @@ def get_target_dt(  # pylint: disable=too-many-arguments
     quantile = pl.col("final").quantile(0.98 if maximization else 0.02, "linear")
     best = pl.col("target").max() if maximization else pl.col("target").min()
     return (
-        data.group_by([*pair, *by, "run_id"])
+        data.group_by([*PAIR, *by, "run_id"])
         .agg(final.alias("final"))
-        .group_by([*pair, *by])
+        .group_by([*PAIR, *by])
         .agg(quantile.alias("target"))
-        .group_by(pair)
+        .group_by(PAIR)
         .agg(best)
-        .sort(pair)
+        .sort(PAIR)
     )

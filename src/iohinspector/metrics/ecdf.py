@@ -15,31 +15,31 @@ from .utils import transform_fval
 ALL = "_all"  # the one group when ``by`` is empty
 
 
-def _weights(data: pl.DataFrame, by: list[str], pair: list[str], pairs: str):
+def _weights(data: pl.DataFrame, by: list[str], pairs: str):
     """``data`` on the pairs used (EC-2), with ``weight`` 1 / (|P| n): each pair of a
     group of ``by`` has equal weight, and within a pair each run."""
     if pairs not in ("common", "all"):
         raise ValueError(f"pairs {pairs!r}: common or all")
-    groups = [c for c in by if c not in pair]
+    groups = [c for c in by if c not in PAIR]
     if groups:
-        sets = data.select(*groups, *pair).unique()
+        sets = data.select(*groups, *PAIR).unique()
         every = (
-            sets.select(groups).unique().join(sets.select(pair).unique(), how="cross")
+            sets.select(groups).unique().join(sets.select(PAIR).unique(), how="cross")
         )
-        missing = every.join(sets, on=[*groups, *pair], how="anti", nulls_equal=True)
+        missing = every.join(sets, on=[*groups, *PAIR], how="anti", nulls_equal=True)
         if missing.height:
-            _warn_pairs(missing.sort(missing.columns), len(groups), pair, pairs)
+            _warn_pairs(missing.sort(missing.columns), len(groups), pairs)
         if missing.height and pairs == "common":
-            drop = missing.select(pair).unique()
-            data = data.join(drop, on=pair, how="anti", maintain_order="left")
+            drop = missing.select(PAIR).unique()
+            data = data.join(drop, on=PAIR, how="anti", maintain_order="left")
             if data.is_empty():
                 raise ValueError("the groups of by share no pair; use pairs='all'")
-    n_runs = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *pair])))
-    n_pairs = pl.struct(pair).n_unique().over(by)
+    n_runs = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *PAIR])))
+    n_pairs = pl.struct(PAIR).n_unique().over(by)
     return data.with_columns(weight=1 / (n_runs * n_pairs))
 
 
-def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> None:
+def _warn_pairs(missing: pl.DataFrame, n: int, pairs: str) -> None:
     rows = [f"{', '.join(map(str, r[:n]))} has no {r[n:]}" for r in missing.rows()]
     more = f"; and {len(rows) - 10} more" if len(rows) > 10 else ""
     action = (
@@ -49,7 +49,7 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> N
         "so the curves are hard to compare"
     )
     warnings.warn(
-        f"the groups of by do not have the same {tuple(pair)} pairs: {action}. "
+        f"the groups of by do not have the same {tuple(PAIR)} pairs: {action}. "
         + "; ".join(rows[:10])
         + more,
         stacklevel=6,
@@ -57,11 +57,11 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pair: list[str], pairs: str) -> N
 
 
 def _hits(  # pylint: disable=R0913,R0917
-    data, targets, keys, pair, maximization, fval_var, eval_var
+    data, targets, keys, maximization, fval_var, eval_var
 ):
     """Increments ``dy`` = 1/m of each (run, target) pair at its first hitting time
     (EC-1: inclusive, AL-1; ties to the first row, AL-3)."""
-    parts = targets.partition_by(pair, as_dict=True)
+    parts = targets.partition_by(PAIR, as_dict=True)
     aligned = pl.concat(
         align_data(
             runs,
@@ -71,19 +71,17 @@ def _hits(  # pylint: disable=R0913,R0917
             y_col=eval_var,
             maximization=maximization,
         ).with_columns(dy=1 / pl.len().over("run_id"))
-        for key, runs in data.partition_by(pair, as_dict=True).items()
+        for key, runs in data.partition_by(PAIR, as_dict=True).items()
     )
     return aligned.filter(pl.col(eval_var).is_finite())
 
 
-def _quality(  # pylint: disable=R0913,R0917
-    data, targets, pair, maximization, scale_f_log, fval_var
-):
+def _quality(data, targets, maximization, scale_f_log, fval_var):
     """Increments ``dy`` of each run's normalised quality q (EC-5): the log10 (or
     linear) distance of its best-so-far value from the worse bound, between the
     pair's smallest and largest target. q is the fraction of a continuum of targets
     between the bounds that the run has reached."""
-    bounds = targets.group_by(pair).agg(
+    bounds = targets.group_by(PAIR).agg(
         lo=pl.col("target").min(), hi=pl.col("target").max()
     )
     best = pl.col(fval_var).cum_max() if maximization else pl.col(fval_var).cum_min()
@@ -99,7 +97,7 @@ def _quality(  # pylint: disable=R0913,R0917
     )
     previous = pl.col("q").shift(1, fill_value=0).over("run_id")
     return (
-        data.join(bounds, on=pair, maintain_order="left")  # rows in run order
+        data.join(bounds, on=PAIR, maintain_order="left")  # rows in run order
         .with_columns(best=best.over("run_id"))
         .with_columns(q=q)
         .with_columns(dy=pl.col("q") - previous)
@@ -119,24 +117,21 @@ def _increments(  # pylint: disable=R0913,R0914
     divide_by_dimension: bool = False,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
-    pair: Sequence[str] = PAIR,
 ) -> tuple[pl.DataFrame, float]:
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), and the largest budget in the selection."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
-    pair = list(pair)
     if targets is None:
         kind = "log-linear" if scale_f_log else "linear"
-        targets = get_ecdf_targets(data, kind, fval_var=fval_var, pair=pair)
-    targets = targets.cast({c: data.schema[c] for c in pair})
-    used = targets.select(pair).unique()
-    data = data.join(used, on=pair, how="semi", maintain_order="left")
-    data = _weights(data, by, pair, pairs)
+        targets = get_ecdf_targets(data, kind, fval_var=fval_var)
+    targets = targets.cast({c: data.schema[c] for c in PAIR})
+    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    data = _weights(data, by, pairs)
     if continuous:
-        steps = _quality(data, targets, pair, maximization, scale_f_log, fval_var)
+        steps = _quality(data, targets, maximization, scale_f_log, fval_var)
     else:
-        keys = list(dict.fromkeys([*by, *pair, "weight"]))
-        steps = _hits(data, targets, keys, pair, maximization, fval_var, eval_var)
+        keys = list(dict.fromkeys([*by, *PAIR, "weight"]))
+        steps = _hits(data, targets, keys, maximization, fval_var, eval_var)
     x = pl.col(eval_var).cast(pl.Float64)
     if divide_by_dimension:
         x = x / pl.col("dimension")
@@ -204,8 +199,7 @@ def get_ecdf(
               ``"all"``: over each group's own pairs. Both warn, naming the
               missing pairs, when the groups' pairs differ (EC-2).
             - ``divide_by_dimension`` (False): x is evaluations / dimension.
-            - ``fval_var`` (``"raw_y"``) and ``pair`` (``("function_id",
-              "dimension")``).
+            - ``fval_var`` (``"raw_y"``).
 
     Returns:
         pl.DataFrame: ``by``, ``eval_var`` (float) and ``ecdf``.
@@ -279,7 +273,6 @@ def get_rank_table(
     value: str = "ERT",
     *,
     higher_is_better: bool = False,
-    pair: Sequence[str] = PAIR,
 ) -> pl.DataFrame:
     """``summary`` with the ``rank`` of each row's ``value`` within its pair (EC-8).
 
@@ -293,7 +286,7 @@ def get_rank_table(
     ranked = (-v if higher_is_better else v).rank("average")
     missing = v.count() + (v.null_count() + 1) / 2
     rank = pl.when(v.is_null()).then(missing).otherwise(ranked)
-    return summary.with_columns(rank.over(list(pair)).alias("rank"))
+    return summary.with_columns(rank.over(PAIR).alias("rank"))
 
 
 @upgrade_hints
