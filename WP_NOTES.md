@@ -16,9 +16,15 @@ Status: in progress
   get_parameter_summary and aggregate_running_time; the runtime summary computes
   mean, median and null quantiles in the aggregation (no post-processing).
   bench_ert full size: 5.1-5.4 s before and after (noise).
+- step 6: options keyword-only in the functions new since 0.1.0: `seq_fv`/`seq_rt`
+  (log, lower, upper), `get_ecdf_targets` (n, fval_var, pair), `get_overview`
+  (data, by, *, ...), `get_histogram`/`get_violin` (view, bins),
+  `get_logged_rows` (eval_var). Histogram and violin `n` is `n_defined` (as the
+  summaries). Tests: maximisation mirrors minimisation (fixed budget, restarts,
+  overview); quantiles null without success when include_unfinished=False.
 
 ## Next step
-Step 6: API review: keyword-only options of the functions new since 0.1.0.
+Step 7: final review pass (lint, pyright, polars 1), line counts, notes.
 
 ## Plan
 1. align_data eval_var bug (done)

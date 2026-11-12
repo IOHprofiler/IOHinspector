@@ -11,7 +11,7 @@
   `apply_penalty` penalises infeasible rows before best-so-far: v != 0 by default,
   negative violations included, and a penalty always makes a value worse.
 - `iohinspector.targets` (`docs/definitions/targets.md`): `seq_fv` and `seq_rt`
-  (target and budget grids), `get_ecdf_targets` (per function and dimension:
+  (target and budget grids; `log`, `lower` and `upper` keyword-only), `get_ecdf_targets` (per function and dimension:
   `log-linear`, `linear` or the 51 COCO `bbob` targets) and `get_target_dt` (one
   default target or budget per pair, with an explicit `perspective`).
 - Stopped runs (`docs/definitions/alignment.md`, AL-9; `fixed-budget.md`, FB-6):
@@ -44,7 +44,8 @@
     when every value is > 0), `n_runs`, `n_defined`, and with `evals_used`
     `n_active`. New keywords `budgets`, and `stopped="restart"` with `seed`
     for simulated restarts of runs that stopped before a budget.
-  - `get_overview`: per run set `n_runs`, `budget`, the best, worst, mean and
+  - `get_overview(data, by, *, eval_var, fval_var, maximization)`: per run set
+    `n_runs`, `budget`, the best, worst, mean and
     median final values, `n_best`, `worst_recorded`, `min_runtime` and
     `max_runtime`.
   - `scripts/bench_ert.py`: the full-bbob ERT table benchmark.
@@ -57,7 +58,8 @@
   `budget` and `value`; the lookups of `get_parameter_sample`), `get_histogram` (R's `nclass.FD` and
   `pretty` breaks, right-closed bins; equal pooled bins by default for several
   groups, DI-4, or `bins="per_algorithm"`) and `get_violin` (Gaussian kernel,
-  Silverman bandwidth, box quartiles). Failed runs are counted in `n_failed`.
+  Silverman bandwidth, box quartiles). Both count the values in `n_defined` and
+  the failed runs in `n_failed`.
 
 ### Fixed
 

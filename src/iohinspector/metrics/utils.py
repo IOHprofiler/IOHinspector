@@ -91,7 +91,7 @@ def get_sequence(
         np.ndarray: Array of evenly spaced values between min and max.
     """
     if cast_to_int:
-        return seq_rt([min, max], len, scale_log)
+        return seq_rt([min, max], len, log=scale_log)
     return spaced(min, max, len, scale_log)
 
 

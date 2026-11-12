@@ -184,7 +184,7 @@ def test_histogram_counts_failed_and_skips_small_groups():
     assert h["algorithm_name"].unique().to_list() == ["a"]  # b has one value
     assert h["n_failed"].unique().to_list() == [1]
     assert h["count"].sum() == 3
-    assert h["n"].unique().to_list() == [3]
+    assert h["n_defined"].unique().to_list() == [3]
 
 
 def test_histogram_view_columns():
@@ -215,4 +215,5 @@ def test_violin():
 def test_violin_degenerate_and_failed():
     s = sample([3.0, 3.0, 3.0, np.inf], ["a"] * 4)
     v = get_violin(s, "v").row(0, named=True)
-    assert (v["n"], v["n_failed"], v["x"], v["density"]) == (3, 1, [3.0], [0.0])
+    assert (v["n_defined"], v["n_failed"]) == (3, 1)
+    assert (v["x"], v["density"]) == ([3.0], [0.0])

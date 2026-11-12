@@ -160,19 +160,20 @@ def get_histogram(  # pylint: disable=too-many-locals
     sample: pl.DataFrame,
     value: str,
     by: Sequence[str] = ("algorithm_name",),
+    *,
     view: Sequence[str] = (),
     bins: str = "equal",
 ) -> pl.DataFrame:
     """Histogram of ``value`` per group of ``by`` and per ``view`` (for example
     ``["target"]``), from the output of ``get_runtime_sample`` or
     ``get_value_sample``. Only defined values count (failed runs have an infinite
-    runtime); ``n_failed`` is the number of runs left out. ``bins="equal"`` (DI-4)
+    runtime); ``n_defined`` values count and ``n_failed`` runs are left out. ``bins="equal"`` (DI-4)
     takes the breaks from the pooled values of the groups of one view;
     ``"per_algorithm"`` takes them from each group. A group with fewer than two
     values has no histogram.
 
     Returns one row per bin: ``view`` and ``by`` columns, ``left``, ``right``,
-    ``mid``, ``width``, ``count``, ``n`` and ``n_failed``."""
+    ``mid``, ``width``, ``count``, ``n_defined`` and ``n_failed``."""
     if bins not in ("equal", "per_algorithm"):
         raise ValueError(f"bins {bins!r}: equal or per_algorithm")
     by, view = list(by), list(view)
@@ -188,12 +189,12 @@ def get_histogram(  # pylint: disable=too-many-locals
             n_failed = len(group) - len(x)
             for i, c in enumerate(counts):
                 rows.append((*key, *gkey, edges[i], edges[i + 1], c, len(x), n_failed))
-    names = [*view, *by, "left", "right", "count", "n", "n_failed"]
+    names = [*view, *by, "left", "right", "count", "n_defined", "n_failed"]
     out = pl.DataFrame(rows, schema=names, orient="row")
     return out.with_columns(
         mid=(pl.col("left") + pl.col("right")) / 2,
         width=pl.col("right") - pl.col("left"),
-    ).select(*view, *by, "left", "right", "mid", "width", "count", "n", "n_failed")
+    ).select(*view, *by, "left", "right", "mid", "width", "count", *names[-2:])
 
 
 def _violin(x: np.ndarray) -> dict:
@@ -210,7 +211,7 @@ def _violin(x: np.ndarray) -> dict:
     else:  # no spread: a zero-width violin at the value
         grid, density = x[:1], np.zeros(1)
     return {
-        "n": n,
+        "n_defined": n,
         "q1": q1,
         "median": med,
         "q3": q3,
@@ -224,10 +225,11 @@ def get_violin(
     sample: pl.DataFrame,
     value: str,
     by: Sequence[str] = ("algorithm_name",),
+    *,
     view: Sequence[str] = (),
 ) -> pl.DataFrame:
     """Violin and box data of ``value`` per group of ``by`` and per ``view``: one
-    row with ``n``, ``n_failed``, the quartiles and median (type 7), the
+    row with ``n_defined``, ``n_failed``, the quartiles and median (type 7), the
     ``bandwidth`` and the lists ``x`` (the grid) and ``density`` (scaled by
     ``n``). Only defined values count."""
     keys = [*view, *by]

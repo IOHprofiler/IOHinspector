@@ -141,6 +141,8 @@ def test_no_success_is_inf_and_null():
     assert row["ERT"] == np.inf  # RT-2
     assert row["mean"] is row["median"] is row["sd"] is None
     assert row["q2"] == np.inf
+    row = aggregate_running_time(RUNS, targets=[0.01], include_unfinished=False)
+    assert row.row(0, named=True)["q2"] is None
 
 
 def test_quantiles_count_unfinished_runs():

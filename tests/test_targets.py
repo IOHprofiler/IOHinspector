@@ -83,7 +83,7 @@ def test_ecdf_targets_match_iohanalyzer(fixture, kind):
 def test_budgets_match_iohanalyzer(fixture, log):
     df = logged(fixture)
     ours = {
-        (f, d): seq_rt(group["evaluations"], 10, log)
+        (f, d): seq_rt(group["evaluations"], 10, log=log)
         for (f, d), group in df.group_by(PAIR)
     }
     expected = _per_pair(

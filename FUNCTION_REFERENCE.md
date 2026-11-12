@@ -267,7 +267,7 @@ Each run's parameter values at budgets (the last logged row at or before b, carr
 #### `get_parameter_summary(data, parameters, x_values=None, by=["algorithm_name"], *, target=False, ...)`
 Per group, budget or target and `parameter`: `n_runs`, `n_defined`, `mean`, `median`, `sd` and the type 7 quantiles `q2` ... `q98`, over the runs with a value.
 
-#### `get_logged_rows(data, columns=None, by=["algorithm_name"], eval_var="evaluations")`
+#### `get_logged_rows(data, columns=None, by=["algorithm_name"], *, eval_var="evaluations")`
 The raw rows where every one of `columns` has a value: two columns for a correlation scatter (no coefficient), or by default the positions `x0` ... of each run.
 
 #### `apply_penalty(data, method="relative", *, factor=1.0, exponent=1.0, feasible="zero", maximization=False, violation="violation", fval_var="raw_y")`

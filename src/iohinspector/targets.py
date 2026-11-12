@@ -32,6 +32,7 @@ def spaced(lower: float, upper: float, n: int, log: bool = False) -> np.ndarray:
 def seq_fv(
     values: Iterable[float],
     n: int = 10,
+    *,
     log: bool = True,
     lower: float | None = None,
     upper: float | None = None,
@@ -57,6 +58,7 @@ def seq_fv(
 def seq_rt(
     evaluations: Iterable[int],
     n: int = 50,
+    *,
     log: bool = True,
     lower: int | None = None,
     upper: int | None = None,
@@ -84,6 +86,7 @@ def bbob_targets() -> np.ndarray:
 def get_ecdf_targets(
     data: pl.DataFrame,
     kind: str = "log-linear",
+    *,
     n: int = 10,
     fval_var: str = "raw_y",
     pair: Sequence[str] = PAIR,
@@ -98,7 +101,7 @@ def get_ecdf_targets(
             return bbob_targets().tolist()
         if kind not in ("log-linear", "linear"):
             raise ValueError(f"kind {kind!r}: log-linear, linear or bbob")
-        return seq_fv(values, n, kind == "log-linear").tolist()
+        return seq_fv(values, n, log=kind == "log-linear").tolist()
 
     grouped = data.group_by(pair, maintain_order=True).agg(pl.col(fval_var))
     return pl.DataFrame(

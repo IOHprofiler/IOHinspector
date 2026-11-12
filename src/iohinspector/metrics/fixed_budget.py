@@ -70,7 +70,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
             'DataManager.load(include_columns=["evals_used"])'
         )
     if budgets is None:
-        budgets = seq_rt(data[eval_var], 50, True, eval_min, eval_max)
+        budgets = seq_rt(data[eval_var], 50, lower=eval_min, upper=eval_max)
     data = data.cast({eval_var: pl.Int64})
     runs = runs_of(data, by, eval_var)
     aligned = align_data(
@@ -168,9 +168,10 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
 
 def get_overview(
     data: pl.DataFrame,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
-    by: Sequence[str] = ("algorithm_name",),
     maximization: bool = False,
 ) -> pl.DataFrame:
     """Overview table of each run set (a group of ``by``), FB-4.

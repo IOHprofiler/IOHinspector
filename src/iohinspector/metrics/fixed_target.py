@@ -72,7 +72,7 @@ def aggregate_running_time(  # pylint: disable=R0913,R0914,R0917
     """
     # #lizard forgives  (the public signature of 0.0.x plus the RT options)
     if targets is None:
-        targets = seq_fv(data[fval_var], 50, scale_f_log, f_min, f_max)
+        targets = seq_fv(data[fval_var], 50, log=scale_f_log, lower=f_min, upper=f_max)
     hits = align_data(
         data.select("run_id", eval_var, fval_var),
         targets,

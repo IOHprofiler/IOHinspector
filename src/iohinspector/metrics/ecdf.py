@@ -338,7 +338,9 @@ def get_data_ecdf(
             points.
     """
     if eval_values is None:
-        eval_values = seq_rt(data[eval_var], 50, scale_eval_log, eval_min, eval_max)
+        eval_values = seq_rt(
+            data[eval_var], 50, log=scale_eval_log, lower=eval_min, upper=eval_max
+        )
     data_aligned = align_data(
         data.cast({eval_var: pl.Int64}),
         eval_values,

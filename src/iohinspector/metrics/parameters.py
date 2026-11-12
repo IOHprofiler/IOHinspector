@@ -58,7 +58,7 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
     data = data.select(*dict.fromkeys([*keys, eval_var, fval_var, *parameters]))
     x_col, y_col = (fval_var, eval_var) if target else (eval_var, fval_var)
     if x_values is None:
-        x_values = (seq_fv if target else seq_rt)(data[x_col], 50, True)
+        x_values = (seq_fv if target else seq_rt)(data[x_col], 50)
     aligned = align_data(
         data,
         x_values,
@@ -118,6 +118,7 @@ def get_logged_rows(
     data: pl.DataFrame,
     columns: Sequence[str] | None = None,
     by: Sequence[str] = ("algorithm_name",),
+    *,
     eval_var: str = "evaluations",
 ) -> pl.DataFrame:
     """The logged rows of ``columns``, unaligned: the rows where all of them have a
