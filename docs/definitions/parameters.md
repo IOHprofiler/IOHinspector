@@ -224,9 +224,11 @@ logged rows (`DataManager.load(monotonic=False)`), not a best-so-far load.
   one row per run and budget, or per run and target with `target=True`. Both
   are `align_data` lookups on the logged rows. By budget the as-of join takes
   the last row at or before b (on equal evaluations, the last in source order).
-  By target the rows are first cut to those where the best-so-far value
-  changes, so the join finds the first row that reaches t. A run that never
-  reaches t gets null.
+  By target `align_data` keeps each run's first row of every best-so-far
+  value, so the join finds the first row that reaches t. A run that never
+  reaches t gets null. The runtime and value samples
+  ([distributions](distributions.md)) are the same lookups of the evaluations
+  at targets and of the best-so-far value at budgets.
 - `get_parameter_summary(...)`: PA-2, per group of `by`, budget or target and
   `parameter`: `n_runs`, `n_defined`, `mean`, `median`, `sd`, `q2` … `q98`.
 - `get_logged_rows(data, columns, by)`: PA-3 and positions. It returns the rows
