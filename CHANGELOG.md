@@ -11,9 +11,10 @@
   `apply_penalty` penalises infeasible rows before best-so-far: v != 0 by default,
   negative violations included, and a penalty always makes a value worse.
 - `iohinspector.targets` (`docs/definitions/targets.md`): `seq_fv` and `seq_rt`
-  (target and budget grids; `log`, `lower` and `upper` keyword-only), `get_ecdf_targets` (per function and dimension:
-  `log-linear`, `linear` or the 51 COCO `bbob` targets) and `get_target_dt` (one
-  default target or budget per pair, with an explicit `perspective`).
+  (target and budget grids; `log`, `lower` and `upper` keyword-only),
+  `get_ecdf_targets` (per function and dimension: `log-linear`, `linear` or the 51
+  COCO `bbob` targets) and `get_target_dt` (one default target or budget per pair,
+  with an explicit `perspective`).
 - Stopped runs (`docs/definitions/alignment.md`, AL-9; `fixed-budget.md`, FB-6):
   with an `evals_used` column (`load(include_columns=["evals_used"])`),
   fixed-budget `align_data` flags each row `stopped` (the budget exceeds the
@@ -55,11 +56,11 @@
 
 - Distributions (`docs/definitions/distributions.md`): `get_runtime_sample` and
   `get_value_sample` (per-run tables: `run_id`, `by`, `target` and `runtime`, or
-  `budget` and `value`; the lookups of `get_parameter_sample`), `get_histogram` (R's `nclass.FD` and
-  `pretty` breaks, right-closed bins; equal pooled bins by default for several
-  groups, DI-4, or `bins="per_algorithm"`) and `get_violin` (Gaussian kernel,
-  Silverman bandwidth, box quartiles). Both count the values in `n_defined` and
-  the failed runs in `n_failed`.
+  `budget` and `value`; the lookups of `get_parameter_sample`), `get_histogram`
+  (R's `nclass.FD` and `pretty` breaks, right-closed bins; equal pooled bins by
+  default for several groups, DI-4, or `bins="per_algorithm"`) and `get_violin`
+  (Gaussian kernel, Silverman bandwidth, box quartiles). Both count the values in
+  `n_defined` and the failed runs in `n_failed`.
 
 ### Fixed
 
