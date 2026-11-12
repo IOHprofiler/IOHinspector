@@ -53,7 +53,8 @@
   label them `"a, b"` instead of a tuple.
 
 - Distributions (`docs/definitions/distributions.md`): `get_runtime_sample` and
-  `get_value_sample` (raw per-run tables), `get_histogram` (R's `nclass.FD` and
+  `get_value_sample` (per-run tables: `run_id`, `by`, `target` and `runtime`, or
+  `budget` and `value`; the lookups of `get_parameter_sample`), `get_histogram` (R's `nclass.FD` and
   `pretty` breaks, right-closed bins; equal pooled bins by default for several
   groups, DI-4, or `bins="per_algorithm"`) and `get_violin` (Gaussian kernel,
   Silverman bandwidth, box quartiles). Failed runs are counted in `n_failed`.
@@ -71,6 +72,9 @@
   `align_data` uses each value once.
 - `by=[]` (one group of all runs) failed in `get_overview`, `get_ecdf` and
   `get_ecdf_auc`.
+- `align_data` at a target: the other columns of a row (such as a parameter) came
+  from the last of the rows with the same evaluation count and best-so-far value,
+  not from the first row that reached the target (AL-3).
 - Budget grids (`get_sequence(..., cast_to_int=True)` and the default grids of
   `aggregate_convergence`, `get_data_ecdf` and the EAF) are rounded, not truncated:
   a grid up to 100 ended at 99 (TG-5).

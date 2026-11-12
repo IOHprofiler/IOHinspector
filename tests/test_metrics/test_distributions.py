@@ -59,6 +59,26 @@ def test_runtime_sample_matches_golden(fixture, f, d):
     assert a.equals(b)
 
 
+def test_samples_have_only_their_columns():
+    # other columns of the data are not carried along (null for a failed run)
+    data = pl.DataFrame(
+        {
+            "run_id": [1, 1, 2],
+            "algorithm_name": ["A", "A", "B"],
+            "function_id": [1, 1, 1],
+            "x0": [0.5, 0.25, 0.75],
+            "evaluations": [1, 3, 2],
+            "raw_y": [5.0, 2.0, 4.0],
+        }
+    )
+    runtimes = get_runtime_sample(data, [3.0])
+    assert runtimes.rows() == [(1, "A", 3.0, 3.0), (2, "B", 3.0, math.inf)]
+    assert runtimes.columns == ["run_id", "algorithm_name", "target", "runtime"]
+    values = get_value_sample(data, [1, 2], by=[])
+    assert values.rows() == [(1, 1, 5.0), (1, 2, 5.0), (2, 1, None), (2, 2, 4.0)]
+    assert values.columns == ["run_id", "budget", "value"]
+
+
 @pytest.mark.parametrize("fixture,f,d", cases("FV_sample"))
 def test_value_sample_matches_golden(fixture, f, d):
     ref = golden(fixture, "FV_sample").filter(

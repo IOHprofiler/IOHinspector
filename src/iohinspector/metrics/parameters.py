@@ -32,13 +32,15 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
     forward after the run stopped; null before the run's first row. At target t
     (``target=True``): the value on the first row that reaches t (f <= t, or f >= t
     under maximisation); null when the run never reaches it. Both are lookups on
-    the logged rows; no alignment matrix is built.
+    the logged rows (``align_data``); no alignment matrix is built. The runtime
+    and value samples are the lookups of ``eval_var`` at targets (the hitting
+    time, ``inf`` when never reached) and of ``fval_var`` at budgets (the
+    best-so-far value).
 
     Args:
         data: every logged row, with ``run_id``, ``eval_var``, ``fval_var``, ``by``
             and the ``parameters``.
-        parameters: the columns to look up, other than ``eval_var`` and
-            ``fval_var``.
+        parameters: the columns to look up.
         x_values: the budgets, or the targets; when None 50 log-spaced ones over
             the data (``seq_rt``, ``seq_fv``).
         by: the columns that make a run set, kept in the result.
@@ -57,12 +59,6 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
     x_col, y_col = (fval_var, eval_var) if target else (eval_var, fval_var)
     if x_values is None:
         x_values = (seq_fv if target else seq_rt)(data[x_col], 50, True)
-    if target:  # one row per best-so-far value: the row that first reached it
-        best = (
-            pl.col(fval_var).cum_max() if maximization else pl.col(fval_var).cum_min()
-        )
-        first = (best != best.shift(1)).fill_null(True).over("run_id")
-        data = data.filter(first)
     aligned = align_data(
         data,
         x_values,
@@ -72,7 +68,8 @@ def get_parameter_sample(  # pylint: disable=too-many-arguments
         maximization=maximization,
         eval_var=eval_var,
     )
-    return aligned.select(*keys, x_col, *parameters).sort(*keys, x_col)
+    sample = aligned.select(*keys, x_col, *parameters)
+    return sample.sort(*keys[1:], "run_id", x_col)  # by first
 
 
 def get_parameter_summary(  # pylint: disable=too-many-arguments

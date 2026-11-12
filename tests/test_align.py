@@ -182,6 +182,29 @@ def test_repeated_values_count_once():
     assert summary["n_runs"].to_list() == [2]
 
 
+@DIRECTIONS
+def test_fixed_target_row_is_the_first_that_reaches(maximization):
+    # AL-3 for the other columns: rows 2 and 3 share the evaluation count and the
+    # best-so-far value; row 2 reached it first. Row 4 is null (no value).
+    sign = -1 if maximization else 1
+    df = pl.DataFrame(
+        {
+            "run_id": [1] * 5,
+            "evaluations": [1, 3, 3, 4, 5],
+            "raw_y": [9.0, 7.0, 7.0, None, 7.0],
+            "p": [1, 2, 3, 4, 5],
+        }
+    ).with_columns(pl.col("raw_y") * sign)
+    result = align_data(
+        df,
+        [8.0 * sign, 7.0 * sign],
+        x_col="raw_y",
+        y_col="evaluations",
+        maximization=maximization,
+    )
+    assert result["p"].to_list() == [2, 2]
+
+
 def test_wide_output():
     result = align_data(TWO_RUNS, [1, 2, 3, 4, 5], output="wide")
     assert {"evaluations", "1", "2"} == set(result.columns)

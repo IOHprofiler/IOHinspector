@@ -7,9 +7,14 @@ Status: in progress
   every metric with another `eval_var` was wrong. Keyword `eval_var`. Test, CHANGELOG.
 - step 2: repeated x_values counted runs twice (align_data dedups); `by=[]` crashed
   in get_overview, get_ecdf, get_ecdf_auc. Tests, CHANGELOG.
+- steps 3+4: align_data at a target keeps the first row of each best-so-far value
+  (is_first_distinct) instead of a two-key sort; that fixed the carried columns on
+  ties (test) and replaces parameters' own copy. get_runtime_sample and
+  get_value_sample are lookups of get_parameter_sample, with only their columns.
 
 ## Next step
-Step 3: samples return only their documented columns.
+Step 5: one type-7 summary for aggregate_convergence and get_parameter_summary,
+one custom_op column; simpler aggregate_running_time post-processing.
 
 ## Plan
 1. align_data eval_var bug (done)

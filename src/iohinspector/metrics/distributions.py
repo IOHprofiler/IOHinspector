@@ -7,7 +7,7 @@ from collections.abc import Iterable, Sequence
 import numpy as np
 import polars as pl
 
-from ..align import align_data
+from .parameters import get_parameter_sample
 
 __all__ = [
     "get_histogram",
@@ -30,20 +30,20 @@ def get_runtime_sample(  # pylint: disable=too-many-arguments
     eval_var: str = "evaluations",
     maximization: bool = False,
 ) -> pl.DataFrame:
-    """The runtime of every run at every target: ``by`` columns, ``run_id``,
+    """The runtime of every run at every target: ``run_id``, ``by`` columns,
     ``target`` and ``runtime`` (``inf`` when the run never reached the target).
     Use one function and dimension at a time."""
-    aligned = align_data(
+    sample = get_parameter_sample(
         data,
+        [eval_var],
         targets,
-        group_cols=["run_id", *by],
-        x_col=fval_var,
-        y_col=eval_var,
+        by,
+        target=True,
+        eval_var=eval_var,
+        fval_var=fval_var,
         maximization=maximization,
     )
-    return aligned.rename({fval_var: "target", eval_var: "runtime"}).sort(
-        [*by, "run_id", "target"]
-    )
+    return sample.rename({fval_var: "target", eval_var: "runtime"})
 
 
 def get_value_sample(  # pylint: disable=too-many-arguments
@@ -55,21 +55,19 @@ def get_value_sample(  # pylint: disable=too-many-arguments
     eval_var: str = "evaluations",
     maximization: bool = False,
 ) -> pl.DataFrame:
-    """The best value of every run at every budget: ``by`` columns, ``run_id``,
+    """The best value of every run at every budget: ``run_id``, ``by`` columns,
     ``budget`` and ``value`` (null before the run's first logged evaluation,
     AL-5). Use one function and dimension at a time."""
-    aligned = align_data(
+    sample = get_parameter_sample(
         data.cast({eval_var: pl.Int64}),
+        [fval_var],
         budgets,
-        group_cols=["run_id", *by],
-        x_col=eval_var,
-        y_col=fval_var,
-        maximization=maximization,
+        by,
         eval_var=eval_var,
+        fval_var=fval_var,
+        maximization=maximization,
     )
-    return aligned.rename({eval_var: "budget", fval_var: "value"}).sort(
-        [*by, "run_id", "budget"]
-    )
+    return sample.rename({eval_var: "budget", fval_var: "value"})
 
 
 def nclass_fd(x: np.ndarray) -> int:

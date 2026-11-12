@@ -70,16 +70,13 @@ def align_data(  # pylint: disable=too-many-arguments
         runs = df.select(group_cols).unique()
     x = pl.DataFrame({x_col: x_values}).cast({x_col: df.schema[x_col]})
     grid = runs.join(x.unique(maintain_order=True), how="cross")
-    forward = not budget and maximization
-    if budget:  # on a tie, the last row in data order
-        df = df.sort(x_col, maintain_order=True)
-    else:  # on a tie, the first evaluation that reached the target
-        df = df.sort([x_col, y_col], descending=[False, not forward])
+    if not budget:  # the first row with each best-so-far value reaches it (AL-3)
+        df = df.filter(pl.col(fval).is_first_distinct().over(group_cols))
     result = grid.sort(x_col).join_asof(
-        df,
+        df.sort(x_col, maintain_order=True),  # budget: on a tie, the last row
         on=x_col,
         by=group_cols,
-        strategy="forward" if forward else "backward",
+        strategy="forward" if maximization and not budget else "backward",
         check_sortedness=False,
     )
     if not budget:
