@@ -8,7 +8,7 @@ from .utils import (
 from .fixed_budget import aggregate_convergence
 from .fixed_target import aggregate_running_time
 from .aocc import get_aocc
-from .ecdf import get_data_ecdf
+from .ecdf import get_data_ecdf, get_ecdf, get_ecdf_auc, get_rank_table
 from .eaf import (
     get_discritized_eaf_single_objective,
     get_eaf_data,
@@ -35,7 +35,10 @@ __all__ = [
     "get_eaf_data",
     "get_eaf_diff_data",
     "get_eaf_pareto_data",
+    "get_ecdf",
+    "get_ecdf_auc",
     "get_heatmap_single_run_data",
+    "get_rank_table",
     "get_robustrank_changes",
     "get_robustrank_over_time",
     "get_sequence",
