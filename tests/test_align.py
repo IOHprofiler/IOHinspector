@@ -132,6 +132,24 @@ def test_fixed_target_first_hit(maximization, y, expected):
     assert dict(result.select("raw_y", "evaluations").rows()) == expected
 
 
+@DIRECTIONS
+def test_fixed_target_inclusive_first_of_ties(maximization):
+    # AL-1: f <= t reaches t; AL-3: the first of the rows with f = 5; AL-6: raw rows
+    sign = -1 if maximization else 1
+    y = [10.0, 5.0, 5.0, 7.0, 5.0, 2.0]
+    df = pl.DataFrame({"run_id": [1] * 6, "evaluations": range(1, 7), "raw_y": y})
+    expected = {6.0: 2, 5.0: 2, 4.9: 6, 2.0: 6, 1.0: math.inf}
+    result = align_data(
+        df.with_columns(pl.col("raw_y") * sign),
+        [t * sign for t in expected],
+        x_col="raw_y",
+        y_col="evaluations",
+        maximization=maximization,
+    )
+    rows = result.select(pl.col("raw_y") * sign, "evaluations").rows()
+    assert dict(rows) == expected
+
+
 def test_wide_output():
     result = align_data(TWO_RUNS, [1, 2, 3, 4, 5], output="wide")
     assert {"evaluations", "1", "2"} == set(result.columns)
