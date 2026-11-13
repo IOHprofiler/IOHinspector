@@ -4,6 +4,9 @@
 
 ### New
 
+- The Nevergrad reader skips rows of crashed runs (empty `loss`) instead of failing.
+  The count per algorithm is in `manifest.extra.skipped_rows` and in the warning
+  `empty_value_rows`; `verify` agrees. A `loss` that is not a number still fails.
 - `iohinspector upload SOURCE`: uploads a file, folder (zipped first) or archive to
   an IOHanalyzer website with a personal upload token (`--token` or `IOH_TOKEN`,
   `--url` or `IOH_URL`; default `https://coaxium.liacs.nl`). It converts and verifies

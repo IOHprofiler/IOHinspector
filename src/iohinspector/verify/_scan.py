@@ -59,6 +59,7 @@ class CsvLayout:
     run_by: tuple[str, ...] = ()
     delimiter: str = ","
     family: bool = False
+    skip_empty_value: bool = False
 
 
 Layout = TextLayout | CsvLayout
@@ -69,7 +70,7 @@ KINDS: dict[str, Layout] = {
     "coco-dat": _COCO,
     "coco-tdat": _COCO,
     "coco-rdat": _COCO,
-    "nevergrad-csv": CsvLayout("budget", "loss"),
+    "nevergrad-csv": CsvLayout("budget", "loss", skip_empty_value=True),
 }
 #: Kinds whose files hold metadata only: their sha256 is checked, nothing else.
 METADATA_KINDS = ("ioh-json", "coco-info")
@@ -242,6 +243,8 @@ def scan_csv(data: bytes, path: str, layout: CsvLayout) -> FileScan:
                 continue
             if len(row) != len(header):
                 raise ScanError(f"{path}:{reader.line_num}: {len(row)} fields")
+            if layout.skip_empty_value and row[y] == "":
+                continue
             key = tuple(row[i] for i in keys)
             run = runs.get(key) if keys else None
             if run is None:
