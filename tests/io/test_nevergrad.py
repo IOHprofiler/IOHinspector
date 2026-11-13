@@ -201,3 +201,28 @@ def test_not_nevergrad(tmp_path):
     empty = write(tmp_path, [], HEADER, "empty.csv")
     with pytest.raises(ReaderError, match="no data rows"):
         convert_nevergrad(empty, tmp_path / "ds")
+
+
+CRASHED = [
+    "1.5,1,f,False,5,10,A,True,",
+    ",2,f,False,5,10,A,True,",
+    "2.5,3,f,False,5,10,B,True,",
+    ",4,f,False,5,10,B,True,",
+    ",5,f,False,5,10,B,True,",
+]
+
+
+def test_crashed_rows_are_skipped_and_counted(tmp_path):
+    from iohinspector.verify import verify
+
+    src = write(tmp_path, CRASHED)
+    m = convert_nevergrad(src, tmp_path / "ds")
+    assert m["extra"]["skipped_rows"] == {"A": 1, "B": 2}
+    assert [w["code"] for w in m["warnings"]] == ["empty_value_rows"]
+    assert m["sources"][0]["data_rows"] == 2
+    ds = scan_dataset(tmp_path / "ds", warn=False)
+    runs = ds.runs.collect().sort("source_run_index")
+    assert runs["source_run_index"].to_list() == [0, 1]
+    assert sorted(ds.trace.collect()["raw_y"].to_list()) == [1.5, 2.5]
+    report = verify(src, tmp_path / "ds")
+    assert report.ok, report.summary()

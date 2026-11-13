@@ -15,6 +15,12 @@ one run with one trace row: the best loss ``loss`` at the end of the budget
   string); an empty cell gives no descriptor;
 - the objective is minimised, and the suite is ``NEVERGRAD``.
 
+Rows of crashed runs have an empty ``loss`` (and an ``error`` column naming the
+exception). They are skipped, as IOHanalyzer reads them as NA: the count per
+algorithm is in ``manifest.extra.skipped_rows`` and a warning
+``empty_value_rows`` is recorded. ``data_rows`` and the run indexes count only
+the rows kept. A ``loss`` that is not empty and not a number is still an error.
+
 Gzip-compressed files (``.csv.gz``, as published) are read directly.
 """
 
@@ -74,6 +80,7 @@ def nevergrad_mapping(header: list[str]) -> CsvMapping:
             "function_name": Source(fn=function_name),
         },
         descriptors="rest",
+        skip_empty_value=True,
     )
 
 

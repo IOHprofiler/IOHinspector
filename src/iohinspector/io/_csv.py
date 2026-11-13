@@ -70,6 +70,8 @@ class CsvMapping:
     descriptors: Sequence[str] | str = ()
     trace_columns: Sequence[str] = ()
     positions: Sequence[str] = ()
+    #: Skip rows whose value is empty (a crashed run) and count them per algorithm.
+    skip_empty_value: bool = False
 
 
 # Run-level fields: name -> (kind, required).
@@ -265,16 +267,28 @@ def read_csv(  # pylint: disable=too-many-arguments
     for line, row in _rows(path, name, mapping.delimiter, len(header)):
         reader.add_row(line, row)
     reader.flush()
+    if reader.skipped:
+        total = sum(reader.skipped.values())
+        reader.tables.warn(
+            "empty_value_rows",
+            f"skipped {total} row(s) with an empty {mapping.value!r} (crashed runs)",
+            name,
+        )
     if not reader.runs:
         raise ReaderError("the file has no data rows", name)
     function_ids = reader.finish(origin)
+    extra: dict[str, Any] = {}
+    if function_ids:
+        extra["function_ids"] = function_ids
+    if reader.skipped:
+        extra["skipped_rows"] = dict(sorted(reader.skipped.items()))
     reader.tables.sources.append(
         file_entry(path, name, kind=reader_name, data_rows=reader.n)
     )
     result = reader.tables.result(
         reader_name,
         reader_options=dict(reader_options or {}),
-        extra={"function_ids": function_ids} if function_ids else None,
+        extra=extra or None,
     )
     result.lazy_trace = result.lazy_trace.with_columns(
         _cast(reader.extra_names[c], t.kind(int64=True))
@@ -350,6 +364,8 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
         #: Buffered rows: line number, run index, row within the run, tokens.
         self.chunk: list[tuple[int, int, int, list[str]]] = []
         self.n = 0
+        #: Rows skipped for an empty value, per algorithm.
+        self.skipped: dict[str, int] = {}
 
     def _renamed(
         self,
@@ -367,6 +383,11 @@ class _CsvReader:  # pylint: disable=too-many-instance-attributes
         return out
 
     def add_row(self, line: int, row: list[str]) -> None:
+        if self.mapping.skip_empty_value and row[self.col[self.mapping.value]] == "":
+            alg = self.mapping.fields.get("algorithm_name")
+            key = row[self.col[alg.column]] if alg and alg.column else ""
+            self.skipped[key] = self.skipped.get(key, 0) + 1
+            return
         attrs = tuple(row[i] for i in self.attr_idx)
         key = tuple(row[i] for i in self.key_idx) if self.key_idx else None
         r = self.index.get(key) if key is not None else None
