@@ -100,6 +100,33 @@ def _sample(frame: pl.DataFrame, value: str, sign: float, drop_failures: bool):
     return v[np.isfinite(v)] if drop_failures else v
 
 
+def _test(xa: np.ndarray, xc: np.ndarray, exact: bool | None) -> tuple:
+    """n, m, D+, p and method of "a is better than c"; IOHanalyzer's rule for an
+    empty sample: p = 1 for an empty a, 0 for an empty c, null for both."""
+    if len(xa) and len(xc):
+        return (len(xa), len(xc), *ks_test(xa, xc, exact=exact))
+    p = None if len(xa) == len(xc) == 0 else float(len(xa) == 0)
+    return (len(xa), len(xc), None, p, None)
+
+
+def _family(groups: list, exact: bool | None, alpha: float) -> list[tuple]:
+    """The rows of one family of tests between ``groups`` ((key, values) pairs):
+    a, c, the test, the Holm-adjusted p, ``better`` and ``decision``."""
+    tests = {
+        (ga, gc): _test(xa, xc, exact)
+        for ga, xa in groups
+        for gc, xc in groups
+        if ga != gc
+    }
+    p = holm([np.nan if t[3] is None else t[3] for t in tests.values()]).tolist()
+    adjusted = {pair: None if np.isnan(q) else q for pair, q in zip(tests, p)}
+    better = {pair: q is not None and q <= alpha for pair, q in adjusted.items()}
+    return [
+        (*a, *c, *test, adjusted[a, c], better[a, c], better[a, c] - better[c, a])
+        for (a, c), test in tests.items()
+    ]
+
+
 def get_ks_tests(  # pylint: disable=too-many-arguments,too-many-locals
     sample: pl.DataFrame,
     value: str,
@@ -152,26 +179,7 @@ def get_ks_tests(  # pylint: disable=too-many-arguments,too-many-locals
         groups = [
             (g, _sample(f, value, sign, drop_failures)) for g, f in _split(frame, by)
         ]
-        tests = {}
-        for ga, xa in groups:
-            for gc, xc in groups:
-                if ga == gc:
-                    continue
-                if len(xa) and len(xc):
-                    tests[ga, gc] = (len(xa), len(xc), *ks_test(xa, xc, exact=exact))
-                else:  # IOHanalyzer's rule for empty samples
-                    p = None if len(xa) == len(xc) == 0 else float(len(xa) == 0)
-                    tests[ga, gc] = (len(xa), len(xc), None, p, None)
-        p = holm([np.nan if t[3] is None else t[3] for t in tests.values()])
-        adjusted = {
-            pair: None if np.isnan(q) else q for pair, q in zip(tests, p.tolist())
-        }
-        better = {pair: q is not None and q <= alpha for pair, q in adjusted.items()}
-        for (ga, gc), test in tests.items():
-            decision = int(better[ga, gc]) - int(better[gc, ga])
-            rows.append(
-                (*key, *ga, *gc, *test, adjusted[ga, gc], better[ga, gc], decision)
-            )
+        rows += [(*key, *row) for row in _family(groups, exact, alpha)]
     vs = [f"{c}_vs" for c in by]
     numbers = [
         "n",

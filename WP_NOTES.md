@@ -1,6 +1,6 @@
 # WP I15: Statistical comparisons and Glicko-2
 Branch: wp/I15-stat-comparisons
-Status: in progress
+Status: ready for review
 
 Definitions: `docs/definitions/comparisons.md` (CM-1 to CM-6), `docs/definitions/glicko2.md` (GL-1 to GL-4).
 
@@ -11,8 +11,12 @@ Definitions: `docs/definitions/comparisons.md` (CM-1 to CM-6), `docs/definitions
 
 - step 3: `ranking.py`: `fmin` (R's `optimize`, Brent_fmin port), `glicko2` (PlayerRatings 1.1-0 port), `elo` (K = 20), `get_tournament_ranking` (GL-1 tournament, seeded, `method` glicko2/elo, `tau` default 0.5); `get_tournament_ratings` deprecated (the plot still uses it, warning silenced, until I20). Golden: the six recorded R game lists give PlayerRatings' ratings bit for bit on five, 4e-12 relative on ioh040_min by_RT (macOS libm); test rtol 1e-11. Glickman's example matches PlayerRatings' values in glicko2.md.
 
+- step 4: docs: comparisons.md and glicko2.md ("How iohinspector implements it (I15)", the R exact-KS Inf finding), CHANGELOG (Unreleased), FUNCTION_REFERENCE; `get_ks_tests` split into helpers.
+
 ## Next step
-Step 4: docs (definitions "implemented" notes, CHANGELOG), final review.
+None: every step is done. The PR needs the D6 review (dvermetten): it adds metric code. Delete this file after the PR body is taken from it.
+
+Tests: `pytest -q` (1005 passed, 3 skipped, polars 2.1, Python 3.12); the I15 tests also pass on polars 1.44.
 
 ## Decisions
 - `get_ks_tests` takes a sample table (the output of `get_runtime_sample` / `get_value_sample`), like `get_histogram`; `view` columns form one Holm family. The second group's `by` columns get the suffix `_vs`.
