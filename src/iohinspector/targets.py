@@ -11,7 +11,14 @@ from decimal import Decimal, localcontext
 import numpy as np
 import polars as pl
 
-__all__ = ["bbob_targets", "get_ecdf_targets", "get_target_dt", "seq_fv", "seq_rt"]
+__all__ = [
+    "bbob_targets",
+    "get_ecdf_budgets",
+    "get_ecdf_targets",
+    "get_target_dt",
+    "seq_fv",
+    "seq_rt",
+]
 
 PAIR = ["function_id", "dimension"]
 #: Lower end of log-spaced targets when the data has no positive value (TG-3).
@@ -104,6 +111,23 @@ def get_ecdf_targets(
     ]
     targets = grouped.drop(fval_var).with_columns(target=pl.Series(targets))
     return targets.explode("target").sort(PAIR, maintain_order=True)
+
+
+def get_ecdf_budgets(
+    data: pl.DataFrame,
+    n: int = 10,
+    *,
+    log: bool = True,
+    eval_var: str = "evaluations",
+) -> pl.DataFrame:
+    """Budgets per (function, dimension) pair for the fixed-budget ECDF (EC-9):
+    ``n`` from the pair's smallest to its largest logged evaluation, log-spaced
+    or linear, rounded as ``seq_rt`` (TG-5). Columns ``function_id``,
+    ``dimension`` and ``budget``."""
+    grouped = data.group_by(PAIR, maintain_order=True).agg(pl.col(eval_var))
+    budgets = [seq_rt(e, n, log=log) for e in grouped[eval_var]]
+    budgets = grouped.drop(eval_var).with_columns(budget=pl.Series(budgets))
+    return budgets.explode("budget").sort(PAIR, maintain_order=True)
 
 
 def get_target_dt(  # pylint: disable=too-many-arguments

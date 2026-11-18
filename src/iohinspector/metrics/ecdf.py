@@ -1,5 +1,5 @@
-"""ECDF, its area (AUC, AOCC) and multi-function rank tables
-(``docs/definitions/ecdf.md``, EC-1 to EC-8)."""
+"""ECDF, its area (AUC, AOCC), the fixed-budget ECDF and its area, and
+multi-function rank tables (``docs/definitions/ecdf.md``, EC-1 to EC-10)."""
 
 import math
 import warnings
@@ -9,7 +9,7 @@ import polars as pl
 
 from .._upgrade import upgrade_hints
 from ..align import align_data
-from ..targets import PAIR, get_ecdf_targets, seq_rt
+from ..targets import PAIR, get_ecdf_budgets, get_ecdf_targets, seq_rt
 
 ALL = "_all"  # the one group when ``by`` is empty
 
@@ -55,20 +55,30 @@ def _warn_pairs(missing: pl.DataFrame, n: int, pairs: str) -> None:
     )
 
 
+def _aligned(data, grid, column, **options):
+    """Each run aligned on its pair's values of ``grid[column]`` (``align_data``
+    with ``options``), with ``dy`` = 1/m for its m values."""
+    parts = grid.partition_by(PAIR, as_dict=True)
+    return pl.concat(
+        align_data(runs, parts[key][column], **options).with_columns(
+            dy=1 / pl.len().over("run_id")
+        )
+        for key, runs in data.partition_by(PAIR, as_dict=True).items()
+    )
+
+
 def _hits(data, targets, maximization, fval_var, eval_var):
     """Increments ``dy`` = 1/m of each (run, target) pair at its first hitting time
     (EC-1: inclusive, AL-1; ties to the first row, AL-3), with the other columns of
     the row that reached it."""
-    parts = targets.partition_by(PAIR, as_dict=True)
-    aligned = pl.concat(
-        align_data(
-            runs,
-            parts[key]["target"],
-            x_col=fval_var,
-            y_col=eval_var,
-            maximization=maximization,
-        ).with_columns(dy=1 / pl.len().over("run_id"))
-        for key, runs in data.partition_by(PAIR, as_dict=True).items()
+    aligned = _aligned(
+        data,
+        targets,
+        "target",
+        x_col=fval_var,
+        y_col=eval_var,
+        maximization=maximization,
+        eval_var=eval_var,
     )
     return aligned.filter(pl.col(eval_var).is_finite())
 
@@ -150,6 +160,42 @@ def _cumulate(steps: pl.DataFrame, by: list[str], order: Sequence[str] = ()):
     )
 
 
+def _step_function(steps, by, x_values):
+    """The cumulated ``ecdf`` of the increments at each x where it steps (EC-3), or
+    sampled at ``x_values``: ``by``, ``x`` and ``ecdf``."""
+    steps = steps.with_columns(grid=pl.lit(False))
+    if x_values is not None:
+        grid = pl.DataFrame({"x": list(x_values)}, schema={"x": pl.Float64})
+        grid = steps.select(by).unique().join(grid, how="cross")
+        steps = pl.concat([steps, grid.with_columns(inc=0.0, grid=pl.lit(True))])
+    steps = _cumulate(steps, by, ["grid"])
+    if x_values is None:
+        steps = steps.unique([*by, "x"], keep="last", maintain_order=True)
+    else:
+        steps = steps.filter("grid")
+    return steps.select(*by, "x", "ecdf").drop(ALL, strict=False)
+
+
+def _axis(x: pl.Expr, lo: float, hi: float, log: bool):
+    """``x`` clipped to [lo, hi], and the interval, on a linear or log10 axis."""
+    if lo >= hi or (log and lo <= 0):
+        raise ValueError(f"range [{lo}, {hi}] is empty or not positive")
+    x = x.clip(lo, hi)
+    if log:
+        return x.log10(), math.log10(lo), math.log10(hi)
+    return x, lo, hi
+
+
+def _area(steps, by, x, lo, hi):
+    """The normalised area under each group's ECDF over [lo, hi] (EC-4, EC-10).
+    ``x`` maps the step positions onto that interval, keeping their order."""
+    width = pl.col("x").shift(-1, fill_value=hi).over(by) - pl.col("x")
+    steps = _cumulate(steps, by).with_columns(x=x)
+    steps = steps.with_columns(area=pl.col("ecdf") * width)
+    auc = pl.col("area").sum() / (hi - lo)
+    return steps.group_by(by, maintain_order=True).agg(auc=auc).drop(ALL, strict=False)
+
+
 @upgrade_hints
 def get_ecdf(
     data: pl.DataFrame,
@@ -203,19 +249,7 @@ def get_ecdf(
     """
     data, by = _one_group(data, by)
     steps, _ = _increments(data, targets, by, eval_var=eval_var, **options)
-    steps = steps.with_columns(grid=pl.lit(False))
-    if x_values is not None:
-        grid = pl.DataFrame({"x": list(x_values)}, schema={"x": pl.Float64})
-        grid = steps.select(by).unique().join(grid, how="cross")
-        steps = pl.concat([steps, grid.with_columns(inc=0.0, grid=pl.lit(True))])
-    steps = _cumulate(steps, by, ["grid"])
-    if x_values is None:
-        steps = steps.unique([*by, "x"], keep="last", maintain_order=True)
-    else:
-        steps = steps.filter("grid")
-    return steps.select(*by, pl.col("x").alias(eval_var), "ecdf").drop(
-        ALL, strict=False
-    )
+    return _step_function(steps, by, x_values).rename({"x": eval_var})
 
 
 @upgrade_hints
@@ -253,16 +287,134 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     """
     data, by = _one_group(data, by)
     steps, x_max = _increments(data, targets, by, **options)
-    lo, hi = b_lo, x_max if b_hi is None else b_hi
-    if lo >= hi or (scale_eval_log and lo <= 0):
-        raise ValueError(f"budget range [{lo}, {hi}] is empty or not positive")
-    x = pl.col("x").clip(lo, hi)
-    if scale_eval_log:
-        x, lo, hi = x.log10(), math.log10(lo), math.log10(hi)
-    width = x.shift(-1, fill_value=hi).over(by) - x
-    steps = _cumulate(steps, by).with_columns(area=pl.col("ecdf") * width)
-    auc = pl.col("area").sum() / (hi - lo)
-    return steps.group_by(by, maintain_order=True).agg(auc=auc).drop(ALL, strict=False)
+    hi = x_max if b_hi is None else b_hi
+    return _area(steps, by, *_axis(pl.col("x"), b_lo, hi, scale_eval_log))
+
+
+def _value_increments(  # pylint: disable=R0913
+    data: pl.DataFrame,
+    budgets: pl.DataFrame | None,
+    by: list[str],
+    *,
+    maximization: bool = False,
+    pairs: str = "common",
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+) -> pl.DataFrame:
+    """The weighted fixed-budget ECDF increments ``inc`` per group of ``by`` at
+    x = V_i(b), each run's best-so-far value at each budget (EC-9), -V_i(b) when
+    maximising so that the ECDF accumulates along x; and a 0 at x = -inf."""
+    if budgets is None:
+        budgets = get_ecdf_budgets(data, eval_var=eval_var)
+    budgets = budgets.cast({c: data.schema[c] for c in PAIR})
+    data = data.join(budgets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    data = _weights(data, by, pairs)
+    values = _aligned(
+        data,
+        budgets,
+        "budget",
+        x_col=eval_var,
+        y_col=fval_var,
+        maximization=maximization,
+        eval_var=eval_var,
+    ).filter(pl.col(fval_var).is_not_null())  # no value before the first row (AL-5)
+    x = pl.col(fval_var).cast(pl.Float64) * (-1.0 if maximization else 1.0)
+    zero = data.select(by).unique().with_columns(x=-math.inf, inc=pl.lit(0.0))
+    steps = values.select(*by, x=x, inc=pl.col("dy") * pl.col("weight"))
+    return pl.concat([zero, steps])
+
+
+@upgrade_hints
+def get_fixed_budget_ecdf(
+    data: pl.DataFrame,
+    budgets: pl.DataFrame | None = None,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
+    x_values: Iterable[float] | None = None,
+    fval_var: str = "raw_y",
+    **options,
+) -> pl.DataFrame:
+    """The fixed-budget ECDF of each group of ``by`` (``docs/definitions/ecdf.md``,
+    EC-9).
+
+    At a value v, the fraction of (run, budget) pairs whose best-so-far value at
+    the budget is v or better: V_i(b) <= v (>= when maximising), so the run reached
+    v within the budget. Before its first logged row a run has no value and counts
+    as not reached. Averaged over the (function, dimension) pairs of a group as
+    ``get_ecdf`` (EC-2). Exact: without ``x_values`` the result has one row per
+    value at which the ECDF steps, from the worst value to the best, each with the
+    ECDF from there to the next row, and a first row at v = -inf (inf when
+    maximising) with value 0 for every group.
+
+    Args:
+        data: the runs' logged rows in evaluation order, as for ``get_ecdf``.
+        budgets: budgets per pair, columns ``function_id``, ``dimension`` and
+            ``budget``. Defaults to 10 log-spaced budgets per pair
+            (``targets.get_ecdf_budgets``).
+        by: the columns that make a group, as for ``get_ecdf``.
+        x_values: values to sample the ECDF at, for display.
+        fval_var: the function value column.
+        **options: keyword-only: ``maximization`` (False), ``pairs``
+            (``"common"``) and ``eval_var`` (``"evaluations"``), as for
+            ``get_ecdf``.
+
+    Returns:
+        pl.DataFrame: ``by``, ``fval_var`` (float) and ``ecdf``.
+    """
+    data, by = _one_group(data, by)
+    sign = -1.0 if options.get("maximization") else 1.0
+    steps = _value_increments(data, budgets, by, fval_var=fval_var, **options)
+    xs = None if x_values is None else [sign * v for v in x_values]
+    ecdf = _step_function(steps, by, xs).with_columns(pl.col("x") * sign)
+    return ecdf.rename({"x": fval_var})
+
+
+@upgrade_hints
+def get_fixed_budget_ecdf_auc(  # pylint: disable=too-many-arguments
+    data: pl.DataFrame,
+    budgets: pl.DataFrame | None = None,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
+    f_lo: float | None = None,
+    f_hi: float | None = None,
+    scale_f_log: bool = True,
+    fval_var: str = "raw_y",
+    **options,
+) -> pl.DataFrame:
+    """The normalised area under the fixed-budget ECDF of each group of ``by`` over
+    the values [``f_lo``, ``f_hi``] (EC-10): its exact integral divided by
+    f_hi - f_lo, on log10 of the value (``scale_f_log``, default) or a linear axis.
+    It lies in [0, 1]; larger is better whether minimising or maximising.
+
+    It equals the mean, over the budgets, of the continuum ECDF
+    (``get_ecdf(continuous=True)``) at those budgets with the bounds f_lo and f_hi
+    for every pair.
+
+    Args:
+        data, budgets, by: as in ``get_fixed_budget_ecdf``.
+        f_lo, f_hi: the value range. By default the smallest and largest bound of
+            the pairs in ``data``, each pair's bounds being those of its default
+            targets (``targets.get_ecdf_targets``): its suite's (TG-8) or its
+            observed range.
+        scale_f_log: integrate over log10 of the value.
+        fval_var: the function value column.
+        **options: the options of ``get_fixed_budget_ecdf``.
+
+    Returns:
+        pl.DataFrame: ``by`` and ``auc``.
+    """
+    if f_lo is None or f_hi is None:
+        kind = "log-linear" if scale_f_log else "linear"
+        bounds = get_ecdf_targets(data, kind, n=2, fval_var=fval_var)
+        bounds = bounds["target"].to_numpy()
+        f_lo = float(bounds.min()) if f_lo is None else f_lo
+        f_hi = float(bounds.max()) if f_hi is None else f_hi
+    data, by = _one_group(data, by)
+    steps = _value_increments(data, budgets, by, fval_var=fval_var, **options)
+    if not options.get("maximization"):
+        return _area(steps, by, *_axis(pl.col("x"), f_lo, f_hi, scale_f_log))
+    x, lo, hi = _axis(-pl.col("x"), f_lo, f_hi, scale_f_log)
+    return _area(steps, by, -x, -hi, -lo)  # mirrored, so x keeps its order
 
 
 def get_rank_table(

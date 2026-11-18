@@ -87,7 +87,7 @@ Generate attractor network analysis from optimization algorithm trajectory data.
 
 ### ECDF
 
-Definitions: `docs/definitions/ecdf.md` (EC-1 to EC-8).
+Definitions: `docs/definitions/ecdf.md` (EC-1 to EC-10).
 
 #### `get_ecdf(data, targets=None, by=["algorithm_name"], *, x_values=None, continuous=False, scale_f_log=True, maximization=False, pairs="common", divide_by_dimension=False, fval_var="raw_y", eval_var="evaluations")`
 The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive) within x evaluations, averaged over the (function, dimension) pairs of each group with equal weight. Exact: one row per step, or sampled at `x_values`. `targets` per pair comes from `targets.get_ecdf_targets` (default 10 log-linear per pair). `continuous=True` gives the continuum ECDF (normalised quality between each pair's smallest and largest target). `pairs="common"` keeps the pairs every group has, `"all"` each group's own pairs; both warn when they differ.
@@ -96,6 +96,16 @@ The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive)
 
 #### `get_ecdf_auc(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, **options)`
 The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the largest budget), on a linear or log10 axis; `options` as in `get_ecdf`. With `continuous=True` it is the AOCC, the limit of the target AUC as the number of targets grows.
+
+**Returns:** `pl.DataFrame` with `by` and `auc`.
+
+#### `get_fixed_budget_ecdf(data, budgets=None, by=["algorithm_name"], *, x_values=None, fval_var="raw_y", maximization=False, pairs="common", eval_var="evaluations")`
+The fixed-budget ECDF: at a value v, the fraction of (run, budget) pairs whose best-so-far value at the budget is v or better (inclusive), averaged over pairs as `get_ecdf`. Exact: one row per step, or sampled at `x_values`. `budgets` per pair (`function_id`, `dimension`, `budget`) comes from `targets.get_ecdf_budgets` (default 10 log-spaced per pair).
+
+**Returns:** `pl.DataFrame` with `by`, `fval_var` and `ecdf`.
+
+#### `get_fixed_budget_ecdf_auc(data, budgets=None, by=["algorithm_name"], *, f_lo=None, f_hi=None, scale_f_log=True, fval_var="raw_y", **options)`
+The exact normalised area under the fixed-budget ECDF over the values [f_lo, f_hi], on log10 (default) or a linear axis; larger is better in both directions. The default range spans the pairs' default target bounds (the suite's, or the observed range). It equals the mean over the budgets of the continuum ECDF with these bounds.
 
 **Returns:** `pl.DataFrame` with `by` and `auc`.
 

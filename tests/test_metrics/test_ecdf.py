@@ -6,9 +6,11 @@ from iohinspector.metrics.ecdf import (
     get_data_ecdf,
     get_ecdf,
     get_ecdf_auc,
+    get_fixed_budget_ecdf,
+    get_fixed_budget_ecdf_auc,
     get_rank_table,
 )
-from iohinspector.targets import get_ecdf_targets
+from iohinspector.targets import get_ecdf_budgets, get_ecdf_targets
 from tests.golden.load import golden, golden_renamed, logged
 
 pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
@@ -428,3 +430,155 @@ def test_auc_matches_iohanalyzer_trapezoid(fixture):
         )
         assert joined.height == gold.height
         np.testing.assert_allclose(joined[ours_auc], joined["auc"], rtol=1e-12)
+
+
+# The fixed-budget ECDF (EC-9) and its AUC (EC-10)
+
+BUDGETS = pl.DataFrame({"function_id": [1, 1], "dimension": [2, 2], "budget": [1, 10]})
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_fixed_budget_ecdf_is_exact(maximization):
+    # at budget 1 every run has 1e4; at 10 the runs have 1, 1e-2 and 1e-4
+    result = get_fixed_budget_ecdf(THREE, BUDGETS, maximization=maximization)
+    if maximization:  # the best-so-far value stays 1e4
+        assert result["raw_y"].to_list() == [np.inf, 1e4]
+        assert result["ecdf"].to_list() == pytest.approx([0, 1], 1e-12)
+        return
+    assert result["raw_y"].to_list() == [-np.inf, 1e-4, 1e-2, 1.0, 1e4]
+    np.testing.assert_allclose(result["ecdf"], [0, 1 / 6, 2 / 6, 3 / 6, 1])
+    sampled = get_fixed_budget_ecdf(THREE, BUDGETS, x_values=[1e-5, 1e-3, 1, 1e5])
+    np.testing.assert_allclose(sampled["ecdf"], [0, 1 / 6, 3 / 6, 1])
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_fixed_budget_hit_rule_is_inclusive(maximization):
+    # one run: 5, 3, 1 at evaluations 1, 10, 100; budget 10 and value 3 count
+    df = _runs([[5.0, 3.0, 1.0]])
+    budgets = BUDGETS.tail(1)
+    result = get_fixed_budget_ecdf(
+        df, budgets, x_values=[3.0], maximization=maximization
+    )
+    assert result["ecdf"].item() == 1.0
+    before = get_fixed_budget_ecdf(
+        df, budgets.with_columns(budget=9), x_values=[3], maximization=maximization
+    )
+    assert before["ecdf"].item() == float(maximization)  # 5 >= 3, but 5 > 3
+
+
+def test_fixed_budget_ecdf_without_a_value_yet():
+    # run 2 is first logged at evaluation 5: at budget 1 it has not reached anything
+    df = pl.DataFrame(
+        {
+            "run_id": [1, 1, 2, 2],
+            "function_id": [1] * 4,
+            "dimension": [2] * 4,
+            "algorithm_name": ["A"] * 4,
+            "evaluations": [1, 10, 5, 10],
+            "raw_y": [4.0, 2.0, 3.0, 1.0],
+        }
+    )
+    result = get_fixed_budget_ecdf(df, BUDGETS.head(1), x_values=[10.0])
+    assert result["ecdf"].item() == 0.5
+
+
+def test_default_budgets():
+    budgets = get_ecdf_budgets(THREE)
+    assert budgets["budget"].to_list() == [1, 2, 3, 5, 8, 13, 22, 36, 60, 100]
+    assert get_fixed_budget_ecdf(THREE).equals(get_fixed_budget_ecdf(THREE, budgets))
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+@pytest.mark.parametrize("scale_f_log", [False, True])
+def test_fixed_budget_auc_is_the_mean_continuum_ecdf(maximization, scale_f_log):
+    # EC-10: the area over [f_lo, f_hi] is the mean over the budgets of the
+    # continuum ECDF with the bounds f_lo and f_hi
+    rng = np.random.default_rng(2)
+    df = pl.concat(
+        [
+            _runs((10 ** rng.uniform(-6, 3, (5, 30))).tolist(), range(1, 31)),
+            _runs(
+                (10 ** rng.uniform(-6, 3, (4, 30))).tolist(), range(1, 31), 2, first=9
+            ),
+        ]
+    )
+    budgets = get_ecdf_budgets(df, 7)
+    lo, hi = 1e-4, 1e2
+    options = {"maximization": maximization, "scale_f_log": scale_f_log}
+    auc = get_fixed_budget_ecdf_auc(df, budgets, f_lo=lo, f_hi=hi, **options)
+    bounds = (
+        budgets.select(PAIR)
+        .unique()
+        .join(pl.DataFrame({"target": [lo, hi]}), how="cross")
+    )
+    continuum = get_ecdf(
+        df, bounds, continuous=True, x_values=budgets["budget"].unique(), **options
+    )
+    assert auc["auc"].item() == pytest.approx(continuum["ecdf"].mean(), rel=1e-12)
+
+
+def test_fixed_budget_auc_defaults_and_errors():
+    # default range: the observed values 1e-4 to 1e4, on log10
+    assert get_fixed_budget_ecdf_auc(THREE, BUDGETS)["auc"].item() == 0.375
+    linear = get_fixed_budget_ecdf_auc(THREE, BUDGETS, scale_f_log=False)
+    expected = ((1e4 - 1) + (1e4 - 1e-2) + (1e4 - 1e-4)) / 6 / (1e4 - 1e-4)
+    assert linear["auc"].item() == pytest.approx(expected, rel=1e-12)
+    with pytest.raises(ValueError, match="empty"):
+        get_fixed_budget_ecdf_auc(THREE, f_lo=1, f_hi=1)
+    with pytest.raises(ValueError, match="positive"):
+        get_fixed_budget_ecdf_auc(THREE, f_lo=0, f_hi=1)
+
+
+def _golden_fixed_budget(fixture, strict=True):
+    """Our fixed-budget ECDF per pair on IOHanalyzer's value grid, joined to
+    ``ECDF_by_FV``. IOHanalyzer's T < b is T <= b - 1 for integer evaluations."""
+    maximization = fixture == "ioh040_max"
+    budgets = golden_renamed(fixture, "FV_sample").select(
+        *PAIR, budget=pl.col("runtime") - int(strict)
+    )
+    gold = _golden(fixture, "ECDF_by_FV").with_row_index()
+    ours = get_fixed_budget_ecdf(
+        logged(fixture),
+        budgets.unique(),
+        BY_PAIR,
+        x_values=gold["x"].unique(),
+        maximization=maximization,
+    )
+    joined = gold.join(
+        ours.rename({"raw_y": "x"}), on=[*BY_PAIR, "x"], how="left"
+    ).sort("index")
+    assert joined.height == gold.height
+    return joined
+
+
+@GOLDEN
+def test_fixed_budget_ecdf_matches_iohanalyzer(fixture):
+    joined = _golden_fixed_budget(fixture)
+    np.testing.assert_allclose(joined["ecdf"], joined["mean"], rtol=0, atol=1e-12)
+    inclusive = _golden_fixed_budget(fixture, strict=False)  # EC-9
+    assert (inclusive["ecdf"] >= inclusive["mean"] - 1e-12).all()
+    assert (inclusive["ecdf"] > inclusive["mean"] + 1e-12).any()
+
+
+@GOLDEN
+def test_fixed_budget_auc_matches_iohanalyzer_trapezoid(fixture):
+    # EC-10: IOHanalyzer runs the trapezoid rule over its value grid in the grid's
+    # order (largest value first when minimising) and divides by the last value;
+    # only this test reproduces that. The agreed AUC lies in [0, 1]
+    x, y = pl.col("x"), pl.col("ecdf")
+    area = ((y + y.shift(1)) / 2 * x.diff()).over(BY_PAIR)
+    ours = (
+        _golden_fixed_budget(fixture)
+        .with_columns(area=area)
+        .group_by(BY_PAIR, maintain_order=True)
+        .agg(auc=pl.col("area").sum() / x.last(), x=x.last())
+    )
+    gold = _golden(fixture, "AUC_by_FV")
+    joined = gold.join(ours, on=[*BY_PAIR, "x"], suffix="_ours")
+    assert joined.height == gold.height
+    np.testing.assert_allclose(joined["auc_ours"], joined["auc"], rtol=1e-12)
+    maximization = fixture == "ioh040_max"
+    agreed = get_fixed_budget_ecdf_auc(
+        logged(fixture), by=BY_PAIR, maximization=maximization
+    )["auc"]
+    assert ((agreed >= 0) & (agreed <= 1)).all()

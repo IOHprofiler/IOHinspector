@@ -4,10 +4,10 @@ Status: in progress
 
 ## Done
 - step 1: definitions: EC-9, EC-10 in `docs/definitions/ecdf.md`, TG-8 and the budget table in `targets.md`
+- step 2: `get_fixed_budget_ecdf`, `get_fixed_budget_ecdf_auc` (metrics/ecdf.py), `targets.get_ecdf_budgets`; golden tests against `ECDF_by_FV` (exact with b - 1) and `AUC_by_FV` (trapezoid reproduced)
 
 ## Next step
-Step 2: `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc` in `metrics/ecdf.py`, `get_ecdf_budgets` in `targets.py`, tests in `tests/test_metrics/test_ecdf.py` with golden `ECDF_by_FV` and `AUC_by_FV`.
-Then step 3: TG-8 table in `targets.py`, `get_ecdf_targets` uses it, test against the ioh 0.4.2 registry file.
+Step 3: TG-8 table in `targets.py`, `get_ecdf_targets` uses it, test against the ioh 0.4.2 registry file.
 
 ## Decisions
 - Fixed-budget ECDF inclusive (V(b) <= v); IOHanalyzer's strict T < b reproduced in golden tests with b - 1.
