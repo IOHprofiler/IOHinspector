@@ -14,6 +14,7 @@ from iohinspector.metrics import (
     get_ks_tests,
     get_runtime_sample,
     get_value_sample,
+    get_win_fractions,
     holm,
     ks_test,
 )
@@ -248,3 +249,152 @@ def test_ks_tests_match_iohanalyzer(fixture, which):
         np.testing.assert_allclose(
             _ours_matrix(out, names), gold, rtol=1e-12, err_msg=f"{f} {d}"
         )
+
+
+# ---- win fractions (CM-5)
+
+
+def _runs(rows):
+    """Logged rows (algorithm, run, evaluations, raw_y) on one pair, with run budgets."""
+    df = pl.DataFrame(
+        rows, schema=["algorithm_name", "run_id", "evaluations", "raw_y"], orient="row"
+    )
+    return df.with_columns(
+        function_id=1,
+        dimension=2,
+        evals_used=pl.col("evaluations").max().over("run_id"),
+    )
+
+
+TOY = _runs(
+    [
+        # A: one fast success, one failure with a large budget
+        ("A", 1, 1, 5.0),
+        ("A", 1, 2, 0.0),
+        ("A", 2, 1, 5.0),
+        ("A", 2, 100, 4.0),
+        # B: two slow successes
+        ("B", 3, 1, 5.0),
+        ("B", 3, 10, 0.0),
+        ("B", 4, 1, 5.0),
+        ("B", 4, 10, 0.0),
+    ]
+)
+TARGET = pl.DataFrame({"function_id": [1], "dimension": [2], "target": [0.5]})
+
+
+def _fraction(out, a, c):
+    row = out.filter(
+        (pl.col("algorithm_name") == a) & (pl.col("algorithm_name_vs") == c)
+    )
+    return row["win_fraction"].item()
+
+
+def test_win_fractions_measures():
+    # ERT: A (2 + 100) / 1 = 102 against B 10: B wins; the mean of successes: A wins
+    ert = get_win_fractions(TOY, TARGET)
+    assert _fraction(ert, "B", "A") == 1 and _fraction(ert, "A", "B") == 0
+    assert _fraction(ert, "A", "A") == 0.5
+    assert ert.columns == [
+        "algorithm_name",
+        "algorithm_name_vs",
+        "win_fraction",
+        "n_pairs",
+    ]
+    mean = get_win_fractions(TOY, TARGET, measure="mean")
+    assert _fraction(mean, "A", "B") == 1
+    par = get_win_fractions(TOY, TARGET, measure="par_k", k=1)  # (2+100)/2 = 51 > 10
+    assert _fraction(par, "B", "A") == 1
+    # no success: both undefined, a tie
+    none = get_win_fractions(
+        TOY, TARGET.with_columns(target=pl.lit(-1.0)), measure="mean"
+    )
+    assert none["win_fraction"].to_list() == [0.5] * 4
+    with pytest.raises(ValueError, match="measure"):
+        get_win_fractions(TOY, TARGET, measure="best")
+
+
+def test_win_fractions_fixed_budget():
+    budget = TARGET.with_columns(target=pl.lit(2.0))
+    out = get_win_fractions(TOY, budget, perspective="fixed_budget", measure="best")
+    assert _fraction(out, "A", "B") == 1  # A has 0.0 at budget 2, B 5.0
+    up = get_win_fractions(
+        TOY.with_columns(-pl.col("raw_y")),
+        budget,
+        perspective="fixed_budget",
+        maximization=True,
+    )
+    assert _fraction(up, "A", "B") == 1  # mean A (0 - 5) / 2 > B -5 when maximising
+
+
+def test_win_fractions_average_targets_then_pairs():
+    two = pl.concat([TOY, TOY.with_columns(function_id=pl.lit(2))])
+    targets = pl.DataFrame(
+        {"function_id": [1, 2, 2], "dimension": [2] * 3, "target": [0.5, 0.5, 5.0]}
+    )
+    out = get_win_fractions(two, targets, measure="mean")
+    # f1: A wins; f2: A wins at 0.5, ties at 5.0 (all hit at evaluation 1): 0.75
+    assert _fraction(out, "A", "B") == pytest.approx((1 + 0.75) / 2)
+    assert out["n_pairs"].unique().to_list() == [2]
+
+
+def test_win_fractions_default_targets_and_by():
+    out = get_win_fractions(
+        TOY.with_columns(sigma=pl.col("run_id") % 2), by=["algorithm_name", "sigma"]
+    )
+    assert out.height == 16
+    assert out.columns[:4] == [
+        "algorithm_name",
+        "sigma",
+        "algorithm_name_vs",
+        "sigma_vs",
+    ]
+
+
+def _heatmap_data(fixture):
+    # IOHanalyzer's defect: only the first n_functions matrices of the
+    # (function, dimension) loop are averaged (comparisons.md)
+    data = logged(fixture).with_columns(pl.col("evaluations").cast(pl.Int64))
+    pairs = (
+        data.select("function_id", "dimension")
+        .unique()
+        .sort("function_id", "dimension")
+    )
+    used = pairs.head(data["function_id"].n_unique())
+    return data.join(used, on=["function_id", "dimension"])
+
+
+@pytest.mark.parametrize("fixture", FIXTURES)
+@pytest.mark.parametrize(
+    "which", ["by_FV", "by_RT", "by_FV_5targets", "by_RT_5targets"]
+)
+def test_win_fractions_match_iohanalyzer(fixture, which):
+    data = _heatmap_data(fixture)
+    gold = golden(fixture, f"Heatmaps_{which}").rename(
+        {"Var1": "algorithm_name", "Var2": "algorithm_name_vs"}
+    )
+    if which.endswith("_5targets"):  # the third of five targets or budgets per pair
+        sample, column = (
+            ("RT_sample", "target") if "FV" in which else ("FV_sample", "runtime")
+        )
+        ref = golden(fixture, sample).rename(
+            {"pair_f": "function_id", "pair_d": "dimension"}
+        )
+        targets = ref.group_by("function_id", "dimension").agg(
+            pl.col(column).unique().sort().get(2).alias("target")
+        )
+    else:  # IOHanalyzer's default target per pair
+        targets = golden(fixture, f"target_dt_{which}").rename(
+            {"funcId": "function_id", "DIM": "dimension"}
+        )
+    targets = targets.cast({"function_id": pl.Int32, "dimension": pl.Int32})
+    out = get_win_fractions(
+        data,
+        targets,
+        perspective="fixed_target" if "FV" in which else "fixed_budget",
+        measure="mean",
+        maximization=fixture == "ioh040_max",
+    )
+    joined = gold.join(out, on=["algorithm_name", "algorithm_name_vs"], how="left")
+    assert joined.height == gold.height == out.height
+    np.testing.assert_allclose(joined["win_fraction"], joined["Freq"], rtol=1e-12)

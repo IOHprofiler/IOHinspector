@@ -29,7 +29,7 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
-from .stats import get_ks_tests, holm, ks_test
+from .stats import MEASURES, get_ks_tests, get_win_fractions, holm, ks_test
 from .parameters import (
     apply_penalty,
     get_logged_rows,
@@ -38,6 +38,7 @@ from .parameters import (
 )
 
 __all__ = [
+    "MEASURES",
     "add_normalized_objectives",
     "aggregate_convergence",
     "aggregate_running_time",
@@ -63,6 +64,7 @@ __all__ = [
     "get_trajectory",
     "get_value_sample",
     "get_violin",
+    "get_win_fractions",
     "group_label",
     "holm",
     "ks_test",

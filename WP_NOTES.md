@@ -7,10 +7,10 @@ Definitions: `docs/definitions/comparisons.md` (CM-1 to CM-6), `docs/definitions
 ## Done
 - step 1: `metrics/stats.py`: `ks_test` (one-sided two-sample KS, exact by R's psmirnov port or asymptotic), `holm`, `get_ks_tests` (pairwise table per view, Holm per view, `better` and heat-map `decision`); unit tests against R 4.3.3 values and golden tests against `KS_by_FV`, `KS_by_RT` on ioh040_min/max/cons (rtol 1e-12).
 
-## Next step
-Step 2: win fractions (`get_win_fractions`, CM-5 measure registry) and golden tests against `Heatmaps_*`.
+- step 2: `get_win_fractions` with the `MEASURES` registry (CM-5: fixed target ert/mean/par_k/median, fixed budget mean/median/best); golden tests against all `Heatmaps_*` files (measure `mean`, IOHanalyzer's first-n-functions defect reproduced by restricting the pairs).
 
-Then step 3: Glicko-2 / Elo (`ranking.py`: `glicko2`, `elo`, `get_tournament_ranking`; deprecate `get_tournament_ratings`), golden tests feeding the R game lists `glicko2_games_by_*`.
+## Next step
+Step 3: Glicko-2 / Elo (`ranking.py`: `glicko2`, `elo`, `get_tournament_ranking`; deprecate `get_tournament_ratings`), golden tests feeding the R game lists `glicko2_games_by_*`.
 Step 4: docs (definitions "implemented" notes, CHANGELOG), final review.
 
 ## Decisions
