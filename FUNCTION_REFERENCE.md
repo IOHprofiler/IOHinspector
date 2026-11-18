@@ -90,7 +90,7 @@ Generate attractor network analysis from optimization algorithm trajectory data.
 Definitions: `docs/definitions/ecdf.md` (EC-1 to EC-10).
 
 #### `get_ecdf(data, targets=None, by=["algorithm_name"], *, x_values=None, continuous=False, scale_f_log=True, maximization=False, pairs="common", divide_by_dimension=False, fval_var="raw_y", eval_var="evaluations")`
-The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive) within x evaluations, averaged over the (function, dimension) pairs of each group with equal weight. Exact: one row per step, or sampled at `x_values`. `targets` per pair comes from `targets.get_ecdf_targets` (default 10 log-linear per pair). `continuous=True` gives the continuum ECDF (normalised quality between each pair's smallest and largest target). `pairs="common"` keeps the pairs every group has, `"all"` each group's own pairs; both warn when they differ.
+The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive) within x evaluations, averaged over the (function, dimension) pairs of each group with equal weight. Exact: one row per step, or sampled at `x_values`. `targets` per pair comes from `targets.get_ecdf_targets` (default 10 log-linear per pair over its observed range, or over 1e-8 to 1e2 for BBOB and SBOX data with a `suite` column). `continuous=True` gives the continuum ECDF (normalised quality between each pair's smallest and largest target). `pairs="common"` keeps the pairs every group has, `"all"` each group's own pairs; both warn when they differ.
 
 **Returns:** `pl.DataFrame` with `by`, `eval_var` and `ecdf`.
 

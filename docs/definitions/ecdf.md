@@ -390,8 +390,9 @@ In `metrics/ecdf.py`, next to `get_ecdf`:
   with `scale_f_log` (default) or linear.
 
 Default targets follow TG-8: `get_ecdf_targets` gives a BBOB or SBOX pair the
-registry's bounds 1e-8 and 1e2, so the default target ECDF, the continuum ECDF
-and the AOCC use them.
+registry's bounds 1e-8 and 1e2 (from the data's `suite` column), so the
+default target ECDF, the continuum ECDF and the AOCC use them. Its `lower` and
+`upper` arguments set the bounds of every pair instead.
 
 The golden tests compare with IOHanalyzer's `ECDF_by_FV` exactly, with each
 budget b replaced by b − 1, and reproduce `AUC_by_FV` from the same values.

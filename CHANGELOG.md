@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- The fixed-budget ECDF and its AUC (`docs/definitions/ecdf.md`, EC-9 and EC-10):
+  `metrics.get_fixed_budget_ecdf` gives, at each value v, the fraction of (run,
+  budget) pairs whose best-so-far value at the budget is v or better (inclusive;
+  IOHanalyzer's `which = 'by_FV'` compares T < b), exact at its steps. Budgets per
+  pair default to 10 log-spaced ones (`targets.get_ecdf_budgets`).
+  `metrics.get_fixed_budget_ecdf_auc` is the exact normalised area over a value
+  range, on log10 by default.
+- Default bounds by suite (`docs/definitions/targets.md`, TG-8): a pair whose runs
+  are all BBOB or SBOX (the suites the IOHexperimenter suite registry gives both
+  bounds for; COCO's `bbob` included) gets targets from 1e-8 to 1e2 instead of
+  its observed range, so the default ECDF, the continuum ECDF and the AOCC use
+  these bounds. The suite comes from a `suite` column, for example
+  `DataManager.load(include_columns=[..., "suite"])`. `get_ecdf_targets` takes
+  `lower` and `upper` to set the bounds of every pair.
+
 ## 0.2.1
 
 ### New

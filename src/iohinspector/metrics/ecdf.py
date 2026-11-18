@@ -221,8 +221,9 @@ def get_ecdf(
             Best-so-far values are computed here (AL-6).
         targets: targets per pair, columns ``function_id``, ``dimension`` and
             ``target`` (``targets.get_ecdf_targets``). Defaults to 10 log-linear
-            targets per pair over its observed values (TG-1, TG-2); pairs without
-            targets are left out.
+            targets per pair over its observed values (TG-1, TG-2), or over 1e-8
+            to 1e2 for BBOB and SBOX data with a ``suite`` column (TG-8); pairs
+            without targets are left out.
         by: the columns that make a group (a curve): descriptors or runs columns
             (D17). Pair columns in ``by`` give one curve per pair.
         x_values: budgets to sample the ECDF at, for display (EC-3).
@@ -233,8 +234,8 @@ def get_ecdf(
               over runs of the normalised quality of the best-so-far value between
               the pair's smallest and largest target. It is the fraction of
               infinitely many targets between them, log-uniform (uniform without
-              ``scale_f_log``), that the run has reached. Pass
-              ``get_ecdf_targets(data, "bbob")`` for the BBOB bounds 1e-8 and 1e2.
+              ``scale_f_log``), that the run has reached. By default the bounds
+              are each pair's observed range, or its suite's (TG-8).
             - ``scale_f_log`` (True): default targets log-linear, else linear; for
               the continuum ECDF also the scale of the quality.
             - ``maximization`` (False): larger values are better.
@@ -503,7 +504,8 @@ def get_data_ecdf(  # pylint: disable=R0913,R0917,W0613
     The continuum ECDF (EC-5, EC-6) at the budgets ``eval_values`` (by default 50
     from ``eval_min`` to ``eval_max``, log-spaced with ``scale_eval_log``), between
     the bounds ``f_min`` and ``f_max`` (log10 with ``scale_f_log``); a bound not
-    given is the observed one of each (function, dimension) pair. Returns
+    given is the observed one of each (function, dimension) pair, or its suite's
+    when neither is given (TG-8). Returns
     ``eval_var``, ``by`` and ``eaf`` as in 0.0.8.
 
     Since 0.2.0 this is ``get_ecdf``, so it differs from 0.0.8 where 0.0.8 differed
