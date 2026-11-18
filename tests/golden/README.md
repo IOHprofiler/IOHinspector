@@ -13,6 +13,7 @@ the difference. The goldens record what IOHanalyzer actually returns, defects in
 | `r/generate.R` | runs IOHanalyzer's R functions on every fixture |
 | `fixtures/` | the input logs, 0.9 MB in total (below) |
 | `iohanalyzer/<fixture>/<metric>.parquet` | one file per metric and fixture, zstd, written by `generate.R` |
+| `r/rvcompare.R`, `rvcompare/` | RVCompare 0.1.8's bootstrap bands on two seeded samples of 100 values (WP I16): `samples.csv`, and every 10th of the 2000 points in `bootstrap.csv` |
 | `iohanalyzer/versions.json` | package versions, seed, the R call behind every file, and the calls that failed |
 | `cocopp/generate.py`, `cocopp/coco/`, `cocopp/coco_old/` | cocopp 2.9.1 references for the COCO fixtures and their `versions.json` |
 | `make_fixtures.py` | regenerates the ioh 0.4.0 fixtures (fixed seeds) |
@@ -69,7 +70,7 @@ multi-algorithm metrics need at least two algorithms); `versions.json` names eve
 | Win-fraction heatmap | `Heatmaps_by_FV`, `Heatmaps_by_RT`, `*_5targets` | `generate_data.Heatmaps` |
 | Glicko-2 ranking | `glicko2_by_FV`, `glicko2_by_RT`, and the game lists `glicko2_games_by_*` | `glicko2_ranking` (PlayerRatings 1.1-0), seed 20240423, 50 rounds; the game list is the data frame handed to `PlayerRatings::glicko2` (I02 GL-3) |
 | Shapley portfolio values | `shapley_log`, `shapley_lin`, `marg_contrib_ecdf` | `get_shapley_values`, `get_marg_contrib_ecdf` |
-| Cumulative difference plot | `CDP_by_FV`, `CDP_by_RT` | `generate_data.CDP` (RVCompare 0.1.8), 200 bootstrap samples, seeded |
+| Cumulative difference plot | `CDP_by_FV`, `CDP_by_RT`, `CDP_by_FV_with_failures` (`ioh040_max` only); `rvcompare/` | `generate_data.CDP` (RVCompare 0.1.8), 200 bootstrap samples, seeded; `rvcompare/` calls `get_Y_AB_bounds_bootstrap` directly with 1000 |
 | EAF and EAF differences | `EAF`, `EAF_logx`, `ECDF_From_EAF`, `EAF_Difference`, `EAF_diff_Approximate` | `generate_data.EAF`, `generate_data.ECDF_From_EAF`, `generate_data.EAF_Difference`, `generate_data.EAF_diff_Approximate` (eaf 2.5) |
 | DSC (partial) | none | see below |
 | AOCC | none from IOHanalyzer | see below |
@@ -99,7 +100,7 @@ agreed value from `docs/definitions/` for these:
 | `PAR_*`, `Parameters_*`, `Parameter_correlation` on JSON fixtures | Parameter-by-target reads wrong rows; by-budget uses the next logged row (parameters, PA-1, PA-5) |
 | `penalty_absolute_*`, `penalty_add_*` | "Penalize Absolute" penalises feasible rows (parameters, PA-4) |
 | `KS_*`, `Heatmaps_*` | KS tests drop failed runs and reverse direction under maximisation; win fractions use the mean of successes (comparisons, CM-2, CM-3, CM-5) |
-| `CDP_by_FV_with_failures` (not produced) | `generate_data.CDP` fails when a run misses the target (cdp, CD-2); `CDP_by_FV` uses a target every run reaches |
+| `CDP_by_FV_with_failures` (only on `ioh040_max`, where every run reaches the target) | `generate_data.CDP` fails when a run misses the target (cdp, CD-2); `CDP_by_FV` uses a target every run reaches |
 
 Beyond the pages, calls that IOHanalyzer itself rejects on these fixtures are listed under
 `skipped` in `iohanalyzer/versions.json` with the error. The current list:

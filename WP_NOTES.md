@@ -7,9 +7,17 @@ Status: in progress
   (SH-2, SH-3, SH-4) and `get_shapley_values(data, targets, by)` with the ECDF-envelope value
   (SH-1); unit tests and IOHanalyzer golden tests in `tests/test_metrics/test_portfolio.py`.
 
+- step 2: cumulative difference plot (`metrics/cdp.py`): `cumulative_difference(x_a, x_b)`, a
+  vectorised port of RVCompare 0.1.8's `get_Y_AB_bounds_bootstrap` (CC0), and
+  `get_cumulative_difference(data, target=|budget=, by)` with seed, failures as +inf (CD-2),
+  subsampling with a warning and `result.runs` (CD-3), eps 1e-80 (CD-4). Tests in
+  `tests/test_metrics/test_cdp.py`; new RVCompare reference `tests/golden/rvcompare/` from
+  `tests/golden/r/rvcompare.R` (wired into `make golden`).
+
 ## Next step
-Step 2: port RVCompare 0.1.8's `get_Y_AB_bounds_bootstrap` (CC0) as `get_cdp` in
-`metrics/cdp.py`, with seed, failed runs as +inf (CD-2), subsampling (CD-3), eps 1e-80 (CD-4).
+Step 3: write the "Implementation (I16)" sections and the resolved points into
+`docs/definitions/portfolio.md` and `cdp.md` (Y_A/Y_B checked against Arza 2023; band tolerance),
+CHANGELOG entry, then finish (delete WP_NOTES.md).
 
 ## Decisions
 - Value functions are batched: v takes a boolean matrix (one row per coalition) and returns one
@@ -24,6 +32,15 @@ Step 2: port RVCompare 0.1.8's `get_Y_AB_bounds_bootstrap` (CC0) as `get_cdp` in
   plugged into `shapley_values` as a custom value reproduces `ECDF_raw` and `marg_contrib_ecdf`
   exactly; its unseeded sampled Shapley values are checked against the range its estimator can
   produce (exact for two players).
+
+- CDP estimates match IOHanalyzer's goldens to 1e-13 on all 22 (fixture, pair, view) cases,
+  including `CDP_by_FV_with_failures` on ioh040_max. Bands: the fixtures have 5 runs per
+  algorithm, so their bootstrap bands are too discrete to compare across random streams (one
+  IOHanalyzer band lies outside the envelope of our 50 seeds, inside that of 400). They are
+  compared on the n=100 RVCompare reference instead: Y bands within 0.02, difference bands within
+  0.04 (our own seed-to-seed spread of the difference band is up to 0.037).
+- Fixed budget: a run with no evaluation yet at the budget (null, AL-5) counts as the worst value,
+  like a failed run (CD-2).
 
 ## Open questions / Blocked
 - For the default value (a sum of maximum games) the Shapley value has a closed form, exact for any

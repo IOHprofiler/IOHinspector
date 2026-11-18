@@ -29,6 +29,11 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
+from .cdp import (
+    CumulativeDifference,
+    cumulative_difference,
+    get_cumulative_difference,
+)
 from .portfolio import get_shapley_values, shapley_values
 from .parameters import (
     apply_penalty,
@@ -38,6 +43,9 @@ from .parameters import (
 )
 
 __all__ = [
+    "CumulativeDifference",
+    "cumulative_difference",
+    "get_cumulative_difference",
     "add_normalized_objectives",
     "aggregate_convergence",
     "aggregate_running_time",
