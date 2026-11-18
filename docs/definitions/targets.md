@@ -3,7 +3,7 @@
 Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Target and budget grid generation".
-Implemented in: I10 (`iohinspector.targets`).
+Implemented in: I10 (`iohinspector.targets`); TG-8 and the budget table in I28.
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
 
 Targets are the f values a fixed-target view asks about; budgets are the
@@ -49,6 +49,34 @@ only meaningful when the stored value is Δf (see AL-7 in
 [alignment](alignment.md)). iohinspector computes each one as
 `10.0 ** (2 - k / 5)` with integer k so that decade targets such as 1e-8 are
 the exact float64 value of the literal.
+
+### Default bounds by suite
+
+IOHexperimenter's suite registry (`ioh.suite_registry`, attached as
+`registry.json` to every release from 0.4.1) records per suite the
+`target_bounds` that scoring considers. In ioh 0.4.2 two suites give both
+bounds: BBOB and SBOX, 1e-8 to 1e2, log scale, relative to the optimum. The
+other suites give no upper bound or none at all.
+
+A pair whose runs all belong to one of these suites takes the registry's
+bounds as f_lo and f_hi of its `log-linear` and `linear` targets, instead of
+its observed range. Suite names match without regard to case, so COCO's
+`bbob` is BBOB. The bounds are precisions, Δf = f − f_opt, and that is what
+the IOHexperimenter and COCO readers store in `raw_y` for these suites (AL-7).
+The suite comes from the data's `suite` column (for example
+`DataManager.load(include_columns=[..., "suite"])`); data without one, and
+pairs of other suites or of several suites, keep their observed range.
+Targets or bounds given by the caller always win.
+
+The continuum ECDF and the AOCC take their bounds from the default targets,
+so they follow (EC-5), and so do the defaults of the fixed-budget AUC (EC-10).
+
+### Budget table
+
+The fixed-budget ECDF ([ecdf](ecdf.md), EC-9) takes budgets per pair, as the
+target ECDF takes targets. The default is 10 budgets per pair, log-spaced from
+the pair's min E to max E and rounded as `seq_RT` (TG-5); IOHanalyzer's
+fixed-budget AUC page also uses 10.
 
 ### One target per pair (`get_target_dt`)
 
@@ -173,6 +201,13 @@ generators only fill it.
   are not ported.
 - **TG-7.** cocopp's runlength-based targets are an enhancement to look at after
   launch; they are not part of I10. Decided by the D6 review (dvermetten, 2026-11-06).
+- **TG-8.** Default bounds come from the suite registry where it gives both
+  (BBOB and SBOX: 1e-8 to 1e2 on Δf), for the default target grid, the
+  continuum ECDF and the AOCC; other suites keep the observed range; the
+  caller's targets or bounds win. The bounds live in one table in
+  `iohinspector.targets`, without a dependency on `ioh`; a test checks the
+  table against the registry file of the pinned ioh release (0.4.2). Decided
+  by the user on 2026-11-12 (EA-3 of [eaf](eaf.md)).
 
 ## Questions answered by the D6 review
 

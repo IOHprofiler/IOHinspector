@@ -112,6 +112,7 @@ golden tests name the decision there.
 | TG-5 | Budget grids rounded, never truncated, include the maximum | no |
 | TG-6 | Explicit `perspective` argument; inverted `which` defaults and bug B1 not ported | yes (defaults) |
 | TG-7 | cocopp's runlength-based targets: enhancement after launch | – |
+| TG-8 | Default bounds from the IOHexperimenter suite registry (BBOB, SBOX: 1e-8 to 1e2 on Δf) | – (new) |
 
 ### ECDF, AUC, AOCC, ranks ([ecdf](ecdf.md))
 
@@ -125,6 +126,8 @@ golden tests name the decision there.
 | EC-6 | Current `get_data_ecdf` kept under a clear name, with EC-5 bounds | – |
 | EC-7 | No simulated restarts | no (cocopp: yes) |
 | EC-8 | Rank tables per pair, average ties, missing last | no |
+| EC-9 | Fixed-budget ECDF, inclusive (V(b) ≤ v), budgets per pair, exact | yes |
+| EC-10 | Fixed-budget AUC as exact normalised integral over [v_lo, v_hi] | yes |
 
 ### Distributions ([distributions](distributions.md))
 

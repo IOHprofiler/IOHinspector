@@ -4,7 +4,7 @@ Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "ECDF and AUC as in IOHanalyzer", "Multi-function
 aggregation and ranks"; AOCC from the "New" row.
-Implemented in: I12.
+Implemented in: I12; the fixed-budget ECDF and its AUC in I28.
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
 
 ## Notation
@@ -81,6 +81,47 @@ ECDF and its AUC converge to these as m grows (the target ECDF approximates the
 EAF [LopezIbanez2025]). The bounds must be fixed per pair before alignment;
 the equivalence does not hold when they are taken from the aligned data.
 
+### Fixed-budget ECDF
+
+The same count with the roles of targets and budgets swapped. Budgets
+b_1..b_m for pair p (a budget table, as the target table: default 10 budgets
+per pair, log-spaced from min E to max E and rounded as in TG-5). For a value
+v, under minimisation,
+
+    ECDF^B_S(v) = (1 / (n m)) Σ_i Σ_k 1[ V_i(b_k) ≤ v ]
+
+and with V_i(b_k) ≥ v under maximisation: the fraction of (run, budget) pairs
+in which the run's best-so-far value at the budget is at least as good as v.
+Because V_i(b) ≤ v exactly when T_i(v) ≤ b, it is also the fraction of (run,
+budget) pairs in which the run reached v within the budget. Both comparisons
+are inclusive, as in EC-1. A run has no value at a budget before its first
+logged row (AL-5), and there it counts as not reached; a run that stopped
+before b keeps its final value (FB-1).
+
+ECDF^B_S is a step function of v. It changes only at the values V_i(b_k), so
+it is computed exactly there. It grows with v under minimisation and falls
+with v under maximisation. Aggregation over pairs is as for the target ECDF
+(EC-2), on one value axis. That is only meaningful when the pairs' values have
+a common scale, such as BBOB precisions; IOHanalyzer pools them the same way.
+
+### Area under the fixed-budget ECDF
+
+For a value interval [v_lo, v_hi], on a linear axis or on log10 v,
+
+    AUC^B_A = (1 / (v_hi − v_lo)) ∫_{v_lo}^{v_hi} ECDF^B_A(v) dv,
+
+computed exactly from the step function, so AUC^B ∈ [0, 1]. A larger area is
+better in both directions: under minimisation the ECDF is high from small
+values on, under maximisation up to large ones. Defaults: v_lo and v_hi are
+the smallest and largest bounds of the pairs in the selection, each pair's
+bounds being its suite's (TG-8) or else its observed range (TG-2, and on the
+log axis TG-3).
+
+Each term 1[V_i(b_k) ≤ v] integrates to the normalised quality q_i(b_k) of
+EC-5 with the bounds v_lo and v_hi. So AUC^B is the mean over the budgets of
+the continuum ECDF at those budgets, with bounds v_lo and v_hi for every pair;
+a test checks this.
+
 ### Multi-function rank table
 
 Per (function, dimension) pair, algorithms are ranked by ERT at the pair's
@@ -101,10 +142,21 @@ budgets come from `get_target_dt` ([targets](targets.md), TG-4).
 - Default targets: `get_ECDF_targets(dsList, "log-linear", 10)`
   (`R/DataSetList.R` 1083–1112), called by the Shiny page
   (`inst/shiny-server/server/RT_ECDF.R:83`).
+- Fixed-budget branch (`which = 'by_FV'`, 1414–1424): the x grid is 50
+  points of `seq_FV` over every function value of the selection, all pairs
+  together (1378–1385), and the same budget vector for every DataSet. Per run,
+  `get_RT_sample` gives the hitting time of each x (NA becomes `Inf`), which
+  is compared **strictly** with the budgets: `mean(temp < targets_)` (1419).
+  Averaged as above. Under minimisation the grid runs from the largest value
+  down to the smallest.
 - `generate_data.AUC` (`R/DataSetList.R` 1454–1515): trapezoid rule between
   consecutive grid points (1492), cumulative sum divided by the current x,
   **not** by x − x_min (1494). A curve that ends before the largest x is
-  extended with its last value (1480–1491).
+  extended with its last value (1480–1491). On the fixed-budget ECDF the
+  same rule runs over the value grid in its own order, so under minimisation
+  every step x − x_pre is negative: the "AUC" is negative, and −∞ when the
+  grid ends at the value 0. The Shiny page passes 10 budgets
+  (`inst/shiny-server/server/FCE_ECDF.R:101`).
 - `ECDF.DataSet`/`AUC.ECDF` (`R/stats.R` 387–402 and 502–515) are an older
   API that integrates R's `ecdf` with `integrate`; the Shiny app uses
   `generate_data.AUC`.
@@ -232,6 +284,8 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 | AUC | trapezoid, divided by x | – | – | exact, divided by b_hi − b_lo |
 | AOCC bounds | – | – | from aligned data | fixed per pair |
 | Ranks | `frank`, average ties, NA last | – | – | same |
+| Fixed-budget ECDF | strict T < b, 50-point value grid | – | – | inclusive, exact (EC-9) |
+| Fixed-budget AUC | trapezoid over the value grid in its order, divided by x | – | – | exact, divided by v_hi − v_lo (EC-10) |
 
 ## Decisions
 
@@ -251,24 +305,34 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
   golden test that names EC-4.
 - **EC-5.** AOCC uses best-so-far values and bounds fixed per pair before
   alignment (for BBOB data 10² and 10⁻⁸ on Δf by default, as in EA-3 of
-  [eaf](eaf.md), otherwise the observed range per pair); it equals the AUC of the continuum ECDF, and a test checks the
+  [eaf](eaf.md), otherwise the observed range per pair; TG-8 says how the
+  suite is recognised); it equals the AUC of the continuum ECDF, and a test checks the
   equivalence numerically.
 - **EC-6.** The current `get_data_ecdf` stays available under a clear name
   (for example `ecdf_continuous`), with EC-5's fixed bounds.
 - **EC-7.** No simulated restarts.
 - **EC-8.** Rank tables rank per pair with average ties and missing values
   last.
+- **EC-9.** The fixed-budget ECDF counts (run, budget) pairs with
+  V_i(b) ≤ v (≥ when maximising), inclusive in f and in budget as EC-1, with
+  budgets per pair (default 10, log-spaced, TG-5), exact at its steps (EC-3)
+  and averaged over pairs as EC-2. IOHanalyzer's strict T < b is not ported;
+  for integer evaluations it is T ≤ b − 1, which the golden tests use.
+  Decided by the user on 2026-11-12 (Q-EC-3).
+- **EC-10.** The fixed-budget AUC is the exact normalised integral over
+  [v_lo, v_hi] on a linear or log10 value axis, with the defaults above.
+  IOHanalyzer's trapezoid over its value grid is reproduced only in the golden
+  test that names EC-10.
 
 ## Open questions for the user
 
 - Q-EC-1: Which data gave 0.67 and 0.90? If it can be found, I12 should add it
   as a second golden case.
-- Q-EC-3: IOHanalyzer also has a fixed-budget ECDF (`generate_data.ECDF` with
-  `which = 'by_FV'`, `R/DataSetList.R` 1414–1424: over a grid of values x, the
-  fraction of (run, budget) pairs in which the run reached x in fewer
-  evaluations than the budget, `RT < budget`) and its AUC. This page does not
-  define it, so I12 does not implement it. Is it needed, and inclusive (T ≤ b)
-  as in EC-1?
+
+## Questions answered by the user
+
+- Q-EC-3 (fixed-budget ECDF): needed, with its AUC, inclusive as EC-1. See
+  EC-9 and EC-10 (user, 2026-11-12).
 
 ## Questions answered by the D6 review
 
@@ -313,3 +377,21 @@ ECDF values are ratios of counts and must match exactly (as rationals; float
 comparison to 1e-12). AUC and AOCC must agree to a relative error of 1e-12.
 Comparisons with IOHanalyzer's sampled ECDF and trapezoid AUC are made on
 IOHanalyzer's 50-point grid.
+
+## Implementation (I28)
+
+In `metrics/ecdf.py`, next to `get_ecdf`:
+
+- `get_fixed_budget_ecdf(data, budgets, by)`: EC-9, exact at its steps or
+  sampled at `x_values`, with the options of `get_ecdf` that apply
+  (`maximization`, `pairs`, `fval_var`, `eval_var`). Budgets per pair come from
+  `targets.get_ecdf_budgets` by default.
+- `get_fixed_budget_ecdf_auc(...)`: EC-10 over [`f_lo`, `f_hi`], on log10 v
+  with `scale_f_log` (default) or linear.
+
+Default targets follow TG-8: `get_ecdf_targets` gives a BBOB or SBOX pair the
+registry's bounds 1e-8 and 1e2, so the default target ECDF, the continuum ECDF
+and the AOCC use them.
+
+The golden tests compare with IOHanalyzer's `ECDF_by_FV` exactly, with each
+budget b replaced by b − 1, and reproduce `AUC_by_FV` from the same values.
