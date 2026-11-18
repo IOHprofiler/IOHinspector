@@ -1,11 +1,15 @@
 import numpy as np
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from iohinspector.metrics.eaf import (
+    RECTANGLE,
     get_discritized_eaf_single_objective,
+    get_eaf,
     get_eaf_data,
     get_eaf_diff_data,
+    get_eaf_difference,
     get_eaf_pareto_data,
 )
 
@@ -270,3 +274,181 @@ def test_identical_datasets_zero_diff():
 def test_eaf_diff_data_return_type():
     result = get_eaf_diff_data(BETTER_DATA, WORSE_DATA, "obj1", "obj2")
     assert isinstance(result, pl.DataFrame)
+
+
+# The single-objective EAF of the definitions (docs/definitions/eaf.md, WP I17)
+
+# two runs of A: (1, 10), a worse row, (3, 2); and (2, 5). One run of B: (2, 4)
+TWO = pl.DataFrame(
+    {
+        "run_id": [1, 1, 2, 1, 3],
+        "algorithm_name": ["A", "A", "A", "A", "B"],
+        "evaluations": [1, 2, 2, 3, 2],
+        "raw_y": [10.0, 12.0, 5.0, 2.0, 4.0],
+    }
+)
+
+
+def _rows(df, *columns):
+    return sorted(df.select(columns).rows())
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_eaf_surfaces_of_best_so_far_traces(maximization):
+    # rows of the runs interleaved: moocore reads a set from consecutive rows
+    sign = -1.0 if maximization else 1.0
+    data = TWO.with_columns(pl.col("raw_y") * sign)
+    result = get_eaf(data, percentiles=[50, 100], maximization=maximization)
+    a = result.filter(pl.col("algorithm_name") == "A")
+    assert a["evaluations"].dtype == data["evaluations"].dtype
+    expected = [(1, 10.0, 50.0), (2, 5.0, 50.0), (3, 2.0, 50.0)]
+    expected += [(2, 10.0, 100.0), (3, 5.0, 100.0)]
+    expected = [(e, sign * y, p) for e, y, p in expected]
+    assert _rows(a, "evaluations", "raw_y", "percentile") == sorted(expected)
+
+
+def test_eaf_levels_as_iohanalyzer():
+    # 0 and 10 % are the level of one run of two, as eaf::eafs maps them
+    result = get_eaf(TWO.filter(pl.col("algorithm_name") == "A"))
+    levels = result.group_by("percentile").agg(pl.col("raw_y").sort())
+    by_level = dict(levels.rows())
+    assert by_level[0.0] == by_level[50.0] == [2.0, 5.0, 10.0]
+    assert by_level[60.0] == by_level[100.0] == [5.0, 10.0]
+    assert sorted(by_level) == [float(p) for p in range(0, 101, 10)]
+
+
+def test_discretised_eaf():
+    result = get_eaf(
+        TWO, mode="discretised", eval_values=[1, 2, 3], f_values=[2.0, 5.0, 10.0]
+    )
+    a = result.filter(pl.col("algorithm_name") == "A")
+    # run 2 has no value before evaluation 2: it has attained nothing (AL-5)
+    alpha = {(e, y): v for _, e, y, v in a.rows()}
+    assert alpha[1, 10.0] == 0.5 and alpha[1, 5.0] == 0.0
+    assert alpha[2, 10.0] == 1.0 and alpha[2, 5.0] == 0.5 and alpha[2, 2.0] == 0
+    assert alpha[3, 2.0] == 0.5 and alpha[3, 5.0] == 1.0
+    assert result.columns == ["algorithm_name", "evaluations", "raw_y", "eaf"]
+    assert result.height == 2 * 9
+
+
+def test_discretised_eaf_default_grid():
+    data = MULTI_DATA.with_columns(algorithm_name=pl.lit("A"))
+    result = get_eaf(data, mode="discretised", eval_values=5, f_values=4)
+    assert result["evaluations"].unique().sort().to_list() == [1, 6, 32, 178, 1000]
+    values = result["raw_y"].unique().sort().to_numpy()
+    np.testing.assert_allclose(values, np.geomspace(0.001, 1.5, 4), rtol=1e-12)
+
+
+def test_several_pairs_use_the_normalised_quality():
+    other = TWO.with_columns(pl.col("run_id") + 10, pl.col("raw_y") * 100)
+    data = pl.concat(
+        [TWO.with_columns(function_id=1), other.with_columns(function_id=2)]
+    ).with_columns(dimension=pl.lit(5))
+    result = get_eaf(data)
+    assert "quality" in result.columns
+    assert result["quality"].is_between(0, 1).all()
+    # the same runs in both pairs, scaled: each pair has the same qualities
+    q = get_eaf(data, mode="discretised", f_values=[0.0, 0.5, 1.0])
+    assert (
+        q.filter(pl.col("quality") == 0, pl.col("evaluations") == 3)["eaf"].min() == 1
+    )
+    per_pair = get_eaf(data, ["algorithm_name", "function_id"])
+    assert "raw_y" in per_pair.columns and "quality" not in per_pair.columns
+
+
+def test_eaf_options_are_checked():
+    with pytest.raises(TypeError, match="maximisation"):
+        get_eaf(TWO, maximisation=True)
+    with pytest.raises(ValueError, match="mode"):
+        get_eaf(TWO, mode="exact")
+
+
+def test_eaf_difference_of_two_groups():
+    result = get_eaf_difference(TWO)
+    a = result.filter(pl.col("algorithm_name") == "A").drop("algorithm_name")
+    b = result.filter(pl.col("algorithm_name") == "B").drop("algorithm_name")
+    assert_frame_equal(b, a.with_columns(-pl.col("eaf_diff")))
+    assert result.columns == ["algorithm_name", *RECTANGLE]
+    # A attains (1, 10) alone; B reaches 4 at 2 where half of A reaches 5
+    assert a.filter(pl.col("x_min") == 1)["eaf_diff"].to_list() == [0.5]
+    assert -0.5 in a["eaf_diff"].to_list()
+
+
+def _delta_at(rectangles, x, y):
+    inside = (
+        (pl.col("x_min") <= x)
+        & (pl.col("x_max") > x)
+        & (pl.col("y_min") <= y)
+        & (pl.col("y_max") > y)
+    )
+    hits = rectangles.filter(inside)["eaf_diff"]
+    assert hits.len() <= 1
+    return hits.sum()
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_precise_and_discretised_differences_agree(maximization):
+    # 3 against 4 runs (moocore compares equally many: the runs are repeated);
+    # evaluations even and the grid odd, so no grid point is on a rectangle side
+    rng = np.random.default_rng(1)
+    n = 7 * 12
+    data = pl.DataFrame(
+        {
+            "run_id": np.repeat(np.arange(7), 12),
+            "algorithm_name": np.repeat(["A"] * 3 + ["B"] * 4, 12),
+            "evaluations": np.tile(np.arange(2, 26, 2), 7),
+            "raw_y": rng.uniform(0, 100, n).round(3),
+        }
+    )
+    grid = {"eval_values": list(range(1, 27, 2)), "f_values": np.arange(0.5, 100, 2.5)}
+    options = dict(maximization=maximization, **grid)
+    precise = get_eaf_difference(data, maximization=maximization)
+    discretised = get_eaf_difference(data, mode="discretised", **options)
+    for name, x, y, delta in discretised.rows():
+        mine = precise.filter(pl.col("algorithm_name") == name)
+        assert _delta_at(mine, x, y) == pytest.approx(delta, abs=1e-12)
+    assert set(discretised["eaf_diff"].round(10)) - {0.0}  # not trivially equal
+
+
+def test_discretised_difference_against_the_best_of_the_others():
+    c = TWO.filter(pl.col("run_id") == 2).with_columns(
+        pl.col("run_id") + 2, algorithm_name=pl.lit("C")
+    )
+    data = pl.concat([TWO, c])
+    grid = {"eval_values": [1, 2, 3], "f_values": [2.0, 5.0, 10.0]}
+    alpha = get_eaf(data, mode="discretised", **grid)
+    delta = get_eaf_difference(data, mode="discretised", **grid)
+    cells = ["evaluations", "raw_y"]
+    wide = alpha.pivot(on="algorithm_name", index=cells, values="eaf")
+    expected = pl.concat(
+        wide.select(
+            *cells,
+            algorithm_name=pl.lit(g),
+            eaf_diff=pl.col(g) - pl.max_horizontal([c for c in "ABC" if c != g]),
+        )
+        for g in "ABC"
+    )
+    assert_frame_equal(delta, expected, check_row_order=False, check_column_order=False)
+    with pytest.raises(ValueError, match="two groups"):
+        get_eaf_difference(data)
+    with pytest.raises(ValueError, match="two groups"):
+        get_eaf_difference(TWO, by=[], mode="discretised")
+
+
+def test_equal_eafs_have_no_difference():
+    copy = TWO.filter(pl.col("algorithm_name") == "A")
+    b = copy.with_columns(pl.col("run_id") + 10, algorithm_name=pl.lit("B"))
+    data = pl.concat([copy, b])
+    for mode in ("precise", "discretised"):
+        assert (get_eaf_difference(data, mode=mode)["eaf_diff"] == 0).all()
+    # moocore fails when there is no rectangle at all
+    same = pl.DataFrame({"run_id": [1], "x": [1.0], "y": [1.0]})
+    assert get_eaf_diff_data(same, same, "x", "y").height == 0
+
+
+def test_pareto_eaf_reads_each_run_as_one_set():
+    shuffled = SIMPLE_MO_DATA.sample(fraction=1.0, shuffle=True, seed=3)
+    assert_frame_equal(
+        get_eaf_pareto_data(shuffled, "obj1", "obj2"),
+        get_eaf_pareto_data(SIMPLE_MO_DATA, "obj1", "obj2"),
+    )
