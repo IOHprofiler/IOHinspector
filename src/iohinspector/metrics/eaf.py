@@ -288,7 +288,7 @@ def _sets(
 def _surfaces(runs, value, larger, eval_var, percentiles) -> pl.DataFrame:
     """The attainment surfaces of one group at ``percentiles`` (EA-1, precise)."""
     sets = _sets(runs, value, larger, eval_var)
-    surfaces = eaf(sets[:, :2], sets[:, 2], percentiles=list(percentiles))
+    surfaces = eaf(sets[:, :2], sets[:, 2], percentiles=percentiles)
     surfaces[:, 1] *= -1.0 if larger else 1.0
     return pl.DataFrame(surfaces, schema=[eval_var, value, "percentile"], orient="row")
 
@@ -336,14 +336,15 @@ def _grid(  # pylint: disable=R0913
     """The budgets x values of the discretised EAF in each ``scope`` (EA-5): given,
     or that many log-spaced (linear without ``scale_*_log``) over the scope's
     logged evaluations and values; for the quality q, linear in [0, 1]."""
+    # #lizard forgives  (the grid options of get_eaf, passed on as one)
 
     def grid(part: pl.DataFrame) -> pl.DataFrame:
         b, v = eval_values, f_values
-        if isinstance(b, int):
+        if isinstance(b, (int, np.integer)):
             b = seq_rt(part[eval_var], b, log=scale_eval_log)
-        if isinstance(v, int) and value == QUALITY:
+        if isinstance(v, (int, np.integer)) and value == QUALITY:
             v = spaced(0.0, 1.0, v)
-        elif isinstance(v, int):
+        elif isinstance(v, (int, np.integer)):
             v = seq_fv(part[fval_var], v, log=scale_f_log)
         budgets = pl.Series(eval_var, list(b)).cast(data.schema[eval_var])
         values = pl.Series(value, list(v), pl.Float64)
@@ -352,7 +353,9 @@ def _grid(  # pylint: disable=R0913
     return _each(data, scope, grid)
 
 
-def _attainment(runs, grid, by, scope, value, larger, eval_var) -> pl.DataFrame:
+def _attainment(  # pylint: disable=R0913,R0914,R0917
+    runs, grid, by, scope, value, larger, eval_var
+) -> pl.DataFrame:
     """alpha(b, y) of each group of ``by`` on the ``grid`` of its scope: the
     fraction of its runs whose best-so-far value at budget b is y or better;
     before its first row a run has attained nothing (AL-5). With the scope columns."""
@@ -453,10 +456,9 @@ def get_eaf(
     )
     eval_var = options.get("eval_var", "evaluations")
     if mode == "precise":
+        levels = list(percentiles)
         result = _each(
-            runs,
-            by,
-            lambda g: _surfaces(g, value, larger, eval_var, percentiles),
+            runs, by, lambda g: _surfaces(g, value, larger, eval_var, levels)
         )
     else:
         grid = _grid(data, scope, value, **grid_options)
@@ -507,9 +509,18 @@ def get_eaf_difference(
         raise ValueError("the EAF difference needs at least two groups of by")
     grid = _grid(data, scope, value, **grid_options)
     alpha = _attainment(runs, grid, by, scope, value, larger, eval_var)
-    cell = [*scope, eval_var, value]
-    best, second = pl.col("eaf").max(), pl.col("eaf").top_k(2).min()
-    others = pl.when(pl.col("eaf") < best.over(cell)).then(best.over(cell))
-    others = others.otherwise(second.over(cell))
-    result = alpha.select(*by, eval_var, value, eaf_diff=pl.col("eaf") - others)
+    result = alpha.select(
+        *by, eval_var, value, eaf_diff=_minus_best_other(cell=[*scope, eval_var, value])
+    )
     return _finish(result, data, eval_var)
+
+
+def _minus_best_other(cell: list[str]) -> pl.Expr:
+    """``eaf`` minus the largest ``eaf`` of the other groups in its ``cell`` (EA-2):
+    the largest, unless this group is it; then the second largest, which a tie
+    makes equal to it."""
+    best, second = (
+        pl.col("eaf").max().over(cell),
+        pl.col("eaf").top_k(2).min().over(cell),
+    )
+    return pl.col("eaf") - pl.when(pl.col("eaf") < best).then(best).otherwise(second)

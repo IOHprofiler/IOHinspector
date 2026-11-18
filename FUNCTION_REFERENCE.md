@@ -126,6 +126,14 @@ Deprecated in 0.2.0: use `get_ecdf(data, continuous=True, x_values=...)`. The co
 
 ### EAF
 
+The EAF and EAF differences of `docs/definitions/eaf.md` (EA-1 to EA-5).
+
+#### `get_eaf(data, by=["algorithm_name"], *, mode="precise", percentiles=(0, 10, ..., 100), eval_values=50, f_values=50, scale_eval_log=True, scale_f_log=True, targets=None, maximization=False, fval_var="raw_y", eval_var="evaluations")`
+The single-objective EAF of each group of `by`, on the runs' best-so-far traces. `mode="precise"`: the attainment surfaces at `percentiles` (`moocore.eaf`; levels as IOHanalyzer's `eaf::eafs`), columns `by`, `eval_var`, the value and `percentile`. `mode="discretised"`: the fraction of runs that reached each value within each budget, on 50 x 50 log-spaced budgets and values per pair by default, columns `by`, `eval_var`, the value and `eaf`. The value is `fval_var`, or the normalised quality `quality` (larger is better) when a group spans several (function, dimension) pairs.
+
+#### `get_eaf_difference(data, by=["algorithm_name"], *, mode="precise", **options)`
+The EAF difference of each group against the best of the others (`options` as in `get_eaf`). `mode="precise"`: for exactly two groups, the rectangles where it is constant (`moocore.eafdiff`), columns `by`, `x_min`, `y_min`, `x_max`, `y_max`, `eaf_diff`. `mode="discretised"`: on the grid of `get_eaf`, columns `by`, `eval_var`, the value and `eaf_diff`.
+
 #### `get_discritized_eaf_single_objective(data, eval_var="evaluations", fval_var="raw_y", eval_min=1, eval_max=None, scale_eval_log=True, n_quantiles=100)`
 Generate discretized EAF data for single-objective optimization analysis.
 

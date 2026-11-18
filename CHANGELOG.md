@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- EAF and EAF differences (`docs/definitions/eaf.md`): `metrics.get_eaf` is the
+  single-objective EAF of each group of `by` on the runs' best-so-far traces,
+  as attainment surfaces at IOHanalyzer's levels (`mode="precise"`, moocore) or
+  on a grid of budgets and values (`mode="discretised"`).
+  `metrics.get_eaf_difference` is each group's EAF minus the best of the others,
+  as rectangles for two groups or on the grid. A group that spans several
+  (function, dimension) pairs uses the normalised quality of the continuum ECDF.
+
+### Fixed
+
+- `get_eaf_pareto_data` and `get_eaf_diff_data` read each run as one set when
+  its rows are not together (moocore needs them together), and
+  `get_eaf_diff_data` returns no rows instead of failing when there is no
+  difference.
+
 ## 0.2.1
 
 ### New
