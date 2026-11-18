@@ -104,7 +104,13 @@ def _quality(data, targets, maximization, scale_f_log, fval_var):
 
 
 def _prepare(
-    data, targets, by, scale_f_log, pairs, fval_var
+    data: pl.DataFrame,
+    targets: pl.DataFrame | None,
+    by,
+    *,
+    scale_f_log,
+    pairs,
+    fval_var,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """``data`` on the pairs that have targets and are used (EC-2), with ``weight``,
     and the targets (by default 10 per pair, log-linear or linear)."""
@@ -132,7 +138,9 @@ def _increments(  # pylint: disable=R0913,R0914
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), and the largest budget in the selection."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
-    data, targets = _prepare(data, targets, by, scale_f_log, pairs, fval_var)
+    data, targets = _prepare(
+        data, targets, by, scale_f_log=scale_f_log, pairs=pairs, fval_var=fval_var
+    )
     if continuous:
         steps = _quality(data, targets, maximization, scale_f_log, fval_var)
     else:

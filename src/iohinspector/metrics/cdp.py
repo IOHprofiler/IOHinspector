@@ -14,7 +14,6 @@ from .distributions import get_runtime_sample, get_value_sample
 __all__ = ["CumulativeDifference", "cumulative_difference", "get_cumulative_difference"]
 
 POINTS = 2000  # RVCompare's nOfEstimationPoints
-CURVES = ["y_a", "y_b", "diff"]
 
 
 def _densities(a: np.ndarray, b: np.ndarray, epsilon: float) -> np.ndarray:
@@ -54,6 +53,38 @@ def _on_grid(mult: np.ndarray) -> np.ndarray:
     return np.cumsum(trapezoid * (1 / j_max), axis=1)
 
 
+def _checked(x_a, x_b, alpha, epsilon, n_bootstrap):
+    """The samples as float arrays, after checking them and the options."""
+    a, b = np.asarray(x_a, dtype=float), np.asarray(x_b, dtype=float)
+    if a.ndim != 1 or a.shape != b.shape or a.size == 0:
+        raise ValueError(
+            f"the samples must be non-empty and of equal size, not {len(a)} and {len(b)}"
+        )
+    if np.isnan(a).any() or np.isnan(b).any():
+        raise ValueError("the samples contain NaN")
+    if not 0 < epsilon <= 0.1 or not 0 < alpha <= 1 or n_bootstrap < 1:
+        raise ValueError("need 0 < epsilon <= 0.1, 0 < alpha <= 1 and n_bootstrap >= 1")
+    return a, b
+
+
+def _resampled(a, b, n_bootstrap, rng):
+    """One row per bootstrap sample: the observed samples first, then
+    ``n_bootstrap`` − 1 draws of n values with replacement from each."""
+    draw = rng.integers(0, len(a), (2, n_bootstrap - 1, len(a)))
+    return np.r_[a[None], a[draw[0]]], np.r_[b[None], b[draw[1]]]
+
+
+def _bands(curves: dict[str, np.ndarray], alpha: float) -> pl.DataFrame:
+    """``p`` and, per curve, the observed one (row 0) with its α'/2 and 1 − α'/2
+    quantiles (type 7) over the bootstrap rows, α' = 1 − sqrt(1 − α)."""
+    level = 1 - np.sqrt(1 - alpha)
+    columns = {"p": np.arange(POINTS) / (POINTS - 1)}
+    for name, rows in curves.items():
+        lower, upper = np.quantile(rows, [level / 2, 1 - level / 2], axis=0)
+        columns |= {name: rows[0], f"{name}_lower": lower, f"{name}_upper": upper}
+    return pl.DataFrame(columns)
+
+
 def cumulative_difference(  # pylint: disable=too-many-arguments
     x_a: Sequence[float] | np.ndarray,
     x_b: Sequence[float] | np.ndarray,
@@ -88,28 +119,11 @@ def cumulative_difference(  # pylint: disable=too-many-arguments
         pl.DataFrame: ``p`` and, for each of ``y_a``, ``y_b`` and ``diff``
         (y_a − y_b), the estimate and its ``_lower`` and ``_upper`` band.
     """
-    a, b = np.asarray(x_a, dtype=float), np.asarray(x_b, dtype=float)
-    if a.ndim != 1 or a.shape != b.shape or not len(a):
-        raise ValueError(
-            f"the samples must be non-empty and of equal size, not {len(a)} and {len(b)}"
-        )
-    if np.isnan(a).any() or np.isnan(b).any():
-        raise ValueError("the samples contain NaN")
-    if not 0 < epsilon <= 0.1 or not 0 < alpha <= 1 or n_bootstrap < 1:
-        raise ValueError("need 0 < epsilon <= 0.1, 0 < alpha <= 1 and n_bootstrap >= 1")
-    rng = np.random.default_rng(seed)
-    n = len(a)
-    draw = rng.integers(0, n, (2, n_bootstrap - 1, n))
-    a = np.r_[a[None], a[draw[0]]]
-    b = np.r_[b[None], b[draw[1]]]
+    a, b = _checked(x_a, x_b, alpha, epsilon, n_bootstrap)
+    a, b = _resampled(a, b, n_bootstrap, np.random.default_rng(seed))
     mult = _densities(a, b, epsilon)
     y_a, y_b = _on_grid(mult), _on_grid(1 - mult)
-    level = 1 - np.sqrt(1 - alpha)
-    columns = {"p": np.arange(POINTS) / (POINTS - 1)}
-    for name, curves in zip(CURVES, [y_a, y_b, y_a - y_b]):
-        lower, upper = np.quantile(curves, [level / 2, 1 - level / 2], axis=0)
-        columns |= {name: curves[0], f"{name}_lower": lower, f"{name}_upper": upper}
-    return pl.DataFrame(columns)
+    return _bands({"y_a": y_a, "y_b": y_b, "diff": y_a - y_b}, alpha)
 
 
 @dataclass(frozen=True)
@@ -133,7 +147,7 @@ class CumulativeDifference:
         return not self.runs["used"].all()
 
 
-def _sample(data, target, budget, by, maximization, fval_var, eval_var):  # pylint: disable=R0913,R0917
+def _sample(data, *, target, budget, by, maximization, fval_var, eval_var):
     """One value per run, smaller is better: the runtime to ``target`` (``inf`` when
     not reached, CD-2) or the best value at ``budget`` (negated when maximising;
     ``inf`` before the first evaluation)."""
@@ -149,7 +163,44 @@ def _sample(data, target, budget, by, maximization, fval_var, eval_var):  # pyli
     return sample.select("run_id", *by, value=value)
 
 
-def get_cumulative_difference(  # pylint: disable=too-many-arguments,too-many-locals
+def _grouped(runs: pl.DataFrame, by: list[str]) -> pl.DataFrame:
+    """``runs`` with ``group``: A for the first group of ``by`` in sorted order, B
+    for the second; sorted by group and run."""
+    groups = runs.select(by).unique().sort(by, nulls_last=True)
+    if groups.height != 2:
+        raise ValueError(f"by must make exactly two groups, not {groups.height}")
+    groups = groups.with_columns(group=pl.Series(["A", "B"]))
+    return runs.join(groups, on=by, nulls_equal=True).sort("group", "run_id")
+
+
+def _subsampled(runs: pl.DataFrame, subsample: bool, rng, seed) -> pl.DataFrame:
+    """``runs`` (sorted by group) with ``used``: when the groups differ in size, a
+    random subset of the larger one, as large as the smaller (CD-3), with a
+    warning; or an error without ``subsample``."""
+    sizes = dict(runs.group_by("group").len().iter_rows())
+    n = min(sizes.values())
+    mask = np.ones(runs.height, dtype=bool)
+    if sizes["A"] != sizes["B"]:
+        if not subsample:
+            raise ValueError(
+                f"the groups have {sizes['A']} and {sizes['B']} runs; pass "
+                "subsample=True to subsample the larger one"
+            )
+        large = "A" if sizes["A"] > n else "B"
+        start = 0 if large == "A" else sizes["A"]
+        end = start + sizes[large]
+        mask[start:end] = False
+        mask[start + rng.choice(sizes[large], n, replace=False)] = True
+        warnings.warn(
+            f"group {large} has {sizes[large]} runs and the other {n}: "
+            f"{sizes[large] - n} runs of {large} were left out at random (seed {seed}); "
+            "see result.runs",
+            stacklevel=3,
+        )
+    return runs.with_columns(used=pl.Series(mask))
+
+
+def get_cumulative_difference(  # pylint: disable=too-many-arguments
     data: pl.DataFrame,
     *,
     target: float | None = None,
@@ -195,36 +246,17 @@ def get_cumulative_difference(  # pylint: disable=too-many-arguments,too-many-lo
     pairs = [c for c in PAIR if c in data.columns]
     if pairs and data.select(pairs).n_unique() > 1:
         raise ValueError("use one (function, dimension) pair at a time")
-    runs = _sample(data, target, budget, by, maximization, fval_var, eval_var)
-    groups = runs.select(by).unique().sort(by, nulls_last=True)
-    if groups.height != 2:
-        raise ValueError(f"by must make exactly two groups, not {groups.height}")
-    groups = groups.with_columns(group=pl.Series(["A", "B"]))
-    runs = runs.join(groups, on=by, nulls_equal=True).sort("group", "run_id")
-    sizes = dict(runs.group_by("group").len().iter_rows())
-    n = min(sizes.values())
+    sample = _sample(
+        data,
+        target=target,
+        budget=budget,
+        by=by,
+        maximization=maximization,
+        fval_var=fval_var,
+        eval_var=eval_var,
+    )
     rng = np.random.default_rng(seed)
-    used = pl.Series("used", np.ones(runs.height, dtype=bool))
-    if sizes["A"] != sizes["B"]:
-        if not subsample:
-            raise ValueError(
-                f"the groups have {sizes['A']} and {sizes['B']} runs; pass "
-                "subsample=True to subsample the larger one"
-            )
-        large = "A" if sizes["A"] > n else "B"
-        offset = 0 if large == "A" else sizes["A"]
-        keep = rng.choice(sizes[large], n, replace=False)
-        mask = np.ones(runs.height, dtype=bool)
-        mask[offset : offset + sizes[large]] = False
-        mask[offset + keep] = True
-        used = pl.Series("used", mask)
-        warnings.warn(
-            f"group {large} has {sizes[large]} runs and the other {n}: "
-            f"{sizes[large] - n} runs of {large} were left out at random (seed {seed}); "
-            "see result.runs",
-            stacklevel=2,
-        )
-    runs = runs.with_columns(used)
+    runs = _subsampled(_grouped(sample, by), subsample, rng, seed)
     chosen = runs.filter("used")
     curves = cumulative_difference(
         chosen.filter(group="A")["value"].to_numpy(),

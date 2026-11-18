@@ -73,7 +73,7 @@ def _exact(value: Value, marginal: Marginal, n: int):
     return phi, np.zeros(n), table[-1]
 
 
-def _sampled(value: Value, marginal: Marginal, n: int, samples: int, seed):  # pylint: disable=R0913,R0917
+def _sampled(value: Value, marginal: Marginal, n: int, *, samples: int, seed):
     """Stratified estimate (SH-2): for every player a and position j, ``samples``
     random coalitions of j − 1 other players; φ_a is the mean over positions of
     the mean marginal contribution, with its standard error."""
@@ -138,7 +138,9 @@ def shapley_values(  # pylint: disable=too-many-arguments
     if n_players <= exact_limit:
         phi, se, total = _exact(value, marginal, n_players)
     else:
-        phi, se, total = _sampled(value, marginal, n_players, samples, seed)
+        phi, se, total = _sampled(
+            value, marginal, n_players, samples=samples, seed=seed
+        )
     if total == 0:
         return np.full(n_players, np.nan), np.full(n_players, np.nan)
     return phi / total, se / total
@@ -152,11 +154,12 @@ def _envelope_value(ecdf: np.ndarray, width: np.ndarray) -> Value:
         out = np.empty(len(coalitions))
         step = max(1, CHUNK // max(m, 1))
         for start in range(0, len(coalitions), step):
-            block = coalitions[start : start + step]
+            stop = start + step
+            block = coalitions[start:stop]
             best = np.zeros((len(block), m))
             for a in range(n):
                 np.maximum(best, block[:, a, None] * ecdf[a], out=best)
-            out[start : start + step] = best @ width
+            out[start:stop] = best @ width
         return out
 
     return value
@@ -177,12 +180,14 @@ def _portfolio(  # pylint: disable=R0913,R0914
     fval_var: str,
     eval_var: str,
 ):
-    """The players (``by`` values) and the single-target ECDFs of each player on
-    every (pair, target) as a step function over [b_lo, b_hi]: a matrix with one row
-    per player and one column per step, and the width of each step (the AUC divisor
-    included)."""
+    """The players (``by`` values) and the portfolio value v (SH-1). The
+    single-target ECDF of each player on every (pair, target) is a step function
+    over [b_lo, b_hi]; v sums, over the steps, the width of the step (the AUC
+    divisor included) times the largest ECDF in the coalition."""
     # #lizard forgives  (the options of get_shapley_values, passed on as one)
-    data, targets = _prepare(data, targets, by, scale_f_log, pairs, fval_var)
+    data, targets = _prepare(
+        data, targets, by, scale_f_log=scale_f_log, pairs=pairs, fval_var=fval_var
+    )
     curve = list(dict.fromkeys([*by, *PAIR, "target"]))  # one ECDF per player and step
     data = data.with_columns(
         inc=1 / pl.col("run_id").n_unique().over(curve[:-1])  # EC-1: all runs
@@ -223,7 +228,26 @@ def _portfolio(  # pylint: disable=R0913,R0914
     width = steps["width"].to_numpy().reshape(n, -1)[0] / (hi - lo)
     keep = (width > 0) & ecdf.any(axis=0)
     columns, index = np.unique(ecdf[:, keep], axis=1, return_inverse=True)
-    return players, columns, np.bincount(index.ravel(), weights=width[keep])
+    width = np.bincount(index.ravel(), weights=width[keep])
+    return players, _envelope_value(columns, width)
+
+
+#: The ``get_ecdf`` options of ``get_shapley_values`` and their defaults.
+ECDF_OPTIONS = {
+    "scale_f_log": True,
+    "maximization": False,
+    "pairs": "common",
+    "divide_by_dimension": False,
+    "fval_var": "raw_y",
+    "eval_var": "evaluations",
+}
+
+
+def _ecdf_options(options: dict) -> dict:
+    unknown = set(options) - set(ECDF_OPTIONS)
+    if unknown:
+        raise TypeError(f"unknown options {sorted(unknown)}")
+    return ECDF_OPTIONS | options
 
 
 def get_shapley_values(  # pylint: disable=too-many-arguments
@@ -264,32 +288,20 @@ def get_shapley_values(  # pylint: disable=too-many-arguments
         pl.DataFrame: ``by``, ``shapley`` and ``se`` (its standard error; 0 when
         exact), one row per group.
     """
-    by = list(by)
     if not by:
         raise ValueError("by names the players: at least one column")
-    defaults = {
-        "scale_f_log": True,
-        "maximization": False,
-        "pairs": "common",
-        "divide_by_dimension": False,
-        "fval_var": "raw_y",
-        "eval_var": "evaluations",
-    }
-    unknown = set(options) - set(defaults)
-    if unknown:
-        raise TypeError(f"unknown options {sorted(unknown)}")
-    players, ecdf, width = _portfolio(
+    players, value = _portfolio(
         data,
         targets,
-        by,
+        list(by),
         b_lo=b_lo,
         b_hi=b_hi,
         scale_eval_log=scale_eval_log,
-        **(defaults | options),
+        **_ecdf_options(options),
     )
     phi, se = shapley_values(
         players.height,
-        _envelope_value(ecdf, width),
+        value,
         marginal=marginal,
         exact_limit=exact_limit,
         samples=samples,

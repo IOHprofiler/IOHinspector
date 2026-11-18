@@ -79,7 +79,10 @@ def test_sampling_covers_every_position():
     # SH-2: unlike IOHanalyzer's truncated permutations, the coalitions of every
     # size are sampled; in the unanimity game only the last position counts
     n = 16
-    value = lambda s: s.all(axis=1).astype(float)
+
+    def value(coalitions):
+        return coalitions.all(axis=1).astype(float)
+
     phi, se = shapley_values(n, value, samples=3, seed=0)
     np.testing.assert_allclose(phi, 1 / n, rtol=TOL)
     assert not se.any()
