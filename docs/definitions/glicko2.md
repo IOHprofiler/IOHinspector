@@ -180,8 +180,8 @@ iohinspector 0.0.8 uses them.
 Golden tests (`tests/test_metrics/test_glicko2.py`) feed the six recorded game
 lists `glicko2_games_by_*` into `glicko2(tau=1.2)`: games, wins, draws and
 losses match exactly; rating, deviation and volatility match PlayerRatings bit
-for bit on five, and to 4e-12 relative on `ioh040_min` `by_RT` on macOS (the C
-library's `exp` and `log`); the test uses 1e-11. Glickman's example gives
+for bit or to about 1e-11 relative, depending on the platform's C library
+(`exp`, `log`); the test uses 1e-9. Glickman's example gives
 PlayerRatings' values above to all printed digits.
 
 ## Test tolerance

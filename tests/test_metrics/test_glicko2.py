@@ -63,8 +63,11 @@ def test_glicko2_deviation_grows_while_sitting_out():
 @pytest.mark.parametrize("fixture", ["ioh040_min", "ioh040_max", "ioh040_cons"])
 @pytest.mark.parametrize("which", ["by_FV", "by_RT"])
 def test_glicko2_matches_playerratings(fixture, which):
-    # bit-identical but for ioh040_min by_RT on macOS (4e-12: exp and log of
-    # different C libraries)
+    # The port follows PlayerRatings' operations in order, but exp and log differ
+    # by an ulp between C libraries, and 50 rating periods of Brent iterations
+    # (optimize's tolerance is 1.2e-4 in x) carry that on: up to 1.3e-11 relative
+    # seen (macOS and Linux CI). 1e-9 holds across platforms and is far below the
+    # minimiser's own tolerance (glicko2.md allows 1e-5 for the volatility).
     games = golden(fixture, f"glicko2_games_{which}").select(
         pl.col("Weeks").alias("round"),
         (pl.col("Player1") - 1).alias("player"),
@@ -82,7 +85,7 @@ def test_glicko2_matches_playerratings(fixture, which):
         ("Volatility", "volatility"),
     ]:
         np.testing.assert_allclose(
-            joined[mine], joined[theirs], rtol=1e-11, err_msg=theirs
+            joined[mine], joined[theirs], rtol=1e-9, err_msg=theirs
         )
     for theirs, mine in [
         ("Games", "games"),
