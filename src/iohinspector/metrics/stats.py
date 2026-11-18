@@ -225,7 +225,7 @@ def per_pair(data: pl.DataFrame, targets: pl.DataFrame):
             yield key, pairs[key], at
 
 
-def _summaries(data, targets, by, column, fixed_target, **options) -> pl.DataFrame:
+def _summaries(data, targets, by, column, *, fixed_target, **options) -> pl.DataFrame:
     """``column`` of the summary of each group of ``by`` per (function, dimension)
     pair at the pair's ``targets``, as ``x`` and ``measure``."""
     summary, x, at = (
@@ -298,41 +298,41 @@ def get_win_fractions(  # pylint: disable=too-many-arguments
             f"measure {measure!r} for {perspective}: one of {list(measures)}"
         )
     by = list(by)
+    columns = {"eval_var": eval_var, "fval_var": fval_var}
     if targets is None:
         targets = get_target_dt(
-            data,
-            perspective,
-            maximization=maximization,
-            fval_var=fval_var,
-            eval_var=eval_var,
-            by=by,
+            data, perspective, maximization=maximization, by=by, **columns
         )
     fixed_target = perspective == "fixed_target"
-    higher = maximization and not fixed_target
     summary = _summaries(
         data,
         targets,
         by,
         measures[measure].format(k=k),
-        fixed_target,
+        fixed_target=fixed_target,
         maximization=maximization,
-        eval_var=eval_var,
-        fval_var=fval_var,
+        **columns,
         **({"k": k} if fixed_target else {}),
     )
+    return _win_fractions(summary, by, higher=maximization and not fixed_target)
+
+
+def _win_fractions(summary: pl.DataFrame, by: list[str], *, higher: bool):
+    """W_ac from the ``measure`` of each group per pair and ``x``: the mean score
+    over the targets of a pair, then over the pairs. An undefined measure is the
+    worst value."""
     worst = -np.inf if higher else np.inf
-    v = pl.col("measure").cast(pl.Float64).fill_nan(None).fill_null(worst)
-    summary = summary.with_columns(v)
+    measure = pl.col("measure").cast(pl.Float64).fill_nan(None).fill_null(worst)
+    summary = summary.with_columns(measure)
     vs = {c: f"{c}_vs" for c in by}
     other = summary.rename({**vs, "measure": "measure_vs"})
     a, c = pl.col("measure"), pl.col("measure_vs")
     win = (a > c) if higher else (a < c)
-    scores = summary.join(other, on=[*PAIR, "x"]).with_columns(
-        score=win.cast(pl.Float64) + 0.5 * (a == c).cast(pl.Float64)
-    )
+    score = win.cast(pl.Float64) + 0.5 * (a == c).cast(pl.Float64)
+    scores = summary.join(other, on=[*PAIR, "x"]).with_columns(score=score)
     groups = [*by, *vs.values()]
-    per_pair = scores.group_by(*groups, *PAIR).agg(pl.col("score").mean())
-    out = per_pair.group_by(groups).agg(
+    pair_scores = scores.group_by(*groups, *PAIR).agg(pl.col("score").mean())
+    out = pair_scores.group_by(groups).agg(
         win_fraction=pl.col("score").mean(), n_pairs=pl.len().cast(pl.Int64)
     )
     return out.sort(groups)

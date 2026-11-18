@@ -1,6 +1,7 @@
 """Tournament ratings (``docs/definitions/glicko2.md``, GL-1 to GL-4) and robust
 rankings."""
 
+import itertools
 import math
 import sys
 import warnings
@@ -23,7 +24,9 @@ Q = math.log(10) / 400
 FMIN_TOL = sys.float_info.epsilon**0.25
 
 
-def fmin(
+# fmin mirrors R's Brent_fmin line by line, so that the volatility matches
+# PlayerRatings; its length and branching are R's (accepted complexity warnings).
+def fmin(  # pylint: disable=too-many-locals,too-many-branches
     f: Callable[[float], float], a: float, b: float, tol: float = FMIN_TOL
 ) -> float:
     """The minimiser of ``f`` on [a, b] by Brent's method: a line-by-line port of
@@ -102,6 +105,21 @@ def _record(player, opponent, score, n: int) -> np.ndarray:
     mine = np.concatenate([score, 1 - score])
     counts = [both, *(both[mine == s] for s in (1, 0.5, 0))]
     return np.stack([np.bincount(c, minlength=n) for c in counts])
+
+
+# glicko2 mirrors PlayerRatings::glicko2 (R and C) line by line, so that the
+# ratings match it; its length is PlayerRatings' (accepted complexity warnings).
+def _table(rating, deviation, volatility, record: np.ndarray) -> pl.DataFrame:
+    """The ratings table: one row per player."""
+    counts = zip(("games", "wins", "draws", "losses"), record.astype(np.int64))
+    return pl.DataFrame(
+        {
+            "rating": pl.Series(rating, dtype=pl.Float64),
+            "deviation": pl.Series(deviation, dtype=pl.Float64),
+            "volatility": pl.Series(volatility, dtype=pl.Float64),
+            **dict(counts),
+        }
+    )
 
 
 def glicko2(  # pylint: disable=too-many-locals
@@ -185,14 +203,7 @@ def glicko2(  # pylint: disable=too-many-locals
         lag[played] += 1
         lag[play] = 0
     record = _record(white, black, score, n_players)
-    return pl.DataFrame(
-        {
-            "rating": rats / Q + 1500,
-            "deviation": np.sqrt(devs) / Q,
-            "volatility": vols,
-            **dict(zip(("games", "wins", "draws", "losses"), record.astype(np.int64))),
-        }
-    )
+    return _table(rats / Q + 1500, np.sqrt(devs) / Q, vols, record)
 
 
 def elo(
@@ -214,31 +225,30 @@ def elo(
         pl.DataFrame: as ``glicko2``, with a null ``volatility``.
     """
     (rnd, player, opponent, score), rounds = _games(games)
-    last = rounds[-max(1, len(rounds) - math.ceil(0.95 * len(rounds))) :]
+    first = rounds[-max(1, len(rounds) - math.ceil(0.95 * len(rounds)))]
+    rows = zip(*(v.tolist() for v in (rnd, player, opponent, score)))
+    ratings, history = _elo_updates(rows, n_players, k=k, init=init, first=first)
+    spread = [np.std(h, ddof=1) if len(h) > 1 else None for h in history]
+    record = _record(player, opponent, score, n_players)
+    return _table(ratings, spread, [None] * n_players, record)
+
+
+def _elo_updates(rows, n_players: int, *, k: float, init: float, first: int):
+    """The final Elo ratings, and each player's ratings after its games from round
+    ``first`` on."""
     ratings = [float(init)] * n_players
     history: list[list[float]] = [[] for _ in range(n_players)]
-    for r, a, c, s in zip(
-        rnd.tolist(), player.tolist(), opponent.tolist(), score.tolist()
-    ):
-        expected = 1 / (1 + 10 ** ((ratings[c] - ratings[a]) / 400))
-        ratings[a] += k * (s - expected)
-        ratings[c] -= k * (s - expected)
-        if r >= last[0]:
+    for r, a, c, s in rows:
+        change = k * (s - 1 / (1 + 10 ** ((ratings[c] - ratings[a]) / 400)))
+        ratings[a] += change
+        ratings[c] -= change
+        if r >= first:
             history[a].append(ratings[a])
             history[c].append(ratings[c])
-    record = _record(player, opponent, score, n_players)
-    spread = [np.std(h, ddof=1) if len(h) > 1 else None for h in history]
-    return pl.DataFrame(
-        {
-            "rating": ratings,
-            "deviation": pl.Series(spread, dtype=pl.Float64),
-            "volatility": pl.Series([None] * n_players, dtype=pl.Float64),
-            **dict(zip(("games", "wins", "draws", "losses"), record.astype(np.int64))),
-        }
-    )
+    return ratings, history
 
 
-def _matches(data, targets, by, fixed_target, maximization, **columns):
+def _matches(data, targets, by, *, fixed_target, maximization, **columns):
     """Per (function, dimension) pair and target, each group's values oriented so
     that smaller is better, with no value as ``inf`` (a failure, GL-1)."""
     sample, value = (
@@ -258,32 +268,46 @@ def _matches(data, targets, by, fixed_target, maximization, **columns):
             )
 
 
-def _tournament(data, targets, by, rounds, rng, fixed_target, maximization, **columns):
+def _play(players, rounds: int, rng: np.random.Generator) -> list[tuple]:
+    """One game per round between each unordered pair of ``players`` ((id,
+    values) pairs): one value of each drawn at random, the smaller wins, equal
+    values draw. Returns (player, opponent, scores) per pair."""
+    games = []
+    for (i, x), (j, y) in itertools.combinations(players, 2):
+        a = x[rng.integers(len(x), size=rounds)]
+        c = y[rng.integers(len(y), size=rounds)]
+        games.append((i, j, (a < c) + 0.5 * (a == c)))
+    return games
+
+
+def _tournament(data, targets, by, *, rounds, rng, **options):
     """The games of the tournament (GL-1), with the groups of ``by`` as players
     0 .. n - 1 in the order of ``groups``."""
     groups = data.select(by).unique().sort(by)
     index = groups.with_row_index("player")
-    parts = []
-    for names, values in _matches(
-        data, targets, by, fixed_target, maximization, **columns
-    ):
+    games = []
+    for names, values in _matches(data, targets, by, **options):
         ids = names.join(index, on=by, nulls_equal=True, maintain_order="left")
-        ids = ids["player"].to_numpy()
-        for i in range(len(ids)):
-            for j in range(i + 1, len(ids)):
-                a = values[i][rng.integers(len(values[i]), size=rounds)]
-                c = values[j][rng.integers(len(values[j]), size=rounds)]
-                score = (a < c) + 0.5 * (a == c)
-                parts.append((np.arange(1, rounds + 1), ids[i], ids[j], score))
+        games += _play(zip(ids["player"].to_numpy(), values), rounds, rng)
+    players, opponents, scores = zip(*games)
     games = pl.DataFrame(
         {
-            "round": np.concatenate([p[0] for p in parts]),
-            "player": np.concatenate([np.full(rounds, p[1]) for p in parts]),
-            "opponent": np.concatenate([np.full(rounds, p[2]) for p in parts]),
-            "score": np.concatenate([p[3] for p in parts]),
+            "round": np.tile(np.arange(1, rounds + 1), len(scores)),
+            "player": np.repeat(players, rounds),
+            "opponent": np.repeat(opponents, rounds),
+            "score": np.concatenate(scores),
         }
     )
     return groups, games.sort("round", maintain_order=True)
+
+
+def _rate(games, n_players: int, *, method: str, tau: float, rng) -> pl.DataFrame:
+    """Glicko-2 ratings, or Elo ratings with each round in random order."""
+    if method == "glicko2":
+        return glicko2(games, n_players, tau=tau)
+    rounds = np.unique(games["round"].to_numpy())
+    order = [rng.permutation(np.flatnonzero(games["round"] == r)) for r in rounds]
+    return elo(games[np.concatenate(order)], n_players)
 
 
 def get_tournament_ranking(  # pylint: disable=too-many-arguments
@@ -341,20 +365,17 @@ def get_tournament_ranking(  # pylint: disable=too-many-arguments
             data, perspective, maximization=maximization, by=by, **columns
         )
     rng = np.random.default_rng(seed)
-    fixed_target = perspective == "fixed_target"
     groups, games = _tournament(
-        data, targets, by, rounds, rng, fixed_target, maximization, **columns
+        data,
+        targets,
+        by,
+        rounds=rounds,
+        rng=rng,
+        fixed_target=perspective == "fixed_target",
+        maximization=maximization,
+        **columns,
     )
-    if method == "glicko2":
-        ratings = glicko2(games, groups.height, tau=tau)
-    else:  # each round in random order
-        order = np.concatenate(
-            [
-                rng.permutation(np.flatnonzero(games["round"] == r))
-                for r in range(1, rounds + 1)
-            ]
-        )
-        ratings = elo(games[order], groups.height)
+    ratings = _rate(games, groups.height, method=method, tau=tau, rng=rng)
     return pl.concat([groups, ratings], how="horizontal").sort(
         "rating", descending=True, maintain_order=True
     )
