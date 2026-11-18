@@ -184,7 +184,7 @@ def get_ks_tests(  # pylint: disable=too-many-arguments,too-many-locals
         "decision",
     ]
     out = pl.DataFrame(rows, schema=[*view, *by, *vs, *numbers], orient="row")
-    types = {
+    types: dict = {
         **sample.select(*view, *by).schema,
         **dict(zip(vs, sample.select(by).dtypes)),
     }
@@ -207,6 +207,16 @@ MEASURES = {
 }
 
 
+def per_pair(data: pl.DataFrame, targets: pl.DataFrame):
+    """(key, rows, targets) of each (function, dimension) pair of ``data`` that has
+    targets in ``targets`` (``function_id``, ``dimension``, ``target``), in order."""
+    pairs = data.partition_by(PAIR, as_dict=True)
+    for key in sorted(pairs):
+        at = targets.filter(*(pl.col(c) == v for c, v in zip(PAIR, key)))["target"]
+        if not at.is_empty():
+            yield key, pairs[key], at
+
+
 def _summaries(data, targets, by, column, fixed_target, **options) -> pl.DataFrame:
     """``column`` of the summary of each group of ``by`` per (function, dimension)
     pair at the pair's ``targets``, as ``x`` and ``measure``."""
@@ -216,10 +226,7 @@ def _summaries(data, targets, by, column, fixed_target, **options) -> pl.DataFra
         else (aggregate_convergence, options["eval_var"], "budgets")
     )
     out = []
-    for key, pair in data.partition_by(PAIR, as_dict=True).items():
-        values = targets.filter(*(pl.col(c) == v for c, v in zip(PAIR, key)))["target"]
-        if values.is_empty():
-            continue
+    for key, pair, values in per_pair(data, targets):
         options[at] = values if fixed_target else values.cast(pl.Int64)
         frame = summary(pair, by=by, **options)
         names = (pl.lit(v).alias(c) for c, v in zip(PAIR, key))

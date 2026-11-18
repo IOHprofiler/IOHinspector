@@ -22,7 +22,10 @@ from .eaf import (
     get_eaf_diff_data,
 )
 from .ranking import (
+    elo,
+    get_tournament_ranking,
     get_tournament_ratings,
+    glicko2,
     get_robustrank_over_time,
     get_robustrank_changes,
 )
@@ -40,6 +43,7 @@ from .parameters import (
 __all__ = [
     "MEASURES",
     "add_normalized_objectives",
+    "elo",
     "aggregate_convergence",
     "aggregate_running_time",
     "get_aocc",
@@ -60,11 +64,13 @@ __all__ = [
     "get_robustrank_over_time",
     "get_runtime_sample",
     "get_sequence",
+    "get_tournament_ranking",
     "get_tournament_ratings",
     "get_trajectory",
     "get_value_sample",
     "get_violin",
     "get_win_fractions",
+    "glicko2",
     "group_label",
     "holm",
     "ks_test",
