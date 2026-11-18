@@ -136,6 +136,71 @@ review did not say how BBOB data is recognised (proposed: the suite name in the
 run metadata). The same bounds apply to AOCC through EC-5 (see
 [ecdf](ecdf.md)).
 
+## Implementation (I17)
+
+`iohinspector.metrics`, in `metrics/eaf.py`:
+
+- `get_eaf(data, by, mode=...)`: the EAF of each group of `by` (EA-1). Each
+  run's attainment set is its best-so-far trace: its first row and every row
+  where the best-so-far value improves; before its first row a run has
+  attained nothing (AL-5). `mode="precise"` gives the attainment surfaces at
+  `percentiles` (default 0, 10, …, 100) from `moocore.eaf`;
+  `mode="discretised"` gives α on a grid of budgets × values (EA-5): 50
+  log-spaced budgets over each pair's logged evaluations and 50 log-spaced
+  values over its logged values by default (`eval_values`, `f_values`: a
+  count or the values themselves).
+- `get_eaf_difference(data, by, mode=...)`: Δ of EA-2 for every group, in
+  the same two modes. Precise: the rectangles of `moocore.eafdiff` where Δ is
+  constant, for exactly two groups, once for each (Δ_B = −Δ_A). Discretised: Δ
+  on the grid of `get_eaf`, for two or more groups, against the pointwise
+  maximum of the others.
+- Several pairs (EA-3): when a group of `by` spans more than one (function,
+  dimension) pair, f is replaced by the normalised quality q of the continuum
+  ECDF (EC-5) in a column `quality`, with the same default bounds
+  (`targets.get_ecdf_targets`, so the suite bounds of TG-8 apply), and the
+  discretised value grid is linear in q over [0, 1]. Each run is one attainment
+  set, so a pair weighs in proportion to its runs. With `by` naming the pair
+  columns every group has one pair and the values stay f; differences are then
+  taken within each pair.
+- The EA-4 bug cannot occur: there is no separate budget bound for the
+  multi-function EAF.
+
+Checks of `moocore` 0.1.8 and 0.3.2, as EA-1 requires (the golden tests
+repeat them for the installed version):
+
+- On IOHanalyzer's own inputs (each run's best-so-far value at 20 budgets of
+  the pair) `moocore.eaf` returns IOHanalyzer's surfaces exactly, so it maps
+  percentages to levels as `eaf::eafs` does: the surface at p % is attained by
+  at least ⌈p n / 100⌉ of the n runs, and by at least one. With 5 runs, 0, 10
+  and 20 % are the same surface.
+- `moocore.eaf` reads a set from consecutive rows; interleaved rows give a
+  wrong EAF. iohinspector sorts by run first. The 0.0.8 functions
+  `get_eaf_pareto_data` and `get_eaf_diff_data` did not, and now do.
+- `moocore.eafdiff` assumes both sides have equally many sets (it splits the
+  sets in half), and counts Δ in sets. With n_A ≠ n_B runs each side's runs
+  are repeated up to lcm(n_A, n_B), and Δ is the count divided by that.
+- `moocore.eafdiff` fails when there is no rectangle at all; that is an empty
+  result. Rectangles with Δ = 0 are kept, as `eaf::eafdiff` keeps them.
+
+Golden tests (`tests/test_metrics/test_eaf.py`) on `ioh040_min`,
+`ioh040_max`, `ioh040_cons` and `ioh040_pos`:
+
+- `EAF`, `EAF_logx`: equal, except one value of `ioh040_min` in the 17th
+  digit, because IOHanalyzer takes a run's final best value from the JSON
+  summary rather than the `.dat` row.
+- `EAF_Difference`: equal on the minimisation fixtures. IOHanalyzer's
+  `generate_data.EAF_Difference` ignores maximisation (it always minimises), so
+  on `ioh040_max` the test reproduces it with `maximization=False` and checks
+  that the agreed result differs.
+- `EAF_diff_Approximate`: equal to 1e-12 on IOHanalyzer's grid. Its value grid
+  differs from `seq_fv` at the ends (`10^log10(x)` is 1 ulp off; a lower end of
+  0 becomes 1e-12, TG-3), which matters where a grid value equals a logged
+  value, so the test passes IOHanalyzer's grid. Under maximisation IOHanalyzer
+  labels the values in reverse order, because `get_RT_summary` returns the
+  success rates sorted by target; the test undoes that.
+- `ECDF_From_EAF` (the EAF-based ECDF) is not ported; the continuum ECDF of
+  [ecdf](ecdf.md) is that view.
+
 ## Test tolerance
 
 Attainment surfaces and difference rectangles must match `eaf`'s output

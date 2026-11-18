@@ -3,6 +3,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
+from iohinspector.align import align_data
 from iohinspector.metrics.eaf import (
     RECTANGLE,
     get_discritized_eaf_single_objective,
@@ -12,6 +13,8 @@ from iohinspector.metrics.eaf import (
     get_eaf_difference,
     get_eaf_pareto_data,
 )
+from iohinspector.targets import seq_rt
+from tests.golden.load import golden_renamed, logged
 
 DATA = pl.DataFrame(
     {
@@ -452,3 +455,111 @@ def test_pareto_eaf_reads_each_run_as_one_set():
         get_eaf_pareto_data(shuffled, "obj1", "obj2"),
         get_eaf_pareto_data(SIMPLE_MO_DATA, "obj1", "obj2"),
     )
+
+
+# Golden tests against IOHanalyzer (WP I03): generate_data.EAF, EAF_Difference and
+# EAF_diff_Approximate, per (function, dimension) pair. The levels come from the
+# R package eaf 2.5 and must match moocore's exactly (EA-1).
+PAIR = ["function_id", "dimension"]
+BY_PAIR = ["algorithm_name", *PAIR]
+MAXIMIZE = {"ioh040_min": False, "ioh040_max": True, "ioh040_cons": False}
+
+
+def _gold(fixture, metric):
+    gold = golden_renamed(fixture, metric).rename(
+        {"algId": "algorithm_name"}, strict=False
+    )
+    pair = [
+        pl.col(c).cast(pl.Int32).alias(n) for c, n in zip(["pair_f", "pair_d"], PAIR)
+    ]
+    return gold.with_columns(pair).drop("pair_f", "pair_d")
+
+
+@pytest.mark.parametrize("fixture", [*MAXIMIZE, "ioh040_pos"])
+@pytest.mark.parametrize("metric", ["EAF", "EAF_logx"])
+def test_eaf_matches_iohanalyzer(fixture, metric):
+    # IOHanalyzer samples each run's best-so-far value at 20 budgets of the pair;
+    # the precise EAF of those samples is its EAF. One value of ioh040_min differs
+    # in the 17th digit: IOHanalyzer takes a run's best value from the JSON summary
+    data = logged(fixture)
+    maximization = MAXIMIZE.get(fixture, False)
+    sampled = []
+    for _, pair in data.group_by(PAIR):
+        budgets = seq_rt(pair["evaluations"], 20, log=metric == "EAF_logx")
+        aligned = align_data(pair, budgets, maximization=maximization)
+        sampled.append(aligned.drop_nulls("raw_y"))
+    ours = get_eaf(pl.concat(sampled), BY_PAIR, maximization=maximization)
+    gold = _gold(fixture, metric).rename({"runtime": "evaluations", "f(x)": "raw_y"})
+    keys = [*BY_PAIR, "percentage", "evaluations", "raw_y"]
+    ours = ours.rename({"percentile": "percentage"}).sort(keys)
+    gold = gold.sort(keys)
+    assert_frame_equal(
+        ours.select(keys[:-1]), gold.select(keys[:-1]), check_dtypes=False
+    )
+    np.testing.assert_allclose(ours["raw_y"], gold["raw_y"], rtol=1e-15, atol=0)
+
+
+@pytest.mark.parametrize("fixture", MAXIMIZE)
+def test_eaf_difference_matches_iohanalyzer(fixture):
+    # the first two algorithms; IOHanalyzer counts the difference in runs (5 each)
+    data = logged(fixture)
+    two = sorted(data["algorithm_name"].unique())[:2]
+    data = data.filter(pl.col("algorithm_name").is_in(two))
+    gold = _gold(fixture, "EAF_Difference")
+    rectangles = ["xmin", "ymin", "xmax", "ymax", "diff"]
+    gold = gold.select(*PAIR, *rectangles).sort(pl.all())
+
+    def ours(maximization):
+        result = get_eaf_difference(data, BY_PAIR, maximization=maximization)
+        result = result.filter(pl.col("algorithm_name") == two[0])
+        result = result.with_columns(pl.col("eaf_diff") * 5)
+        return result.select(*PAIR, *RECTANGLE).sort(pl.all())
+
+    # IOHanalyzer's EAF_Difference ignores maximisation: it minimises
+    result = ours(False)
+    assert_frame_equal(result.select(PAIR), gold.select(PAIR), check_dtypes=False)
+    np.testing.assert_allclose(
+        result.select(RECTANGLE).to_numpy(),
+        gold.select(rectangles).to_numpy(),
+        rtol=1e-15,
+    )
+    if MAXIMIZE[fixture]:
+        assert ours(True).height != result.height
+
+
+@pytest.mark.parametrize("fixture", MAXIMIZE)
+def test_discretised_difference_matches_iohanalyzer(fixture):
+    # EAF_diff_Approximate on IOHanalyzer's grid: 50 log-spaced budgets and values
+    # per pair, its values 10^(log10 spaced) with ends 1 ulp off the data's (TG-1)
+    # and 1e-12 for a lower end of 0 (TG-3). When maximising IOHanalyzer labels the
+    # values in reverse order (its success rates come sorted by target)
+    data = logged(fixture)
+    maximization = MAXIMIZE[fixture]
+    gold = _gold(fixture, "EAF_diff_Approximate")
+    for (f, d), pair in data.group_by(PAIR):
+        lower = 1e-12 if pair["raw_y"].min() <= 0 else pair["raw_y"].min()
+        log = np.log10([lower, pair["raw_y"].max()])
+        values = 10.0 ** np.linspace(*log, 50)
+        budgets = seq_rt(pair["evaluations"], 50)
+        ours = get_eaf_difference(
+            pair,
+            mode="discretised",
+            eval_values=budgets,
+            f_values=values,
+            maximization=maximization,
+        )
+        expected = gold.filter(pl.col("function_id") == f, pl.col("dimension") == d)
+        labels = expected["fvalue"].cast(pl.Float64).unique().sort().to_numpy()
+        np.testing.assert_allclose(labels, values, rtol=1e-9)
+        values = values[::-1] if maximization else values
+        expected = expected.select(
+            "algorithm_name",
+            evaluations=pl.col("runtime").cast(ours["evaluations"].dtype),
+            raw_y=pl.col("fvalue").cast(pl.Float64).replace_strict(labels, values),
+            gold="diff",
+        )
+        joined = expected.join(ours, on=["algorithm_name", "evaluations", "raw_y"])
+        assert joined.height == expected.height == ours.height
+        np.testing.assert_allclose(
+            joined["eaf_diff"], joined["gold"], rtol=0, atol=1e-12
+        )

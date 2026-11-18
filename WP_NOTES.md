@@ -3,10 +3,11 @@ Branch: wp/I17-eaf
 Status: in progress
 
 ## Done
-- step 1: `metrics.get_eaf` and `metrics.get_eaf_difference`, precise and discretised (EA-1, EA-2, EA-5), q across pairs (EA-3); unit tests; `get_eaf` in `test_by`.
+- step 1: `metrics.get_eaf` and `metrics.get_eaf_difference`, precise and discretised (EA-1, EA-2, EA-5), q across pairs (EA-3); unit tests; `get_eaf` in `test_by`. (commit 9bb32e6)
+- step 2: golden tests (EAF, EAF_logx, EAF_Difference, EAF_diff_Approximate) and the implementation section of `docs/definitions/eaf.md`.
 
 ## Next step
-Step 2: golden tests against IOHanalyzer's `EAF`, `EAF_logx`, `EAF_Difference`, `EAF_diff_Approximate`; implementation section in `docs/definitions/eaf.md`.
+Step 3: CHANGELOG, FUNCTION_REFERENCE.md, final checks; then remove WP_NOTES.md.
 
 ## Decisions
 - moocore checked against `eaf` 2.5 (EA-1): on IOHanalyzer's inputs `moocore.eaf` gives the golden surfaces exactly, so the level convention is the same (p -> at least ceil(p n / 100) runs, and at least one).
