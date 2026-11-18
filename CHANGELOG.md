@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- Shapley values of algorithm portfolios (`docs/definitions/portfolio.md`):
+  `metrics.get_shapley_values(data, targets, by)` gives each group's share of the
+  area under the virtual-best ECDF, exact up to 15 groups and seeded sampling
+  above, with a standard error. `metrics.shapley_values(n, value, marginal=...)`
+  is the generic routine for other portfolio values or marginal contributions.
+- Cumulative difference plot (`docs/definitions/cdp.md`):
+  `metrics.get_cumulative_difference(data, target=... | budget=..., by)` and
+  `metrics.cumulative_difference(x_a, x_b)`, RVCompare's bootstrap with a seed.
+  Failed runs count as the worst value; unequal groups are subsampled, with a
+  warning and the runs used in `result.runs`.
+
 ## 0.2.1
 
 ### New

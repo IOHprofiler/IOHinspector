@@ -1,6 +1,6 @@
 # WP I16: Shapley values and cumulative difference plot
 Branch: wp/I16-shapley-cdp
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1: Shapley values (`metrics/portfolio.py`): generic `shapley_values(n, value, marginal=...)`
@@ -14,10 +14,13 @@ Status: in progress
   `tests/test_metrics/test_cdp.py`; new RVCompare reference `tests/golden/rvcompare/` from
   `tests/golden/r/rvcompare.R` (wired into `make golden`).
 
+- step 3: "Implementation (I16)" sections in `docs/definitions/portfolio.md` and `cdp.md`; Y_A and
+  Y_B checked against Arza et al. (arXiv 2203.07889); the CDP band tolerance revised (below);
+  CHANGELOG and FUNCTION_REFERENCE entries.
+
 ## Next step
-Step 3: write the "Implementation (I16)" sections and the resolved points into
-`docs/definitions/portfolio.md` and `cdp.md` (Y_A/Y_B checked against Arza 2023; band tolerance),
-CHANGELOG entry, then finish (delete WP_NOTES.md).
+Review (dvermetten, D6). Definitions implemented: `docs/definitions/portfolio.md`,
+`docs/definitions/cdp.md`.
 
 ## Decisions
 - Value functions are batched: v takes a boolean matrix (one row per coalition) and returns one
@@ -42,7 +45,11 @@ CHANGELOG entry, then finish (delete WP_NOTES.md).
 - Fixed budget: a run with no evaluation yet at the budget (null, AL-5) counts as the worst value,
   like a failed run (CD-2).
 
+- `cdp.md` "Test tolerance" changed: difference bands within 0.04 (Y bands stay 0.02), and the
+  bands are compared on the RVCompare reference, not on the 5-run I03 fixtures.
+
 ## Open questions / Blocked
 - For the default value (a sum of maximum games) the Shapley value has a closed form, exact for any
   number of algorithms (the tests use it as an oracle). SH-2 asks for sampling above 15; the
   closed form could replace it for the default value. For the reviewer.
+- cdp.md H1 point, unchanged: the subsample is drawn once, by seed, from the larger group only.

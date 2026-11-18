@@ -102,6 +102,43 @@ No Shapley or portfolio function.
 
 Remaining points for H1: none.
 
+## Implementation (I16)
+
+`iohinspector.metrics`, in `metrics/portfolio.py`:
+
+- `shapley_values(n_players, value, *, marginal=None, exact_limit=15, samples=5,
+  seed=None)`: the generic routine (SH-4). `value` takes a boolean matrix, one
+  row per coalition and one column per player, and returns v of each row;
+  `marginal(v, S, a)` gets the cached value function and the coalitions S
+  without a, and defaults to v(S ∪ {a}) − v(S). Exact (SH-2): v is called once on
+  all 2^n coalitions. Sampled: for each player and position j, `samples` random
+  coalitions of j − 1 other players (the predecessors of a in a random
+  permutation that puts a at position j), and v is called once per distinct
+  coalition. Returns the values divided by v(N) (SH-3) and a standard error per
+  value (0 when exact); NaN when v(N) = 0.
+- `get_shapley_values(data, targets, by, *, b_lo, b_hi, scale_eval_log, ...)`:
+  the players are the groups of `by` (D17). The value is SH-1 with the targets,
+  the pair selection (`pairs`, EC-2), the hit rule (EC-1) and the budget range
+  and axis (EC-4) of `get_ecdf_auc`: per (pair, target), each player's ECDF is a
+  step function on the common steps of all players, so v(S) is a sum over steps
+  of the step width times the largest ECDF in S. Returns `by`, `shapley`, `se`.
+
+The default value is a sum of *maximum games* (one per step), so its Shapley
+value also has a closed form, exact for any number of algorithms: with the
+ECDFs of a step sorted ascending, e_(1) ≤ … ≤ e_(n), the algorithm in place i
+gets Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1) times the step width. The tests use
+it as an independent check of the enumeration. It could replace sampling above
+15 algorithms for the default value; that is a question for the review, not
+implemented.
+
+Golden tests: IOHanalyzer's value (R's `ecdf` of the successful runtimes,
+summed over its 50-point grid) is a custom value function for
+`shapley_values`. With it the tests reproduce `ECDF_raw` and
+`marg_contrib_ecdf` exactly, and IOHanalyzer's unseeded Shapley estimates lie in
+the range its estimator can produce (equal to the exact values for two
+algorithms). The agreed value (SH-1) gives different numbers, which the test
+names.
+
 ## Test tolerance
 
 Exact Shapley values: relative error 1e-12, and the sum must be 1 within
