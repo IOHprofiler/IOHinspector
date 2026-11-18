@@ -29,6 +29,7 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
+from .portfolio import get_shapley_values, shapley_values
 from .parameters import (
     apply_penalty,
     get_logged_rows,
@@ -51,6 +52,7 @@ __all__ = [
     "get_ecdf_auc",
     "get_heatmap_single_run_data",
     "get_rank_table",
+    "get_shapley_values",
     "get_overview",
     "get_histogram",
     "get_robustrank_changes",
@@ -63,6 +65,7 @@ __all__ = [
     "get_violin",
     "group_label",
     "normalize_objectives",
+    "shapley_values",
     "transform_fval",
     "apply_penalty",
     "get_logged_rows",
