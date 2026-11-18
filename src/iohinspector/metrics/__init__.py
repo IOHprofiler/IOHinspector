@@ -29,6 +29,7 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
+from .stats import get_ks_tests, holm, ks_test
 from .parameters import (
     apply_penalty,
     get_logged_rows,
@@ -53,6 +54,7 @@ __all__ = [
     "get_rank_table",
     "get_overview",
     "get_histogram",
+    "get_ks_tests",
     "get_robustrank_changes",
     "get_robustrank_over_time",
     "get_runtime_sample",
@@ -62,6 +64,8 @@ __all__ = [
     "get_value_sample",
     "get_violin",
     "group_label",
+    "holm",
+    "ks_test",
     "normalize_objectives",
     "transform_fval",
     "apply_penalty",
