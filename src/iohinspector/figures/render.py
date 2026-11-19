@@ -7,9 +7,10 @@ import math
 import matplotlib as mpl
 import numpy as np
 import polars as pl
-from matplotlib import style, ticker
+from matplotlib import ticker
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from matplotlib.style import context as style_context
 
 from .base import Curve, Plot
 from .ecdf import ecdf_plot
@@ -34,7 +35,7 @@ def render(spec: FigureSpec, data: pl.DataFrame, *, fmt: str | None = None) -> b
     fmt = fmt or spec.formats[0]
     _one_of("format", fmt, FORMATS)
     buffer = io.BytesIO()
-    with style.context("default"), mpl.rc_context(_rc(spec)):
+    with style_context("default"), mpl.rc_context(_rc(spec)):
         fig = _figure(spec, _select(spec, data))
         fig.savefig(buffer, format=fmt, dpi=spec.dpi, metadata=METADATA[fmt])
     return buffer.getvalue()
@@ -118,10 +119,9 @@ def _figure(spec: FigureSpec, data: pl.DataFrame) -> Figure:
     _axis(ax, "y", spec.y, plot.y)
     if spec.title:
         ax.set_title(spec.title)
-    for i, curve in enumerate(shown):  # spread over the final x limits
-        phase = (i + 1) / (len(shown) + 1)
-        style = styles[curve.label]
-        _sparse_markers(ax, curve, style, n=spec.markers, phase=phase, step=plot.step)
+    for i, curve in enumerate(shown if spec.markers else []):  # on final limits
+        x = _marker_x(ax, spec.markers, phase=(i + 1) / (len(shown) + 1))
+        _sparse_markers(ax, curve, styles[curve.label], x=x, step=plot.step)
     _legend(fig, ax, spec, shown, styles)
     return fig
 
@@ -146,35 +146,38 @@ def _axis(ax, which: str, own: Axis, defaults: dict) -> None:
         ax.grid(True, which=own.grid, axis=which)
 
 
-def _draw(ax, curve: Curve, style: dict, step: bool) -> None:
-    line = {k: style[k] for k in ("color", "linestyle", "linewidth")}
+def _draw(ax, curve: Curve, look: dict, step: bool) -> None:
+    line = {k: look[k] for k in ("color", "linestyle", "linewidth")}
     ax.plot(curve.x, curve.y, drawstyle="steps-post" if step else "default", **line)
     ax.plot(  # the final value, at the curve's end
         curve.x[-1:],
         curve.y[-1:],
-        marker=style["marker"],
-        color=style["color"],
+        marker=look["marker"],
+        color=look["color"],
         linestyle="none",
         clip_on=False,
     )
 
 
-def _sparse_markers(ax, curve: Curve, style, *, n: int, phase: float, step: bool):
-    """``n`` markers spread evenly over the x axis (on its scale),
-    shifted by ``phase`` of the spacing per curve so curves do not share them."""
-    if not n:
-        return
+def _marker_x(ax, n: int, *, phase: float) -> np.ndarray:
+    """``n`` x positions spread evenly over the x axis (on its scale), shifted by
+    ``phase`` of the spacing, so that curves with different phases do not share
+    them."""
     log = ax.get_xscale() == "log"
     scale = np.log10 if log else (lambda v: np.asarray(v, dtype=float))
     lo, hi = scale(ax.get_xlim())
     t = lo + (np.arange(n) + phase) * (hi - lo) / n
-    x = 10**t if log else t
+    return 10**t if log else t
+
+
+def _sparse_markers(ax, curve: Curve, look: dict, *, x: np.ndarray, step: bool):
+    """Markers on ``curve`` at the positions ``x`` within its range."""
     x = x[(x >= curve.x[0]) & (x < curve.x[-1])]
     if step:
         y = curve.y[np.searchsorted(curve.x, x, side="right") - 1]
     else:
         y = np.interp(x, curve.x, curve.y)
-    ax.plot(x, y, marker=style["marker"], color=style["color"], linestyle="none")
+    ax.plot(x, y, marker=look["marker"], color=look["color"], linestyle="none")
 
 
 def _legend(fig, ax, spec: FigureSpec, curves: list[Curve], styles) -> None:
@@ -201,6 +204,6 @@ def _direct_labels(fig, ax, order: list[dict]) -> None:
     place_direct_labels(ax, texts, size)
 
 
-def _handle(style: dict) -> Line2D:
+def _handle(look: dict) -> Line2D:
     keys = ("color", "linestyle", "linewidth", "marker")
-    return Line2D([], [], label=style["name"], **{k: style[k] for k in keys})
+    return Line2D([], [], label=look["name"], **{k: look[k] for k in keys})

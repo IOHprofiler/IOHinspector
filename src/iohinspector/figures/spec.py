@@ -15,6 +15,8 @@ from typing import Any
 
 from matplotlib import colors, legend, lines, markers
 
+from .venues import PALETTES, VENUES
+
 KINDS = ("ecdf",)
 SPANS = ("single", "double")
 LEGENDS = ("direct", "box", "outside", "none")
@@ -160,8 +162,6 @@ class FigureSpec:
     dpi: int = 300
 
     def __post_init__(self):
-        from .venues import PALETTES, VENUES
-
         _one_of("kind", self.kind, KINDS)
         _one_of("venue", self.venue, VENUES)
         _one_of("span", self.span, SPANS)

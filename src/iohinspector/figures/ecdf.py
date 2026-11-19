@@ -48,4 +48,5 @@ def _curve(label: str, ecdf: pl.DataFrame, start: float, end: float) -> Curve:
     by then, to its largest budget ``end``, where it keeps its final value."""
     x, y = ecdf["evaluations"].to_numpy(), ecdf["ecdf"].to_numpy()
     i = np.searchsorted(x, start, side="right") - 1
-    return Curve(label, np.r_[start, x[i + 1 :], end], np.r_[y[i], y[i + 1 :], y[-1]])
+    after = slice(i + 1, None)  # the steps after start
+    return Curve(label, np.r_[start, x[after], end], np.r_[y[i], y[after], y[-1]])
