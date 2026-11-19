@@ -23,7 +23,7 @@ LEGENDS = ("direct", "box", "outside", "none")
 SCALES = ("linear", "log")
 TICKS = ("auto", "exponent", "power", "plain")
 GRIDS = ("none", "major", "both")
-FORMATS = ("pdf", "svg", "png")
+FORMATS = ("pdf", "svg", "png", "pgf")
 TARGETS = ("log-linear", "linear", "bbob")
 
 
