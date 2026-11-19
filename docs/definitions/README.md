@@ -57,7 +57,7 @@ networks are after launch and not covered.
 | Which quantile type for runtimes and for function values? | Type 3 for runtimes (over all runs, unfinished as ∞, by default), type 7 for function values. | RT-5, FB-2 |
 | Does an aggregated ECDF weight each (function, dimension) pair or each target equally? | Each pair equally, then each target and run within it; the same as per (pair, target) when every pair has the same number of targets. Only pairs every compared algorithm has, with a warning. | EC-2 |
 | How are targets generated? | Log-spaced by default, 10 per (function, dimension) from its observed range; linear and the COCO 51-target grid 10^(2 − k/5), k = 0..50, are available. | TG-1, TG-2, TG-3 |
-| Fixed-budget value of a run that stopped before the budget? | Its final best value, carried forward (default), or simulated restarts as an option; the table reports how many runs were still active. | AL-4, FB-1, FB-6 |
+| Fixed-budget value of a run that stopped before the budget? | Its final best value, carried forward (default), or simulated restarts as an option; the table reports how many runs were still active. The fixed-budget ECDF restarts by default. | AL-4, FB-1, FB-6, EC-7 |
 | Do 0.67 and 0.90 differ by definition or by bug? | Both. Definitions: 10 discrete targets with a strict comparison against a continuum of normalised targets; the strict comparison caps IOHanalyzer's default ECDF at 0.90 when every run ends at the best observed value. Bugs in iohinspector: data-derived, shared normalisation bounds, dropped final rows and a truncated budget grid. Worked example in [ecdf](ecdf.md). | EC-1, EC-5, EC-6 |
 
 ## Decisions for sign-off
@@ -99,7 +99,7 @@ golden tests name the decision there.
 | FB-3 | Geometric mean only when all values > 0 | yes |
 | FB-4 | Overview columns with budget from run metadata; `succ` renamed `n_best` | JSON data only |
 | FB-5 | Run-minimum fill not ported | yes |
-| FB-6 | Stopped runs: carried forward (default) or simulated restarts; stopping told apart from not improving | option only |
+| FB-6 | Stopped runs: carried forward (default) or simulated restarts; stopping told apart from not improving. The fixed-budget ECDF restarts by default (EC-7) | option only |
 
 ### Targets ([targets](targets.md))
 
@@ -124,9 +124,9 @@ golden tests name the decision there.
 | EC-4 | AUC as exact normalised integral | yes |
 | EC-5 | AOCC on best-so-far with fixed bounds per pair (BBOB: 1e2, 1e-8); equals the continuum-ECDF AUC | – (new) |
 | EC-6 | Current `get_data_ecdf` kept under a clear name, with EC-5 bounds | – |
-| EC-7 | No simulated restarts | no (cocopp: yes) |
+| EC-7 | Fixed-budget ECDF and AUC: simulated restarts (FB-6's procedure) by default, carry forward as an option; none for the target ECDF | yes (IOHanalyzer carries forward; cocopp restarts its runtime ECDF) |
 | EC-8 | Rank tables per pair, average ties, missing last | no |
-| EC-9 | Fixed-budget ECDF, inclusive (V(b) ≤ v), budgets per pair, exact | yes |
+| EC-9 | Fixed-budget ECDF, inclusive (V(b) ≤ v), budgets per pair, exact; stopped runs restarted (EC-7) | yes |
 | EC-10 | Fixed-budget AUC as exact normalised integral over [v_lo, v_hi] | yes |
 
 ### Distributions ([distributions](distributions.md))

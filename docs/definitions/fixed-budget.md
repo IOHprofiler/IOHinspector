@@ -172,7 +172,10 @@ positive value for the log axis. Runs are not instance-balanced in this plot
 
 The restart procedure (draw uniformly with replacement from the run set, one
 chain per run, seeded) was signed off as built (user, 2026-11-12); the review
-named the option but not the procedure. The default stays carry forward.
+named the option but not the procedure. The default stays carry forward for
+the summary. The fixed-budget ECDF and its AUC use the same procedure and
+restart by default (EC-7 in [ecdf](ecdf.md), the D6 review of #42,
+dvermetten, 2026-11-19).
 
 ## Test tolerance
 
