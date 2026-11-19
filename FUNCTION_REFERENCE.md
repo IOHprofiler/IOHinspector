@@ -29,6 +29,7 @@ This document provides a comprehensive reference of all functions available in t
   - [Ranking Plots](#ranking-plots)
   - [Single Run Plots](#single-run-plots)
   - [Plot Utils](#plot-utils)
+- [Publication figures](#publication-figures)
 
 ---
 
@@ -1128,6 +1129,35 @@ ax, data = plot_heatmap_single_run(
 <img src="example_plots/heatmap_single_run.png" alt="Heatmap Single Run Plot" style="max-width:100%;height:auto;width:600px;" />
 
 *Example search space exploration heatmap showing algorithm evaluation density across decision variables and evaluation timesteps.*
+
+---
+
+## Publication figures
+
+`iohinspector.figures` draws figures for papers from a `FigureSpec`, a
+JSON-serialisable description that the website's figure studio edits too.
+
+#### `render(spec, data, *, fmt=None) -> bytes`
+The figure as `fmt` (`spec.formats[0]` by default): `"pdf"`, `"svg"` or `"png"`
+(at `spec.dpi`). `data` is the runs' logged rows (`DataManager.load`).
+
+#### `FigureSpec(kind="ecdf", data=Data(), venue="generic", span="single", ...)`
+- `data`: `Data(by=["algorithm_name"], label=None, where={}, targets="log-linear", per_dimension=True, maximization=False)`; `label` is a template such as `"{algorithm_name} ({sigma})"`, `where` keeps rows by value.
+- `venue`: a key of `VENUES` (`lncs`, `ieee`, `acm`, `elsevier`, `generic`); `span`: `single` (one column) or `double` (text width); `width_cm`, `height_cm` and `aspect` override the size.
+- `text`: `Text(family, size, title_size, tick_size, legend_size)`; `x`, `y`: `Axis(label, scale, lim, ticks, grid)` with `ticks` `exponent`, `power` or `plain` on a log axis.
+- `palette`: a key of `PALETTES` (`okabe-ito`, `tol-bright`, `grey`) or a list of colours; `series`: `{label: Series(name, color, linestyle, linewidth, marker, visible)}`.
+- `legend`: `Legend(mode="direct" | "box" | "outside" | "none", loc, columns)`; `markers`: sparse markers per line; `formats`, `dpi`.
+- `FigureSpec.from_json(text)` and `spec.to_json()` round-trip; unknown keys and invalid values raise.
+
+```python
+from pathlib import Path
+from iohinspector.figures import FigureSpec, render
+
+spec = FigureSpec(venue="ieee", span="single", formats=["pdf"])
+Path("ecdf.pdf").write_bytes(render(spec, data))
+```
+
+<img src="docs/figures/ecdf-ieee-single.png" alt="BBOB-style ECDF, IEEE single column" style="max-width:100%;height:auto;width:400px;" />
 
 ---
 
