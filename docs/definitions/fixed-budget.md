@@ -179,8 +179,8 @@ chain per run, seeded) was signed off as built (user, 2026-11-12); the review
 named the option but not the procedure. The default stays carry forward for
 the summary. Every ECDF restarts by default with the same procedure,
 computing its expected value (EC-7 in [ecdf](ecdf.md), the D6 reviews of #42
-and #48, dvermetten, 2026-11-19), and the seed is fixed by default (review of
-#48).
+and #48, dvermetten, 2026-11-19), and the seed is fixed by default (review
+of #48).
 
 ## Test tolerance
 
