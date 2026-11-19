@@ -132,8 +132,9 @@ can set both.
 
 Remaining points for H1: the default 50 × 50 grid for the discretised mode is
 IOHanalyzer's difference grid, chosen because the review named no size; the
-review did not say how BBOB data is recognised (proposed: the suite name in the
-run metadata). The same bounds apply to AOCC through EC-5 (see
+review did not say how BBOB data is recognised; TG-8 of [targets](targets.md)
+settles it (the suite name in the run metadata, matched against the
+IOHexperimenter suite registry). The same bounds apply to AOCC through EC-5 (see
 [ecdf](ecdf.md)).
 
 ## Test tolerance
