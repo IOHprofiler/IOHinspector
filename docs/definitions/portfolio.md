@@ -100,7 +100,13 @@ No Shapley or portfolio function.
 - Q-SH-1 (limit for exact Shapley values): 15 is a good limit. See SH-2.
 - Added requirement: generic marginal contributions. See SH-4.
 
-Remaining points for H1: none.
+## Open question
+
+- Q-SH-2 (review of #44): exact is 13 times slower than sampling at 15
+  algorithms; lower the limit to 12 or use the closed form for the default
+  value. See "Speed of the exact computation" below.
+
+Remaining points for H1: Q-SH-2.
 
 ## Implementation (I16)
 
@@ -116,20 +122,90 @@ Remaining points for H1: none.
   permutation that puts a at position j), and v is called once per distinct
   coalition. Returns the values divided by v(N) (SH-3) and a standard error per
   value (0 when exact); NaN when v(N) = 0.
+- `get_portfolio_ecdf(data, targets, by, *, b_lo, b_hi, scale_eval_log, ...)`:
+  the ECDF data of the game. The players are the groups of `by` (D17). With the
+  targets, the pair selection (`pairs`, EC-2), the hit rule (EC-1) and the
+  budget range and axis (EC-4) of `get_ecdf_auc`, each player's ECDF on a
+  (pair, target) is a step function on the steps all players share. Returns
+  the players, the matrix `ecdf` (players × steps) and the step widths `width`
+  on the budget axis, divided by its length. Identical steps are merged and
+  their widths summed, so a step no longer knows its pair, target or budget.
+- `envelope_value(ecdf, width)`: SH-1 on these data,
+  v(S) = Σ width · max_{a ∈ S} ecdf[a].
 - `get_shapley_values(data, targets, by, *, b_lo, b_hi, scale_eval_log, ...)`:
-  the players are the groups of `by` (D17). The value is SH-1 with the targets,
-  the pair selection (`pairs`, EC-2), the hit rule (EC-1) and the budget range
-  and axis (EC-4) of `get_ecdf_auc`: per (pair, target), each player's ECDF is a
-  step function on the common steps of all players, so v(S) is a sum over steps
-  of the step width times the largest ECDF in S. Returns `by`, `shapley`, `se`.
+  `shapley_values` of `envelope_value` on `get_portfolio_ecdf`. Returns `by`,
+  `shapley`, `se`.
 
-The default value is a sum of *maximum games* (one per step), so its Shapley
-value also has a closed form, exact for any number of algorithms: with the
-ECDFs of a step sorted ascending, e_(1) ≤ … ≤ e_(n), the algorithm in place i
-gets Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1) times the step width. The tests use
-it as an independent check of the enumeration. It could replace sampling above
-15 algorithms for the default value; that is a question for the review, not
-implemented.
+### Another value or marginal contribution (SH-4)
+
+`shapley_values` does not depend on the envelope. The enumeration, the
+sampling, the caching of v and the normalisation only call `value` and
+`marginal`, so another definition is a new function, not a change to the
+routine:
+
+```python
+import numpy as np
+from iohinspector.metrics import envelope_value, get_portfolio_ecdf, shapley_values
+
+players, ecdf, width = get_portfolio_ecdf(data, targets)
+
+# another portfolio value: the members run in parallel, each once and
+# independently; per step, the probability that at least one reaches the target
+def parallel(coalitions):  # boolean, coalitions × players
+    return (1 - np.prod(1 - coalitions[:, :, None] * ecdf, axis=1)) @ width
+
+phi, se = shapley_values(players.height, parallel)
+
+# another marginal contribution, not a difference of values: the share of the
+# budget axis on which a is strictly ahead of every member of S
+def ahead(value, coalitions, a):
+    best = (coalitions[:, :, None] * ecdf).max(axis=1)
+    return (ecdf[a] > best) @ width
+
+phi, se = shapley_values(players.height, envelope_value(ecdf, width), marginal=ahead)
+```
+
+Rules for a definition:
+
+- `value(S)` takes a boolean matrix, one row per coalition and one column per
+  player, and returns one number per row. It is called on batches: once on all
+  2^n coalitions when exact, once per new coalition when sampling.
+- `marginal(v, S, a)` gets the cached value function, the coalitions S (rows
+  without a) and the player a, and returns one number per row. It may use v,
+  or data of its own such as `ecdf`, or both.
+- The values are always divided by v(N). They sum to 1 only with the default
+  marginal; with a marginal that does not use v, v only sets that scale.
+- The merged steps of `get_portfolio_ecdf` suit definitions that add up over
+  steps, as SH-1 does. A definition that weights a step by its pair, target or
+  budget needs the steps before merging, which is not exposed yet.
+
+The tests (`tests/test_metrics/test_portfolio.py`) run both examples above,
+exact and sampled, against a direct computation over all orders.
+
+### Speed of the exact computation (review of #44)
+
+`scripts/bench_shapley.py` times `get_shapley_values` exact and sampled
+(5 coalitions per player and position, the default) on a synthetic full-bbob
+set: 24 functions, 6 dimensions, 15 runs per algorithm and pair, the default
+targets, a log budget axis; about 142 000 merged steps at 15 algorithms. On a
+10-core laptop, exact costs about as much as sampling up to 8 algorithms, 1.5
+times as much at 10 (1.3 s against 0.9 s), 3 times as much at 12 (5 s against
+1.6 s) and 13 times as much at 15 (69 s against 5 s). Exact work grows as 2^n · n per step, sampling as n^3.
+The sampled values were within 4·10⁻⁴ of the exact ones (standard error about
+2·10⁻⁴).
+
+So SH-2's limit of 15 is slow for the default value. Two ways out, for the
+reviewer to choose; the limit stays at 15 until then:
+
+1. Lower the default `exact_limit` to 12, where exact takes a few seconds on a
+   full-bbob set.
+2. Use a closed form for the default value. SH-1 is a sum of *maximum games*,
+   one per step: with the ECDFs of a step sorted ascending,
+   e_(1) ≤ … ≤ e_(n), the algorithm in place i gets
+   Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1) times the step width. That is exact
+   for any number of algorithms and took 0.04 s at 15 (equal to the
+   enumeration within 10⁻¹⁵). Enumeration and sampling would remain for other
+   definitions. The tests already use this form to check the enumeration.
 
 Golden tests: IOHanalyzer's value (R's `ecdf` of the successful runtimes,
 summed over its 50-point grid) is a custom value function for

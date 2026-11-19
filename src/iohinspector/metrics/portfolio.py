@@ -10,7 +10,12 @@ import polars as pl
 from ..targets import PAIR
 from .ecdf import _hits, _prepare
 
-__all__ = ["get_shapley_values", "shapley_values"]
+__all__ = [
+    "envelope_value",
+    "get_portfolio_ecdf",
+    "get_shapley_values",
+    "shapley_values",
+]
 
 #: v(S) for a batch of coalitions: a boolean matrix, one row per coalition and one
 #: column per player, to one value per row.
@@ -146,8 +151,9 @@ def shapley_values(  # pylint: disable=too-many-arguments
     return phi / total, se / total
 
 
-def _envelope_value(ecdf: np.ndarray, width: np.ndarray) -> Value:
-    """v(S) = Σ width · max_{a ∈ S} ecdf[a] (SH-1), for a batch of coalitions."""
+def envelope_value(ecdf: np.ndarray, width: np.ndarray) -> Value:
+    """The portfolio value of SH-1 on the output of ``get_portfolio_ecdf``:
+    v(S) = Σ width · max_{a ∈ S} ecdf[a], the area under the virtual best of S."""
     n, m = ecdf.shape
 
     def value(coalitions: np.ndarray) -> np.ndarray:
@@ -180,10 +186,7 @@ def _portfolio(  # pylint: disable=R0913,R0914
     fval_var: str,
     eval_var: str,
 ):
-    """The players (``by`` values) and the portfolio value v (SH-1). The
-    single-target ECDF of each player on every (pair, target) is a step function
-    over [b_lo, b_hi]; v sums, over the steps, the width of the step (the AUC
-    divisor included) times the largest ECDF in the coalition."""
+    """``get_portfolio_ecdf`` with its options checked."""
     # #lizard forgives  (the options of get_shapley_values, passed on as one)
     data, targets = _prepare(
         data, targets, by, scale_f_log=scale_f_log, pairs=pairs, fval_var=fval_var
@@ -226,13 +229,12 @@ def _portfolio(  # pylint: disable=R0913,R0914
     n = players.height
     ecdf = steps["ecdf"].to_numpy().reshape(n, -1)
     width = steps["width"].to_numpy().reshape(n, -1)[0] / (hi - lo)
-    keep = (width > 0) & ecdf.any(axis=0)
+    keep = width > 0
     columns, index = np.unique(ecdf[:, keep], axis=1, return_inverse=True)
-    width = np.bincount(index.ravel(), weights=width[keep])
-    return players, _envelope_value(columns, width)
+    return players, columns, np.bincount(index.ravel(), weights=width[keep])
 
 
-#: The ``get_ecdf`` options of ``get_shapley_values`` and their defaults.
+#: The ``get_ecdf`` options of the portfolio functions and their defaults.
 ECDF_OPTIONS = {
     "scale_f_log": True,
     "maximization": False,
@@ -248,6 +250,45 @@ def _ecdf_options(options: dict) -> dict:
     if unknown:
         raise TypeError(f"unknown options {sorted(unknown)}")
     return ECDF_OPTIONS | options
+
+
+def get_portfolio_ecdf(
+    data: pl.DataFrame,
+    targets: pl.DataFrame | None = None,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
+    b_lo: float = 1.0,
+    b_hi: float | None = None,
+    scale_eval_log: bool = False,
+    **options,
+) -> tuple[pl.DataFrame, np.ndarray, np.ndarray]:
+    """The ECDF data of the portfolio game of ``get_shapley_values``, to define
+    another portfolio value or marginal contribution on (SH-4).
+
+    The single-target ECDF of each group of ``by`` on every (pair, target) is a step
+    function over [``b_lo``, ``b_hi``]. All groups share the steps of a (pair,
+    target); identical steps are merged, so a step loses its pair, target and
+    budget, and its width is summed.
+
+    Args: as in ``get_shapley_values``.
+
+    Returns:
+        (players, ecdf, width): the groups of ``by`` (one row per player, in the
+        order of the rows of ``ecdf``), the ECDF of each player on each step (players
+        × steps) and the width of each step on the budget axis, divided by the
+        length of the axis (the widths of one (pair, target) sum to 1).
+    """
+    if not by:
+        raise ValueError("by names the players: at least one column")
+    return _portfolio(
+        data,
+        targets,
+        list(by),
+        b_lo=b_lo,
+        b_hi=b_hi,
+        scale_eval_log=scale_eval_log,
+        **_ecdf_options(options),
+    )
 
 
 def get_shapley_values(  # pylint: disable=too-many-arguments
@@ -273,6 +314,8 @@ def get_shapley_values(  # pylint: disable=too-many-arguments
     [``b_lo``, ``b_hi``] as in ``get_ecdf_auc`` (EC-4), summed over pairs and
     targets. The Shapley values are normalised by v(N) and sum to 1 (SH-3); they
     are exact up to ``exact_limit`` groups and sampled, seeded, above (SH-2).
+    Another value or marginal contribution on the same ECDF data: call
+    ``shapley_values`` on the output of ``get_portfolio_ecdf``.
 
     Args:
         data, targets, by: as in ``get_ecdf``; ``by`` is the players (D17), at least
@@ -288,20 +331,18 @@ def get_shapley_values(  # pylint: disable=too-many-arguments
         pl.DataFrame: ``by``, ``shapley`` and ``se`` (its standard error; 0 when
         exact), one row per group.
     """
-    if not by:
-        raise ValueError("by names the players: at least one column")
-    players, value = _portfolio(
+    players, ecdf, width = get_portfolio_ecdf(
         data,
         targets,
-        list(by),
+        by,
         b_lo=b_lo,
         b_hi=b_hi,
         scale_eval_log=scale_eval_log,
-        **_ecdf_options(options),
+        **options,
     )
     phi, se = shapley_values(
         players.height,
-        value,
+        envelope_value(ecdf, width),
         marginal=marginal,
         exact_limit=exact_limit,
         samples=samples,

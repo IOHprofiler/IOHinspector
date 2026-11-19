@@ -34,7 +34,12 @@ from .cdp import (
     cumulative_difference,
     get_cumulative_difference,
 )
-from .portfolio import get_shapley_values, shapley_values
+from .portfolio import (
+    envelope_value,
+    get_portfolio_ecdf,
+    get_shapley_values,
+    shapley_values,
+)
 from .parameters import (
     apply_penalty,
     get_logged_rows,
@@ -47,6 +52,7 @@ __all__ = [
     "cumulative_difference",
     "get_cumulative_difference",
     "add_normalized_objectives",
+    "envelope_value",
     "aggregate_convergence",
     "aggregate_running_time",
     "get_aocc",
@@ -62,6 +68,7 @@ __all__ = [
     "get_rank_table",
     "get_shapley_values",
     "get_overview",
+    "get_portfolio_ecdf",
     "get_histogram",
     "get_robustrank_changes",
     "get_robustrank_over_time",

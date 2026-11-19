@@ -5,9 +5,13 @@ import numpy as np
 import polars as pl
 import pytest
 
-from iohinspector.metrics import get_shapley_values, shapley_values
+from iohinspector.metrics import (
+    envelope_value,
+    get_portfolio_ecdf,
+    get_shapley_values,
+    shapley_values,
+)
 from iohinspector.metrics.distributions import get_runtime_sample
-from iohinspector.metrics.portfolio import _envelope_value
 from iohinspector.targets import seq_rt
 from tests.golden.load import golden, logged
 
@@ -23,15 +27,21 @@ def _table_game(table):
     return value
 
 
-def _by_permutations(table, n):
-    """Shapley values as the mean marginal contribution over all n! orders."""
+def _by_orders(n, marginal):
+    """The mean of marginal(S, a) over all n! orders, with S the bit code of the
+    players before a."""
     phi = np.zeros(n)
     for order in itertools.permutations(range(n)):
         code = 0
         for a in order:
-            phi[a] += table[code | 1 << a] - table[code]
+            phi[a] += marginal(code, a)
             code |= 1 << a
-    return phi / math.factorial(n) / table[-1]
+    return phi / math.factorial(n)
+
+
+def _by_permutations(table, n):
+    """Shapley values as the mean marginal contribution over all n! orders."""
+    return _by_orders(n, lambda s, a: table[s | 1 << a] - table[s]) / table[-1]
 
 
 def _max_game(ecdf, width):
@@ -59,14 +69,14 @@ def test_exact_is_the_mean_over_all_orders(n):
 def test_exact_portfolio_value_matches_the_closed_form(n):
     rng = np.random.default_rng(n)
     ecdf, width = rng.random((n, 30)).round(1), rng.random(30)  # with ties
-    phi, _ = shapley_values(n, _envelope_value(ecdf, width))
+    phi, _ = shapley_values(n, envelope_value(ecdf, width))
     np.testing.assert_allclose(phi, _max_game(ecdf, width), rtol=TOL)
     assert abs(phi.sum() - 1) < TOL
 
 
 def test_sampled_values_are_within_three_standard_errors():
     rng = np.random.default_rng(6)
-    value = _envelope_value(rng.random((6, 50)), rng.random(50))
+    value = envelope_value(rng.random((6, 50)), rng.random(50))
     exact, _ = shapley_values(6, value)
     sampled, se = shapley_values(6, value, exact_limit=5, samples=20, seed=1)
     assert (se > 0).all()
@@ -117,13 +127,8 @@ def test_custom_marginal_contribution():
         return np.maximum(value(with_a) - value(coalitions), 0)
 
     phi, _ = shapley_values(3, _table_game(table), marginal=marginal)
-    expected = np.zeros(3)
-    for order in itertools.permutations(range(3)):
-        code = 0
-        for a in order:
-            expected[a] += max(table[code | 1 << a] - table[code], 0)
-            code |= 1 << a
-    np.testing.assert_allclose(phi, expected / 6 / table[-1], rtol=TOL)
+    expected = _by_orders(3, lambda s, a: max(table[s | 1 << a] - table[s], 0))
+    np.testing.assert_allclose(phi, expected / table[-1], rtol=TOL)
     assert seen == [0, 1, 2]
 
 
@@ -260,6 +265,67 @@ def test_portfolio_default_targets_and_errors():
         get_shapley_values(DATA, TARGETS, scale_log=True)
 
 
+# SH-4, review of #44: another portfolio value and another marginal contribution on
+# the ECDF data of get_shapley_values, through the public functions only.
+
+
+def test_portfolio_ecdf_is_the_game_of_get_shapley_values():
+    players, ecdf, width = get_portfolio_ecdf(DATA, TARGETS)
+    assert players["algorithm_name"].to_list() == ["A", "B", "C"]
+    assert ecdf.shape == (3, len(width))
+    assert abs(width.sum() - TARGETS.height) < TOL  # 1 per (pair, target)
+    phi, _ = shapley_values(3, envelope_value(ecdf, width))
+    expected = get_shapley_values(DATA, TARGETS)["shapley"]
+    np.testing.assert_allclose(phi, expected, rtol=TOL)
+
+
+def _members(ecdf, s):
+    return [ecdf[b] for b in range(len(ecdf)) if s >> b & 1]
+
+
+def test_another_portfolio_value():
+    # the parallel portfolio, every member run once and independently: per step the
+    # probability that at least one member has reached the target
+    _, ecdf, width = get_portfolio_ecdf(DATA, TARGETS, scale_eval_log=True)
+
+    def parallel(coalitions):
+        return (1 - np.prod(1 - coalitions[:, :, None] * ecdf, axis=1)) @ width
+
+    def direct(s):
+        miss = np.prod([1 + 0 * width, *(1 - e for e in _members(ecdf, s))], axis=0)
+        return (1 - miss) @ width
+
+    table = np.array([direct(s) for s in range(8)])
+    phi, _ = shapley_values(3, parallel)
+    np.testing.assert_allclose(phi, _by_permutations(table, 3), rtol=TOL)
+    assert abs(phi.sum() - 1) < TOL
+    default = get_shapley_values(DATA, TARGETS, scale_eval_log=True)["shapley"]
+    assert np.abs(phi - default.to_numpy()).max() > 1e-3  # another game
+
+
+def test_another_marginal_contribution():
+    # not a difference of portfolio values: the share of the budget axis on which a
+    # is strictly ahead of every member of S; v (the default) then only normalises
+    _, ecdf, width = get_portfolio_ecdf(DATA, TARGETS)
+
+    def ahead(_value, coalitions, a):
+        best = (coalitions[:, :, None] * ecdf).max(axis=1)
+        return (ecdf[a] > best) @ width
+
+    def direct(s, a):
+        best = np.max([0 * ecdf[a], *_members(ecdf, s)], axis=0)
+        return (ecdf[a] > best) @ width
+
+    value = envelope_value(ecdf, width)
+    expected = _by_orders(3, direct) / (ecdf.max(axis=0) @ width)
+    phi, _ = shapley_values(3, value, marginal=ahead)
+    np.testing.assert_allclose(phi, expected, rtol=TOL)
+    sampled, se = shapley_values(
+        3, value, marginal=ahead, exact_limit=0, samples=50, seed=2
+    )
+    assert (np.abs(sampled - expected) <= 3 * se + TOL).all()
+
+
 # Golden tests against IOHanalyzer (WP I03): get_shapley_values and
 # get_marg_contrib_ecdf with 5 log-linear targets. IOHanalyzer's portfolio value is
 # a different game (portfolio.md, "Differences"): R's ecdf() of the successful
@@ -307,7 +373,7 @@ def test_iohanalyzer_ecdf_raw_is_reproduced(fixture):
 @pytest.mark.parametrize("fixture", GOLDEN)
 def test_iohanalyzer_marginal_contributions(fixture):
     players, ecdf, _ = _iohanalyzer_value(fixture, scale_log=True)
-    value = _envelope_value(ecdf, np.ones(ecdf.shape[1]))
+    value = envelope_value(ecdf, np.ones(ecdf.shape[1]))
     n = len(players)
     prefixes = np.tril(np.ones((n + 1, n), dtype=bool), -1)  # ∅, {1}, {1, 2}, ...
     contrib = np.diff(value(prefixes))
@@ -325,7 +391,7 @@ def test_iohanalyzer_shapley_estimate(fixture, scale):
     players it is exact."""
     players, ecdf, _ = _iohanalyzer_value(fixture, scale_log=scale == "log")
     n = len(players)
-    value = _envelope_value(ecdf, np.ones(ecdf.shape[1]))
+    value = envelope_value(ecdf, np.ones(ecdf.shape[1]))
     exact, _ = shapley_values(n, value)
     gold = golden(fixture, f"shapley_{scale}").sort("ID")
     assert gold["ID"].to_list() == players
