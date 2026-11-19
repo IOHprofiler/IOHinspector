@@ -75,6 +75,17 @@
   Hochberg's correction, next to `holm`). They
   reproduce the published DSCTool example. scipy is now a direct dependency.
 
+### Changed
+
+- The default of `get_ecdf`, `get_ecdf_auc` (targets, continuum ECDF and AOCC),
+  `get_portfolio_ecdf` and `get_shapley_values` is now `stopped="restart"`: a run
+  that stopped before a budget is continued by simulated restarts (EC-7), as in
+  COCO. Results differ from 0.2.x wherever a run stopped before the largest
+  budget; `stopped="carry_forward"` gives the 0.2.x results.
+- `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc` no longer take `seed`:
+  the restarts are computed exactly. `aggregate_convergence(stopped="restart")`
+  uses `seed=0` by default.
+
 ### Deprecated
 
 - `metrics.get_tournament_ratings`: use `get_tournament_ranking(data,
