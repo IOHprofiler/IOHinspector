@@ -4,7 +4,7 @@ A spec says what is plotted (``Data``), for which venue and column, and how it
 looks: text, axes, palette, per-series overrides, legend and output. Every field
 has a default, so ``FigureSpec()`` is a valid BBOB-style ECDF. ``to_json`` and
 ``FigureSpec.from_json`` round-trip; unknown keys and invalid values raise
-``ValueError``.
+``ValueError``, a list or number where an object belongs ``TypeError``.
 """
 
 import dataclasses
@@ -194,10 +194,10 @@ class FigureSpec:
 
 
 def _build(cls, value, path: str):
-    """``cls`` from the dict ``value``, nested dataclasses included; an unknown key
-    raises ``ValueError`` naming its ``path``."""
+    """``cls`` from the dict ``value``, nested dataclasses included; errors name
+    the ``path`` of the offending key."""
     if not isinstance(value, dict):
-        raise ValueError(f"{path}: expected an object, got {value!r}")
+        raise TypeError(f"{path}: expected an object, got {value!r}")
     hints = typing.get_type_hints(cls)
     unknown = set(value) - set(hints)
     if unknown:
@@ -210,6 +210,6 @@ def _field(hint, value, path: str):
         return _build(hint, value, path)
     if typing.get_origin(hint) is dict and typing.get_args(hint)[1] is Series:
         if not isinstance(value, dict):
-            raise ValueError(f"{path}: expected an object, got {value!r}")
+            raise TypeError(f"{path}: expected an object, got {value!r}")
         return {k: _build(Series, v, f"{path}.{k}") for k, v in value.items()}
     return value

@@ -19,7 +19,9 @@ def full_spec() -> FigureSpec:
         x=Axis(label="budget", ticks="power", lim=[1, None], grid="both"),
         y=Axis(scale="linear"),
         palette=["#000000", "tab:blue"],
-        series={"DE (d = 5)": Series(name="DE", color="red", marker="s", visible=False)},
+        series={
+            "DE (d = 5)": Series(name="DE", color="red", marker="s", visible=False)
+        },
         legend=Legend(mode="box", loc="lower right", columns=2),
         markers=0,
         formats=["svg", "png"],
@@ -46,12 +48,22 @@ def test_json_round_trip(spec):
         ({"colour": "red"}, r"spec: unknown keys \['colour'\]"),
         ({"legend": {"position": "left"}}, r"spec.legend: unknown keys"),
         ({"series": {"DE": {"colour": "red"}}}, r"spec.series.DE: unknown keys"),
+    ],
+)
+def test_from_dict_rejects_unknown_keys(value, match):
+    with pytest.raises(ValueError, match=match):
+        FigureSpec.from_dict(value)
+
+
+@pytest.mark.parametrize(
+    "value, match",
+    [
         ({"text": 8}, "spec.text: expected an object"),
         ({"series": ["DE"]}, "spec.series: expected an object"),
     ],
 )
-def test_from_dict_rejects_unknown_keys_and_shapes(value, match):
-    with pytest.raises(ValueError, match=match):
+def test_from_dict_rejects_wrong_shapes(value, match):
+    with pytest.raises(TypeError, match=match):
         FigureSpec.from_dict(value)
 
 

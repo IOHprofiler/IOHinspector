@@ -4,9 +4,11 @@ Status: in progress
 
 ## Done
 - steps 1-2: `FigureSpec` (JSON dataclasses, validation) and venue presets and palettes
+- step 3: `render(spec, data) -> bytes`, the BBOB-style ECDF, direct labels
 
 ## Next step
-Step 3: `render(spec, data) -> bytes`, the BBOB-style ECDF and direct labels.
+Step 4: snapshot tests against `docs/figures/*.png`, written by the gallery
+(`python -m tests.test_figures.sample`).
 
 ## Decisions
 - Package `iohinspector.figures`: `spec.py` (FigureSpec), `venues.py` (presets,
@@ -27,6 +29,18 @@ Step 3: `render(spec, data) -> bytes`, the BBOB-style ECDF and direct labels.
 - Palettes: Okabe-Ito (reordered so neighbours stay apart under CVD; checked
   with the dataviz palette validator), Tol bright, grey. Every series also gets
   its own line style and marker.
+
+- `render` runs in `style.context("default")` plus the spec's rc, so the user's
+  matplotlib settings do not leak in; PDF, SVG and PNG are byte-identical across
+  calls (no dates, fixed SVG hash salt).
+- Direct labels: positions are the least-squares placement that keeps their
+  order and a 1.2-line gap (isotonic regression, `labels.spread`), set after a
+  first layout pass so the axes height is known. Label text is black; the leader
+  and the line carry the colour.
+- ECDF: `get_ecdf` steps from the first logged evaluation to each group's
+  largest budget, the final value marked; x is log10(evaluations / dimension)
+  with exponent tick labels by default; sparse markers are spread on the x
+  scale with a per-curve phase so curves do not share positions.
 
 ## Open questions / Blocked
 - none

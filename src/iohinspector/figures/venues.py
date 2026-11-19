@@ -123,12 +123,22 @@ PALETTES = {
     # Okabe and Ito (2008), ordered so neighbours stay apart under colour-vision
     # deficiency; yellow is left out (too light on white).
     "okabe-ito": [
-        "#0072B2", "#D55E00", "#009E73", "#E69F00", "#CC79A7", "#56B4E9",
+        "#0072B2",
+        "#D55E00",
+        "#009E73",
+        "#E69F00",
+        "#CC79A7",
+        "#56B4E9",
         "#000000",
     ],
     # Paul Tol's "bright" scheme, in his order.
     "tol-bright": [
-        "#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377",
+        "#4477AA",
+        "#EE6677",
+        "#228833",
+        "#CCBB44",
+        "#66CCEE",
+        "#AA3377",
         "#BBBBBB",
     ],
     # For greyscale print: the line styles and markers tell the series apart.
