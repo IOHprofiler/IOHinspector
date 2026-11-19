@@ -204,12 +204,16 @@ IOHexperimenter suite registry). The same bounds apply to AOCC through EC-5 (see
   taken within each pair.
 - Weighting (EA-6), the option `weighting` of every EAF function:
   `"pairs"` (default), each pair equally, so the volume under the EAF is the
-  AOCC without an option; `"runs"`, each run one attainment set. Discretised, `"pairs"` is a weighted mean, each run 1/n_p.
-  Precise, `moocore.eaf` has no weights, so each pair's runs are repeated up
-  to the least common multiple of the group's run counts (the surfaces are
-  then those of equally many runs per pair). Both warn, with the run counts
-  per pair, when a group's pairs have different numbers of runs, and say
-  whether the area under the EAF is the AOCC. A test checks that the
+  AOCC without an option; `"runs"`, each run one attainment set.
+  Discretised, `"pairs"` is a weighted mean, each run 1/n_p. Precise,
+  `moocore.eaf` has no weights, so each pair's runs are repeated up to the
+  least common multiple of the group's run counts (the surfaces are then
+  those of equally many runs per pair). The repetition is capped at
+  `MAX_SETS` = 100,000 attainment sets in all; above it a `ValueError`
+  suggests `mode="discretised"`, which weighs the runs instead. Both
+  weightings warn, with the run counts per pair, when a group's pairs have
+  different numbers of runs, and say whether the area under the EAF is the
+  AOCC. A test checks that the
   discretised `"pairs"` EAF, on a grid where the sums are exact integrals,
   has the volume `get_ecdf_auc(continuous=True)` returns, and that the precise
   one equals the EAF of the repeated runs. `get_ecdf_auc` itself is unchanged.

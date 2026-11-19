@@ -32,6 +32,9 @@ OPTIONS = (
     "fval_var",
     "eval_var",
 )
+#: The most attainment sets the precise EAF may repeat runs up to with
+#: ``weighting="pairs"`` (EA-6); beyond it ``get_eaf`` raises ``ValueError``.
+MAX_SETS = 100_000
 #: The columns of an EAF difference rectangle (``moocore.eafdiff``).
 RECTANGLE = ["x_min", "y_min", "x_max", "y_max", "eaf_diff"]
 
@@ -382,8 +385,8 @@ def _weigh(runs: pl.DataFrame, by: list[str], weighting: str, mode: str):
     with ``weighting="pairs"`` 1/n for the n runs of its (function, dimension)
     pair, so that each pair weighs equally, as in the AOCC (EC-2). moocore has no
     weights, so for the precise EAF each pair's runs are instead repeated up to
-    the least common multiple of the group's run counts. Warns when the pairs of
-    a group have different numbers of runs."""
+    the least common multiple of the group's run counts, at most ``MAX_SETS``
+    sets in all. Warns when the pairs of a group have different numbers of runs."""
     if weighting not in ("runs", "pairs"):
         raise ValueError(f"weighting {weighting!r}: runs or pairs")
     n = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *PAIR])))
@@ -401,7 +404,14 @@ def _weigh(runs: pl.DataFrame, by: list[str], weighting: str, mode: str):
     )
     copies = pl.col("m") // pl.col("n")
     runs = runs.join(lcm.drop("n"), on=by, nulls_equal=True, maintain_order="left")
-    k = runs.select(copies.max()).item()
+    k, sets = runs.unique("run_id").select(copies.max().alias("k"), copies.sum()).row(0)
+    if sets > MAX_SETS:
+        raise ValueError(
+            f"weighting='pairs' in the precise mode repeats each pair's runs up to "
+            f"the least common multiple of the group's run counts: {sets} "
+            f"attainment sets, more than MAX_SETS = {MAX_SETS}. Use "
+            "mode='discretised', which weighs the runs instead of repeating them"
+        )
     runs = runs.with_columns(copy=pl.int_ranges(copies)).explode("copy")
     run = pl.col("run_id").rank("dense").cast(pl.Int64) * k + pl.col("copy")
     return runs.with_columns(run.alias("run_id"), weight=pl.lit(1.0)).drop(

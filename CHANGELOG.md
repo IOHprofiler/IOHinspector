@@ -15,7 +15,8 @@
   quality of the continuum ECDF, each pair weighing equally by default
   (`weighting="pairs"`), so the volume under the EAF is the AOCC, or each run
   with `weighting="runs"`; a warning says when the pairs have different
-  numbers of runs.
+  numbers of runs. The precise EAF weighs pairs by repeating runs, up to
+  `MAX_SETS` (100,000) attainment sets.
 
 - Shapley values of algorithm portfolios (`docs/definitions/portfolio.md`):
   `metrics.get_shapley_values(data, targets, by)` gives each group's share of the

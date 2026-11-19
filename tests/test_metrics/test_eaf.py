@@ -4,6 +4,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 from iohinspector.align import align_data
+from iohinspector.metrics import eaf as eaf_module
 from iohinspector.metrics import get_ecdf_auc
 from iohinspector.metrics.eaf import (
     RECTANGLE,
@@ -526,6 +527,23 @@ def test_precise_eaf_weighs_pairs_by_repeating_runs():
         assert get_eaf(data, weighting="runs").height != weighted.height
     with pytest.raises(ValueError, match="weighting"):
         get_eaf(data, weighting="functions")
+
+
+def test_precise_pair_weighting_is_capped(monkeypatch):
+    # _uneven repeats A's runs to 2 per pair and B's to 3: 4 + 6 = 10 sets
+    data = _uneven()
+    monkeypatch.setattr(eaf_module, "MAX_SETS", 10)
+    with pytest.warns(UserWarning):
+        assert get_eaf(data).height > 0
+    monkeypatch.setattr(eaf_module, "MAX_SETS", 9)
+    with pytest.warns(UserWarning), pytest.raises(ValueError, match="10 attainment"):
+        get_eaf(data)
+    with pytest.warns(UserWarning), pytest.raises(ValueError, match="discretised"):
+        get_eaf_difference(data)
+    with pytest.warns(UserWarning):  # discretised repeats nothing
+        assert get_eaf(data, mode="discretised", eval_values=2, f_values=2).height
+    with pytest.warns(UserWarning):  # nor does weighting="runs"
+        assert get_eaf(data, weighting="runs").height
 
 
 def test_discretised_eaf_of_0_0_8_differs_at_quality_0():
