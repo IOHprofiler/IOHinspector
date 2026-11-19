@@ -84,7 +84,9 @@ def example():
     files = {}
     try:
         for name in ("dsc.json", "dsc.result", "omnibus.result", "posthoc.result"):
-            with urllib.request.urlopen(EXAMPLE + name, timeout=60) as response:
+            url = EXAMPLE + name
+            assert url.startswith("https://")
+            with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
                 files[name] = json.load(response)
     except (OSError, ValueError) as error:
         pytest.skip(f"DSCTool example not available: {error}")

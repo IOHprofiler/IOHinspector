@@ -13,6 +13,7 @@ import math
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from itertools import combinations
 
 import numpy as np
@@ -94,22 +95,29 @@ def get_dsc_sample(  # pylint: disable=too-many-arguments
     options = {"fval_var": fval_var, "eval_var": eval_var, "maximization": maximization}
     if targets is None:
         targets = get_target_dt(data, perspective, by=by, **options)
-    parts = data.partition_by(PAIR, as_dict=True)
-    frames = []
-    for f, d, target in targets.select(*PAIR, "target").iter_rows():
-        if (f, d) not in parts:
-            continue
-        if perspective == "fixed_target":
-            sample = _runtimes(parts[f, d], target, by, na=na, k=k, **options)
-        else:
-            sample = _values(parts[f, d], target, by, **options)
-            _check_values(sample, f"function {f}, dimension {d}, budget {target}")
-        frames.append(sample.with_columns(function_id=pl.lit(f), dimension=pl.lit(d)))
+    if perspective == "fixed_target":
+        sampler = partial(_runtimes, by=by, na=na, k=k, **options)
+    else:
+        sampler = partial(_values, by=by, **options)
     columns = [*PAIR, *by, "run_id", "target", "value"]
-    return pl.concat([s.select(columns) for s in frames]).sort(*PAIR, *by, "run_id")
+    return _per_pair(data, targets, sampler, columns).sort(*PAIR, *by, "run_id")
 
 
-def _runtimes(frame, target, by, *, na, k, **options) -> pl.DataFrame:
+def _per_pair(data, targets, sampler, columns) -> pl.DataFrame:
+    """``sampler(runs, target)`` for each (function, dimension) pair of ``targets``
+    that ``data`` has, with the pair's columns."""
+    parts = data.partition_by(PAIR, as_dict=True)
+    frames = [
+        sampler(parts[f, d], target)
+        .with_columns(function_id=pl.lit(f), dimension=pl.lit(d))
+        .select(columns)
+        for f, d, target in targets.select(*PAIR, "target").iter_rows()
+        if (f, d) in parts
+    ]
+    return pl.concat(frames)
+
+
+def _runtimes(frame, target, *, by, na, k, **options) -> pl.DataFrame:
     sample = get_runtime_sample(frame, [target], by, **options)
     budgets = runs_of(frame, by, options["eval_var"]).select("run_id", "evals_used")
     sample = sample.join(budgets, on="run_id")
@@ -127,8 +135,10 @@ def _runtimes(frame, target, by, *, na, k, **options) -> pl.DataFrame:
     return sample.with_columns(value=pl.when(ok).then(t).otherwise(failed))
 
 
-def _values(frame, budget, by, **options) -> pl.DataFrame:
+def _values(frame, budget, *, by, **options) -> pl.DataFrame:
     sample = get_value_sample(frame, [int(budget)], by, **options)
+    pair = frame.select(PAIR).row(0)
+    _check_values(sample, f"function {pair[0]}, dimension {pair[1]}, budget {budget}")
     sign = -1.0 if options["maximization"] else 1.0
     return sample.with_columns(target=pl.lit(budget), value=pl.col("value") * sign)
 
@@ -198,34 +208,82 @@ def get_dsc_ranking(  # pylint: disable=too-many-arguments
         DscRanking: the ranks and the omnibus methods they admit.
     """
     by, problem = list(by), list(problem)
-    test = test.upper()
-    if test not in ("AD", "KS"):
-        raise ValueError(f"test {test!r}: AD or KS")
-    if epsilon < 0 or monte_carlo_iterations < 0:
-        raise ValueError("epsilon and monte_carlo_iterations must not be negative")
-    names = sample.select(by).unique().sort(by).rows()
-    k = len(names)
-    if k < 2:
-        raise ValueError(f"DSC needs at least two groups of {by}, got {k}")
-    if k > 4:
-        warnings.warn(f"DSC of {k} algorithms: comparisons with a control are advised")
+    test = _checked_test(test, epsilon, monte_carlo_iterations)
+    k = len(_algorithms(sample, by))
     kept, dropped = _common_problems(sample, by, problem, k)
-    rng = np.random.default_rng(seed)
+    same = _equality(
+        test,
+        level=alpha / (k * (k - 1) / 2),
+        epsilon=epsilon,
+        iterations=monte_carlo_iterations,
+        rng=np.random.default_rng(seed),
+    )
+    matrix = _ranked_matrix(kept, by, problem, value=value, same=same)
+    return DscRanking(
+        matrix,
+        k,
+        _omnibus_methods(matrix.height // k, k),
+        dropped,
+        tuple(by),
+        tuple(problem),
+    )
 
-    def same(x, y):
-        p = _pair_p(x, y, test, epsilon, monte_carlo_iterations, rng)
-        return p >= alpha / (k * (k - 1) / 2)
 
+def _ranked_matrix(kept, by, problem, *, value, same) -> pl.DataFrame:
+    """The ranks on each problem of ``kept``, which every algorithm has: problem,
+    ``by`` and ``rank``."""
+    names = kept.select(by).unique().sort(by).rows()
     rows = []
     for key, frame in kept.partition_by(problem, as_dict=True).items():
         samples = _samples(frame, by, names, value, key)
         rows += [(*key, *name, r) for name, r in zip(names, _rank(samples, same))]
     schema = [*problem, *by, "rank"]
     matrix = pl.DataFrame(rows, schema=schema, orient="row", infer_schema_length=None)
-    matrix = matrix.cast(sample.select(*problem, *by).schema).sort(problem)
-    n = len(rows) // k
-    methods = [] if n < 2 else METHODS_2 if k == 2 else METHODS_K
-    return DscRanking(matrix, k, list(methods), dropped, tuple(by), tuple(problem))
+    return matrix.cast(kept.select(*problem, *by).schema).sort(problem)
+
+
+def _checked_test(test: str, epsilon: float, iterations: int) -> str:
+    """The test's name in upper case, after checking the options of a ranking."""
+    if test.upper() not in ("AD", "KS"):
+        raise ValueError(f"test {test!r}: AD or KS")
+    if epsilon < 0 or iterations < 0:
+        raise ValueError("epsilon and monte_carlo_iterations must not be negative")
+    return test.upper()
+
+
+def _algorithms(sample: pl.DataFrame, by: list[str]) -> list[tuple]:
+    """The groups of ``by``, in name order: at least two, a warning above four
+    (DS-4, DS-10)."""
+    names = sample.select(by).unique().sort(by).rows()
+    k = len(names)
+    if k < 2:
+        raise ValueError(f"DSC needs at least two groups of {by}, got {k}")
+    if k > 4:
+        warnings.warn(f"DSC of {k} algorithms: comparisons with a control are advised")
+    return names
+
+
+def _equality(test: str, *, level: float, epsilon, iterations, rng):
+    """The relation "x and y are equal": p >= ``level`` (alpha / m, DQ-3), the
+    p-value under practical DSC when ``epsilon`` > 0 (DS-11)."""
+
+    def p_value(x, y) -> float:
+        if epsilon == 0:
+            return _p(test, x, y)
+        if iterations == 0:
+            return _p(test, *_midpoints(x, y, epsilon))
+        ps = [
+            _p(test, *_midpoints(rng.permutation(x), rng.permutation(y), epsilon))
+            for _ in range(iterations)
+        ]
+        return _median(ps)
+
+    return lambda x, y: p_value(x, y) >= level
+
+
+def _omnibus_methods(n: int, k: int) -> list[str]:
+    """The omnibus methods for n problems and k algorithms (DS-12, DS-14)."""
+    return [] if n < 2 else list(METHODS_2 if k == 2 else METHODS_K)
 
 
 def _common_problems(sample, by, problem, k) -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -258,19 +316,6 @@ def _rank(samples: list[np.ndarray], same) -> np.ndarray:
     if np.array_equal(eq.astype(int) @ eq.astype(int) > 0, eq):
         means = np.where(eq, means, 0.0).sum(axis=1) / eq.sum(axis=1)
     return stats.rankdata(means)
-
-
-def _pair_p(x, y, test, epsilon, iterations, rng) -> float:
-    """The p-value of one pair, under practical DSC when ``epsilon`` > 0 (DS-11)."""
-    if epsilon == 0:
-        return _p(test, x, y)
-    if iterations == 0:
-        return _p(test, *_midpoints(x, y, epsilon))
-    ps = [
-        _p(test, *_midpoints(rng.permutation(x), rng.permutation(y), epsilon))
-        for _ in range(iterations)
-    ]
-    return _median(ps)
 
 
 def _midpoints(x, y, epsilon) -> tuple[np.ndarray, np.ndarray]:
@@ -438,26 +483,33 @@ def get_dsc_posthoc(omnibus: DscOmnibus) -> DscPosthoc:
     Holm and Hochberg adjustments of the k - 1 p-values of one control. The
     statistic follows the omnibus method: ``friedman-aligned-rank`` after aligned
     ranks, ``friedman`` otherwise (DS-7)."""
-    by, means = list(omnibus.by), omnibus.algorithm_means
-    m, n = means["mean"].to_numpy(), omnibus.n
-    k = len(m)
+    k, n = omnibus.algorithm_means.height, omnibus.n
     aligned = omnibus.method == "friedman-aligned-rank"
-    method = "friedman-aligned-rank" if aligned else "friedman"
     se = math.sqrt(k * (n + 1) / 6 if aligned else k * (k + 1) / (6 * n))
-    names = means.select(by).rows()
+    names = omnibus.algorithm_means.select(omnibus.by)
+    rows = _posthoc_rows(omnibus.algorithm_means["mean"].to_numpy(), names.rows(), se)
+    method = "friedman-aligned-rank" if aligned else "friedman"
+    return DscPosthoc(omnibus, method, _posthoc_frame(rows, names))
+
+
+def _posthoc_rows(m: np.ndarray, names: list[tuple], se: float) -> list[tuple]:
+    """(control, other, z, p, Holm, Hochberg) for every control and other."""
     rows = []
-    for c in range(k):
-        others = [a for a in range(k) if a != c]
+    for c, control in enumerate(names):
+        others = [a for a in range(len(names)) if a != c]
         z = (m[c] - m[others]) / se
         p = stats.norm.cdf(z)
         rows += [
-            (*names[c], *names[a], *v)
+            (*control, *names[a], *v)
             for a, *v in zip(others, z, p, holm(p), hochberg(p))
         ]
-    vs = [f"{c}_vs" for c in by]
+    return rows
+
+
+def _posthoc_frame(rows: list[tuple], names: pl.DataFrame) -> pl.DataFrame:
+    """The post-hoc rows with the control's columns and the other's, ``_vs``."""
+    vs = [f"{c}_vs" for c in names.columns]
     values = ["ZValue", "UnadjustedPValue", "Holm", "Hochberg"]
-    frame = pl.DataFrame(rows, schema=[*by, *vs, *values], orient="row")
-    types: dict = {**means.select(by).schema, **dict(zip(vs, means.select(by).dtypes))}
-    return DscPosthoc(
-        omnibus, method, frame.cast(types | dict.fromkeys(values, pl.Float64))
-    )
+    frame = pl.DataFrame(rows, schema=[*names.columns, *vs, *values], orient="row")
+    types: dict = {**names.schema, **dict(zip(vs, names.dtypes))}
+    return frame.cast(types | dict.fromkeys(values, pl.Float64))
