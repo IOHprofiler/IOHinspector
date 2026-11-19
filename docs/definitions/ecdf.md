@@ -100,8 +100,8 @@ logged row (AL-5), and there it counts as not reached.
 
 A run that stopped before b (B_i < b) is by default continued by **simulated
 restarts** (EC-7): the procedure of FB-6 ([fixed-budget](fixed-budget.md)),
-which appends runs drawn uniformly with replacement from the same algorithm
-and pair, each for its own B_j evaluations, until the largest budget, so that
+which appends runs drawn uniformly with replacement from the same group (by
+default the algorithm) and pair, each for its own B_j evaluations, until the largest budget, so that
 V_i(b) is the best value of that chain up to b. This assumes that an
 algorithm that stopped would have been restarted independently, the
 principle behind the ERT (RT-1) and cocopp's runtime ECDF. The option
