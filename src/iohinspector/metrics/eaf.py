@@ -299,11 +299,6 @@ def _rectangles(runs, by, value, larger, eval_var) -> pl.DataFrame:
     other's. moocore compares equally many runs, so each group's runs are repeated
     up to the least common multiple of the two run counts."""
     groups = runs.sort(by, nulls_last=True).partition_by(by, maintain_order=True)
-    if len(groups) != 2:
-        raise ValueError(
-            f"the precise EAF difference compares two groups of by, not {len(groups)};"
-            " use mode='discretised' to compare each with the best of the others"
-        )
     n = [g["run_id"].n_unique() for g in groups]
     m = math.lcm(*n)
     x, y = (_sets(g, value, larger, eval_var, m // k) for g, k in zip(groups, n))
@@ -467,52 +462,18 @@ def get_eaf(
     return _finish(result, data, eval_var)
 
 
-@upgrade_hints
-def get_eaf_difference(
-    data: pl.DataFrame,
-    by: Sequence[str] = ("algorithm_name",),
-    *,
-    mode: str = "precise",
-    **options,
-) -> pl.DataFrame:
-    """The EAF difference of the groups of ``by`` (``docs/definitions/eaf.md``,
-    EA-2): for each group a, Delta_a = alpha_a - max over the other groups c of
-    alpha_c, which for two groups A and B is alpha_A - alpha_B (and its negative
-    for B). Positive where a attains more often.
-
-    Args:
-        data, by: as in ``get_eaf``; the groups are compared within each
-            (function, dimension) pair, or on q when a group spans several.
-        mode: ``"precise"``: the rectangles where Delta is constant
-            (``moocore.eafdiff``, IOHanalyzer's ``EAF_Difference``), for exactly
-            two groups. ``"discretised"``: Delta on the grid of budgets x values
-            of ``get_eaf`` (IOHanalyzer's ``EAF_diff_Approximate``), for two or
-            more groups.
-        **options: the options of ``get_eaf``.
-
-    Returns:
-        pl.DataFrame: precise: ``by``, ``x_min``, ``y_min``, ``x_max``, ``y_max``
-            (evaluations and values) and ``eaf_diff``; discretised: ``by``,
-            ``eval_var``, the value (``fval_var`` or ``quality``) and ``eaf_diff``.
-    """
-    data, by, (runs, value, larger, scope), grid_options = _prepare(
-        data, by, mode, options
-    )
-    eval_var = options.get("eval_var", "evaluations")
-    if mode == "precise":
-        result = _each(
-            runs, scope, lambda s: _rectangles(s, by, value, larger, eval_var)
+def _groups(runs: pl.DataFrame, by: list[str], scope: list[str], two: bool) -> None:
+    """Check the number of groups of ``by`` in each scope: exactly two for a
+    difference, at least two for a margin (EA-2)."""
+    n = pl.struct(by).n_unique()
+    n = runs.select(n.over(scope) if scope else n).to_series()
+    if two and not (n == 2).all():
+        raise ValueError(
+            "the EAF difference compares exactly two groups of by, found "
+            f"{n.unique().sort().to_list()}; get_eaf_margin compares more"
         )
-        return result.select(*by, *RECTANGLE).drop(ALL, strict=False)
-    groups = pl.struct(by).n_unique()
-    if runs.select((groups.over(scope) if scope else groups).min()).item() < 2:
-        raise ValueError("the EAF difference needs at least two groups of by")
-    grid = _grid(data, scope, value, **grid_options)
-    alpha = _attainment(runs, grid, by, scope, value, larger, eval_var)
-    result = alpha.select(
-        *by, eval_var, value, eaf_diff=_minus_best_other(cell=[*scope, eval_var, value])
-    )
-    return _finish(result, data, eval_var)
+    if (n < 2).any():
+        raise ValueError("the EAF margin needs at least two groups of by")
 
 
 def _minus_best_other(cell: list[str]) -> pl.Expr:
@@ -524,3 +485,81 @@ def _minus_best_other(cell: list[str]) -> pl.Expr:
         pl.col("eaf").top_k(2).min().over(cell),
     )
     return pl.col("eaf") - pl.when(pl.col("eaf") < best).then(best).otherwise(second)
+
+
+def _margin(data, by, options, column: str, two: bool) -> pl.DataFrame:
+    """alpha of each group of ``by`` minus the largest alpha of the other groups,
+    on the grid of ``get_eaf(mode="discretised")``, in ``column`` (EA-2)."""
+    data, by, (runs, value, larger, scope), grid_options = _prepare(
+        data, by, "discretised", options
+    )
+    _groups(runs, by, scope, two)
+    eval_var = options.get("eval_var", "evaluations")
+    grid = _grid(data, scope, value, **grid_options)
+    alpha = _attainment(runs, grid, by, scope, value, larger, eval_var)
+    cell = [*scope, eval_var, value]
+    result = alpha.select(*by, eval_var, value, _minus_best_other(cell).alias(column))
+    return _finish(result, data, eval_var)
+
+
+@upgrade_hints
+def get_eaf_difference(
+    data: pl.DataFrame,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
+    mode: str = "precise",
+    **options,
+) -> pl.DataFrame:
+    """The EAF difference of exactly two groups A and B of ``by``
+    (``docs/definitions/eaf.md``, EA-2): alpha_A - alpha_B for A and its negative
+    for B, positive where the group attains more often. To compare more than two
+    groups, see ``get_eaf_margin``.
+
+    Args:
+        data, by: as in ``get_eaf``; the groups are compared within each
+            (function, dimension) pair, or on q when a group spans several.
+        mode: ``"precise"``: the rectangles where the difference is constant
+            (``moocore.eafdiff``, IOHanalyzer's ``EAF_Difference``).
+            ``"discretised"``: the difference on the grid of budgets x values of
+            ``get_eaf`` (IOHanalyzer's ``EAF_diff_Approximate``).
+        **options: the options of ``get_eaf``.
+
+    Returns:
+        pl.DataFrame: precise: ``by``, ``x_min``, ``y_min``, ``x_max``, ``y_max``
+            (evaluations and values) and ``eaf_diff``; discretised: ``by``,
+            ``eval_var``, the value (``fval_var`` or ``quality``) and ``eaf_diff``.
+    """
+    if mode == "discretised":
+        return _margin(data, by, options, "eaf_diff", two=True)
+    data, by, (runs, value, larger, scope), _ = _prepare(data, by, mode, options)
+    _groups(runs, by, scope, two=True)
+    eval_var = options.get("eval_var", "evaluations")
+    result = _each(runs, scope, lambda s: _rectangles(s, by, value, larger, eval_var))
+    return result.select(*by, *RECTANGLE).drop(ALL, strict=False)
+
+
+@upgrade_hints
+def get_eaf_margin(
+    data: pl.DataFrame,
+    by: Sequence[str] = ("algorithm_name",),
+    **options,
+) -> pl.DataFrame:
+    """The margin of each group's EAF over the best of the other groups of ``by``
+    (``docs/definitions/eaf.md``, EA-2): alpha_a - max over c != a of alpha_c, on
+    the grid of ``get_eaf(mode="discretised")``, for two or more groups.
+
+    Positive where a attains more often than every other group, by its lead over
+    the next best; negative where some other group attains more often, by how far
+    a is behind the best. This is a comparison of several groups, not a difference
+    of two EAFs, except that for two groups it is ``get_eaf_difference``.
+
+    Args:
+        data, by: as in ``get_eaf``; the groups are compared within each
+            (function, dimension) pair, or on q when a group spans several.
+        **options: the options of ``get_eaf`` (its discretised grid).
+
+    Returns:
+        pl.DataFrame: ``by``, ``eval_var``, the value (``fval_var`` or ``quality``)
+            and ``eaf_margin``.
+    """
+    return _margin(data, by, options, "eaf_margin", two=False)

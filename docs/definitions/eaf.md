@@ -47,8 +47,19 @@ Every EAF output, the EAF and the EAF difference alike, comes in two modes
 For two run sets A and B, Δ(b, y) = α_A(b, y) − α_B(b, y). It is reported
 either exactly, as the rectangles where Δ is constant (`eafdiff` with
 `rectangles = TRUE`), or on a grid of 50 log-spaced budgets × 50 log-spaced
-values. With more than two algorithms, each algorithm is compared with the
-pointwise maximum of the others: Δ_a = α_a − max_{c ≠ a} α_c.
+values.
+
+### EAF margin (more than two groups)
+
+With more than two algorithms there is no single difference. Each algorithm
+is compared with the pointwise maximum of the others, its *margin*:
+M_a = α_a − max_{c ≠ a} α_c. M_a > 0 where a attains more often than every
+other algorithm (by its lead over the next best) and M_a < 0 where another
+attains more often (by how far a is behind the best). This is a comparison of
+several EAFs rather than a difference of two, so it has its own name and
+function; for two algorithms it equals the difference. It is discretised only
+(an exact version would need every group's EAF on the union of all
+coordinates).
 
 ### Several functions
 
@@ -111,9 +122,12 @@ can set both.
 - **EA-1.** α(b, y) on best-so-far values, with levels at 0, 10, …, 100 % by
   default, computed with `moocore` once its level convention is checked
   against `eaf` (I17).
-- **EA-2.** EAF differences in the two modes of EA-5 (rectangles, and the
-  discretised matrix with a 50 × 50 log grid by default); with more than two
-  algorithms, against the pointwise maximum of the others.
+- **EA-2.** The EAF difference is of exactly two groups, in the two modes of
+  EA-5 (rectangles, and the discretised matrix with a 50 × 50 log grid by
+  default). More than two groups are compared by the EAF margin, each against
+  the pointwise maximum of the others, discretised only. Decided by the review
+  of #45 (dvermetten, 2026-11-19): the multi-group comparison is not a
+  difference of EAFs and is a separate function with a clearer name.
 - **EA-3.** Multi-function EAFs use the normalised quality q with fixed
   bounds per pair. For BBOB data the default bounds are 10² (upper) and 10⁻⁸
   (lower) on Δf; otherwise the observed range per pair. Decided by the D6 review (dvermetten, 2026-11-06).
@@ -149,11 +163,13 @@ run metadata). The same bounds apply to AOCC through EC-5 (see
   log-spaced budgets over each pair's logged evaluations and 50 log-spaced
   values over its logged values by default (`eval_values`, `f_values`: a
   count or the values themselves).
-- `get_eaf_difference(data, by, mode=...)`: Δ of EA-2 for every group, in
-  the same two modes. Precise: the rectangles of `moocore.eafdiff` where Δ is
-  constant, for exactly two groups, once for each (Δ_B = −Δ_A). Discretised: Δ
-  on the grid of `get_eaf`, for two or more groups, against the pointwise
-  maximum of the others.
+- `get_eaf_difference(data, by, mode=...)`: Δ of EA-2 for exactly two
+  groups, once for each (Δ_B = −Δ_A), in the same two modes. Precise: the
+  rectangles of `moocore.eafdiff` where Δ is constant. Discretised: Δ on the
+  grid of `get_eaf`. Other numbers of groups raise `ValueError`.
+- `get_eaf_margin(data, by, **options)`: the margin M_a of EA-2 for two or
+  more groups, column `eaf_margin`, on the grid of `get_eaf`; for two groups
+  it is the discretised `get_eaf_difference`.
 - Several pairs (EA-3): when a group of `by` spans more than one (function,
   dimension) pair, f is replaced by the normalised quality q of the continuum
   ECDF (EC-5) in a column `quality`, with the same default bounds
@@ -192,7 +208,8 @@ Golden tests (`tests/test_metrics/test_eaf.py`) on `ioh040_min`,
   `generate_data.EAF_Difference` ignores maximisation (it always minimises), so
   on `ioh040_max` the test reproduces it with `maximization=False` and checks
   that the agreed result differs.
-- `EAF_diff_Approximate`: equal to 1e-12 on IOHanalyzer's grid. Its value grid
+- `EAF_diff_Approximate`, which with more than two algorithms is the margin
+  (`get_eaf_margin`): equal to 1e-12 on IOHanalyzer's grid. Its value grid
   differs from `seq_fv` at the ends (`10^log10(x)` is 1 ulp off; a lower end of
   0 becomes 1e-12, TG-3), which matters where a grid value equals a logged
   value, so the test passes IOHanalyzer's grid. Under maximisation IOHanalyzer

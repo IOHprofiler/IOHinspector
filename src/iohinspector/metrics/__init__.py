@@ -20,6 +20,7 @@ from .eaf import (
     get_eaf,
     get_eaf_data,
     get_eaf_difference,
+    get_eaf_margin,
     get_eaf_pareto_data,
     get_eaf_diff_data,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "get_eaf_data",
     "get_eaf_diff_data",
     "get_eaf_difference",
+    "get_eaf_margin",
     "get_eaf_pareto_data",
     "get_ecdf",
     "get_ecdf_auc",

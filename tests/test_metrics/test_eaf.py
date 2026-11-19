@@ -11,6 +11,7 @@ from iohinspector.metrics.eaf import (
     get_eaf_data,
     get_eaf_diff_data,
     get_eaf_difference,
+    get_eaf_margin,
     get_eaf_pareto_data,
 )
 from iohinspector.targets import seq_rt
@@ -413,29 +414,43 @@ def test_precise_and_discretised_differences_agree(maximization):
     assert set(discretised["eaf_diff"].round(10)) - {0.0}  # not trivially equal
 
 
-def test_discretised_difference_against_the_best_of_the_others():
+def test_margin_against_the_best_of_the_others():
     c = TWO.filter(pl.col("run_id") == 2).with_columns(
         pl.col("run_id") + 2, algorithm_name=pl.lit("C")
     )
     data = pl.concat([TWO, c])
     grid = {"eval_values": [1, 2, 3], "f_values": [2.0, 5.0, 10.0]}
     alpha = get_eaf(data, mode="discretised", **grid)
-    delta = get_eaf_difference(data, mode="discretised", **grid)
+    margin = get_eaf_margin(data, **grid)
     cells = ["evaluations", "raw_y"]
     wide = alpha.pivot(on="algorithm_name", index=cells, values="eaf")
     expected = pl.concat(
         wide.select(
             *cells,
             algorithm_name=pl.lit(g),
-            eaf_diff=pl.col(g) - pl.max_horizontal([c for c in "ABC" if c != g]),
+            eaf_margin=pl.col(g) - pl.max_horizontal([c for c in "ABC" if c != g]),
         )
         for g in "ABC"
     )
-    assert_frame_equal(delta, expected, check_row_order=False, check_column_order=False)
-    with pytest.raises(ValueError, match="two groups"):
-        get_eaf_difference(data)
-    with pytest.raises(ValueError, match="two groups"):
-        get_eaf_difference(TWO, by=[], mode="discretised")
+    assert_frame_equal(
+        margin, expected, check_row_order=False, check_column_order=False
+    )
+    # for two groups the margin is the difference
+    two = get_eaf_margin(TWO, **grid).rename({"eaf_margin": "eaf_diff"})
+    assert_frame_equal(two, get_eaf_difference(TWO, mode="discretised", **grid))
+    with pytest.raises(ValueError, match="at least two groups"):
+        get_eaf_margin(TWO, by=[])
+
+
+@pytest.mark.parametrize("mode", ["precise", "discretised"])
+def test_difference_of_exactly_two_groups(mode):
+    c = TWO.filter(pl.col("run_id") == 2).with_columns(
+        pl.col("run_id") + 2, algorithm_name=pl.lit("C")
+    )
+    with pytest.raises(ValueError, match=r"exactly two groups of by, found \[3\]"):
+        get_eaf_difference(pl.concat([TWO, c]), mode=mode)
+    with pytest.raises(ValueError, match="exactly two groups"):
+        get_eaf_difference(TWO, by=[], mode=mode)
 
 
 def test_equal_eafs_have_no_difference():
@@ -528,11 +543,12 @@ def test_eaf_difference_matches_iohanalyzer(fixture):
 
 
 @pytest.mark.parametrize("fixture", MAXIMIZE)
-def test_discretised_difference_matches_iohanalyzer(fixture):
-    # EAF_diff_Approximate on IOHanalyzer's grid: 50 log-spaced budgets and values
-    # per pair, its values 10^(log10 spaced) with ends 1 ulp off the data's (TG-1)
-    # and 1e-12 for a lower end of 0 (TG-3). When maximising IOHanalyzer labels the
-    # values in reverse order (its success rates come sorted by target)
+def test_margin_matches_iohanalyzer(fixture):
+    # EAF_diff_Approximate, each algorithm against the best of the others, on
+    # IOHanalyzer's grid: 50 log-spaced budgets and values per pair, its values
+    # 10^(log10 spaced) with ends 1 ulp off the data's (TG-1) and 1e-12 for a lower
+    # end of 0 (TG-3). When maximising IOHanalyzer labels the values in reverse
+    # order (its success rates come sorted by target)
     data = logged(fixture)
     maximization = MAXIMIZE[fixture]
     gold = _gold(fixture, "EAF_diff_Approximate")
@@ -541,9 +557,8 @@ def test_discretised_difference_matches_iohanalyzer(fixture):
         log = np.log10([lower, pair["raw_y"].max()])
         values = 10.0 ** np.linspace(*log, 50)
         budgets = seq_rt(pair["evaluations"], 50)
-        ours = get_eaf_difference(
+        ours = get_eaf_margin(  # the difference with two algorithms
             pair,
-            mode="discretised",
             eval_values=budgets,
             f_values=values,
             maximization=maximization,
@@ -561,5 +576,5 @@ def test_discretised_difference_matches_iohanalyzer(fixture):
         joined = expected.join(ours, on=["algorithm_name", "evaluations", "raw_y"])
         assert joined.height == expected.height == ours.height
         np.testing.assert_allclose(
-            joined["eaf_diff"], joined["gold"], rtol=0, atol=1e-12
+            joined["eaf_margin"], joined["gold"], rtol=0, atol=1e-12
         )

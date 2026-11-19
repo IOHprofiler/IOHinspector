@@ -8,9 +8,11 @@
   single-objective EAF of each group of `by` on the runs' best-so-far traces,
   as attainment surfaces at IOHanalyzer's levels (`mode="precise"`, moocore) or
   on a grid of budgets and values (`mode="discretised"`).
-  `metrics.get_eaf_difference` is each group's EAF minus the best of the others,
-  as rectangles for two groups or on the grid. A group that spans several
-  (function, dimension) pairs uses the normalised quality of the continuum ECDF.
+  `metrics.get_eaf_difference` is the difference of the EAFs of exactly two
+  groups, as rectangles or on the grid. `metrics.get_eaf_margin` compares two or
+  more groups on the grid: each group's EAF minus the best of the others. A
+  group that spans several (function, dimension) pairs uses the normalised
+  quality of the continuum ECDF.
 
 ### Fixed
 
