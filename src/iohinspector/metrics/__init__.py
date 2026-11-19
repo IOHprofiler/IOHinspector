@@ -43,6 +43,17 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
+from .cdp import (
+    CumulativeDifference,
+    cumulative_difference,
+    get_cumulative_difference,
+)
+from .portfolio import (
+    envelope_value,
+    get_portfolio_ecdf,
+    get_shapley_values,
+    shapley_values,
+)
 from .stats import (
     MEASURES,
     get_ks_tests,
@@ -59,8 +70,12 @@ from .parameters import (
 )
 
 __all__ = [
-    "MEASURES",
+    "CumulativeDifference",
+    "cumulative_difference",
+    "get_cumulative_difference",
     "add_normalized_objectives",
+    "envelope_value",
+    "MEASURES",
     "elo",
     "aggregate_convergence",
     "aggregate_running_time",
@@ -80,7 +95,9 @@ __all__ = [
     "get_fixed_budget_ecdf_auc",
     "get_heatmap_single_run_data",
     "get_rank_table",
+    "get_shapley_values",
     "get_overview",
+    "get_portfolio_ecdf",
     "get_histogram",
     "get_ks_tests",
     "get_robustrank_changes",
@@ -99,6 +116,7 @@ __all__ = [
     "holm",
     "ks_test",
     "normalize_objectives",
+    "shapley_values",
     "transform_fval",
     "apply_penalty",
     "get_logged_rows",
