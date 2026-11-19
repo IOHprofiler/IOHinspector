@@ -8,7 +8,8 @@ import numpy as np
 import polars as pl
 
 from ..targets import PAIR
-from .ecdf import _hits, _prepare
+from .ecdf import _hits, _prepare, _restarted
+from .restarts import restarts
 
 __all__ = [
     "envelope_value",
@@ -183,6 +184,7 @@ def _portfolio(  # pylint: disable=R0913,R0914
     maximization: bool,
     pairs: str,
     divide_by_dimension: bool,
+    stopped: str,
     fval_var: str,
     eval_var: str,
 ):
@@ -202,13 +204,29 @@ def _portfolio(  # pylint: disable=R0913,R0914
     hi = float(data.select(x.max()).item() if b_hi is None else b_hi)
     if lo >= hi or (scale_eval_log and lo <= 0):
         raise ValueError(f"budget range [{lo}, {hi}] is empty or not positive")
+    hits = _hits(data, targets, maximization, fval_var, eval_var).with_columns(
+        target=pl.col(fval_var).cast(pl.Float64)
+    )
+    if restarts(stopped):  # EC-7, per player, pair and target up to hi
+        keep = hits.select(*curve, eval_var, "inc")
+        extra = _restarted(
+            data,
+            hits,
+            by,
+            curve,
+            hi,
+            continuous=False,
+            maximization=maximization,
+            divide_by_dimension=divide_by_dimension,
+            fval_var=fval_var,
+            eval_var=eval_var,
+        )
+        hits = pl.concat([keep, extra.cast(keep.schema)])
     x = x.clip(lo, hi)
     if scale_eval_log:
         x, lo, hi = x.log10(), math.log10(lo), math.log10(hi)
     step = [*PAIR, "target"]
-    hits = _hits(data, targets, maximization, fval_var, eval_var).with_columns(
-        target=pl.col(fval_var).cast(pl.Float64), x=x
-    )
+    hits = hits.with_columns(x=x)
     players = data.select(by).unique().sort(by, nulls_last=True)
     starts = targets.select(*PAIR, pl.col("target").cast(pl.Float64), x=pl.lit(lo))
     starts = starts.join(data.select(PAIR).unique(), on=PAIR, how="semi")
@@ -240,6 +258,7 @@ ECDF_OPTIONS = {
     "maximization": False,
     "pairs": "common",
     "divide_by_dimension": False,
+    "stopped": "restart",
     "fval_var": "raw_y",
     "eval_var": "evaluations",
 }
@@ -324,7 +343,8 @@ def get_shapley_values(  # pylint: disable=too-many-arguments
             ``get_ecdf_auc``.
         marginal, exact_limit, samples, seed: as in ``shapley_values`` (SH-4).
         **options: ``scale_f_log``, ``maximization``, ``pairs``,
-            ``divide_by_dimension``, ``fval_var`` and ``eval_var`` as in
+            ``divide_by_dimension``, ``stopped`` (simulated restarts up to
+            ``b_hi`` by default, EC-7), ``fval_var`` and ``eval_var`` as in
             ``get_ecdf``.
 
     Returns:

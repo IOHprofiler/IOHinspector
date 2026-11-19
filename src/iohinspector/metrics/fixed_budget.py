@@ -8,6 +8,7 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import seq_rt
+from .restarts import restarts
 from .utils import custom, describe, name_run_sets, runs_of
 
 
@@ -24,7 +25,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
     *,
     budgets: Iterable[int] | None = None,
     stopped: str = "carry_forward",
-    seed: int | None = None,
+    seed: int | None = 0,
 ) -> pl.DataFrame:
     """Fixed-budget summary of each run set (a group of ``by``) at each budget.
 
@@ -48,7 +49,8 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
         budgets: the budgets; 50 log-spaced from ``eval_min`` to ``eval_max`` when
             None.
         stopped: ``"carry_forward"`` or ``"restart"`` (FB-6).
-        seed: the seed of the restarts.
+        seed: the seed of the restarts; fixed by default, so the summary is
+            reproducible.
 
     Returns:
         pl.DataFrame: per run set and budget (``eval_var``): ``mean``, ``median``,
@@ -61,10 +63,9 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
     # #lizard forgives  (the public signature of 0.0.x plus the FB options)
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
-    if stopped not in ("carry_forward", "restart"):
-        raise ValueError(f"stopped is 'carry_forward' or 'restart', not {stopped!r}")
+    restart = restarts(stopped)
     used = ["evals_used"] if "evals_used" in data.columns else []
-    if stopped == "restart" and not used:
+    if restart and not used:
         raise ValueError(
             "stopped='restart' needs the runs' evals_used: "
             'DataManager.load(include_columns=["evals_used"])'
@@ -81,7 +82,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
         maximization=maximization,
         eval_var=eval_var,
     )
-    if stopped == "restart":
+    if restart:
         aligned = _restart(data, aligned, runs, eval_var, fval_var, maximization, seed)
     aligned = aligned.join(runs.select("run_id", "run_set"), on="run_id")
     y = pl.col(fval_var)
@@ -94,7 +95,7 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
     ]
     if "stopped" in aligned.columns:  # FB-6: runs with B_i >= b
         aggregations.append(pl.col("stopped").not_().sum().alias("n_active"))
-        if stopped == "restart":
+        if restart:
             aggregations.append(pl.col("stopped").sum().alias("n_restarted"))
     if custom_op is not None:
         aggregations.append(custom(custom_op, y))
@@ -116,29 +117,43 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
     uniformly with replacement from its run set (one seeded chain per run), each
     for its own B_j evaluations, until the largest budget. The value at b is the
     best over the chain up to b, from ``align_data`` on the chain's joined trace.
+    A run with the best final value of its set is not restarted, and a chain
+    stops once it has drawn one: no later restart can improve it.
     ``runs`` is ``runs_of(data, by)``; ``eval_var`` is Int64 in ``data`` and
     ``aligned`` (polars 1 makes u64 + i64 a float)."""
     # #lizard forgives  (one procedure, FB-6, kept in one place)
-    runs = runs.sort("run_set", "run_id").with_columns(
-        position=pl.int_range(pl.len()).over("run_set"),
-        size=pl.len().over("run_set"),
+    y = pl.col(fval_var)
+    finals = data.group_by("run_id").agg(final=y.max() if maximization else y.min())
+    runs = (
+        runs.join(finals, on="run_id")
+        .sort("run_set", "run_id")
+        .with_columns(
+            position=pl.int_range(pl.len()).over("run_set"),
+            size=pl.len().over("run_set"),
+            best=pl.col("final")
+            == (pl.col("final").max() if maximization else pl.col("final").min()).over(
+                "run_set"
+            ),
+        )
     )
     ids = runs["run_id"].to_numpy()
     used = np.maximum(runs["evals_used"].to_numpy(), 1)
     size = runs["size"].to_numpy()
+    best = runs["best"].to_numpy()
     first = np.arange(len(runs)) - runs["position"].to_numpy()
     rng = np.random.default_rng(seed)
     last = aligned[eval_var].max()
-    owner = np.flatnonzero(used < last)  # the runs that stop before the last budget
+    owner = np.flatnonzero((used < last) & ~best)  # the runs restarts can improve
     if not owner.size:
         return aligned
     chain = [(owner, owner, np.zeros_like(owner))]
     end = used[owner]
-    while owner.size:  # one restart more for every chain that ends before it
+    while owner.size:  # one restart more for every chain that can still improve
         drawn = first[owner] + rng.integers(size[owner])
         chain.append((owner, drawn, end))
         end = end + used[drawn]
-        owner, end = owner[end < last], end[end < last]
+        more = (end < last) & ~best[drawn]
+        owner, end = owner[more], end[more]
     owner, drawn, offset = (np.concatenate(c) for c in zip(*chain))
     segments = pl.DataFrame(
         {"owner": ids[owner], "run_id": ids[drawn], "offset": offset.astype(np.int64)}
@@ -159,10 +174,9 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
         maximization=maximization,
         eval_var=eval_var,
     ).rename({fval_var: "restarted"})
-    value = pl.when("stopped").then("restarted").otherwise(fval_var)
-    return (
+    return (  # runs without a chain keep their value
         aligned.join(restarted, on=["run_id", eval_var], how="left")
-        .with_columns(value.alias(fval_var))
+        .with_columns(pl.coalesce("restarted", fval_var).alias(fval_var))
         .drop("restarted")
     )
 

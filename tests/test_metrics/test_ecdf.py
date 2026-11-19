@@ -1,3 +1,4 @@
+import functools
 import warnings
 
 import numpy as np
@@ -192,8 +193,12 @@ def test_exact_steps_and_samples():
     result = get_ecdf(THREE)
     assert result["evaluations"].to_list() == [0.0, 1.0, 10.0]
     np.testing.assert_allclose(result["ecdf"], [0, 0.1, 22 / 30], rtol=1e-12)
-    sampled = get_ecdf(THREE, x_values=[0.5, 1, 9, 10, 1000])
+    sampled = get_ecdf(THREE, x_values=[0.5, 1, 9, 10, 100])
     np.testing.assert_allclose(sampled["ecdf"], [0, 0.1, 0.1, 22 / 30, 22 / 30])
+    # without restarts (EC-7) it stays there; with them it rises after 100
+    carried = get_ecdf(THREE, x_values=[1000], stopped="carry_forward")
+    assert carried["ecdf"].item() == pytest.approx(22 / 30, rel=1e-12)
+    assert get_ecdf(THREE, x_values=[1000])["ecdf"].item() > 0.99
 
 
 @pytest.mark.parametrize("maximization", [False, True])
@@ -300,7 +305,8 @@ def test_auc_is_the_exact_normalised_area():
     # ECDF 0.1 on [1, 10), 22/30 on [10, 100]
     auc = get_ecdf_auc(THREE)["auc"].item()
     assert auc == pytest.approx((0.1 * 9 + 22 / 30 * 90) / 99, 1e-12)
-    auc = get_ecdf_auc(THREE, b_lo=5, b_hi=1000)["auc"].item()
+    auc = get_ecdf_auc(THREE, b_lo=5, b_hi=1000, stopped="carry_forward")["auc"]
+    auc = auc.item()
     assert auc == pytest.approx((0.1 * 5 + 22 / 30 * 990) / 995, 1e-12)
     log = get_ecdf_auc(THREE, scale_eval_log=True)["auc"].item()
     assert log == pytest.approx((0.1 + 22 / 30) / 2, 1e-12)
@@ -404,6 +410,7 @@ def _golden_ecdf(fixture, metric, by, strict=True):
         by,
         x_values=gold["evaluations"].unique(),
         maximization=maximization,
+        stopped="carry_forward",  # IOHanalyzer's rule (EC-7)
     )
     joined = gold.join(ours, on=[*by, "evaluations"], how="left")
     assert joined.height == gold.height
@@ -597,31 +604,130 @@ def test_fixed_budget_auc_matches_iohanalyzer_trapezoid(fixture):
     assert ((agreed >= 0) & (agreed <= 1)).all()
 
 
-# Simulated restarts (EC-7, FB-6), the default of the fixed-budget ECDF
+# Simulated restarts (EC-7), the default of every ECDF
 
 # runs 1 and 2 stop at 3 (values 1 and 2), run 3 is first logged at 6 (value 5)
 STOPPED_PAIR = STOPPED.with_columns(function_id=1, dimension=2)
 STOPPED_BUDGETS = pl.DataFrame({"function_id": 1, "dimension": 2, "budget": [3, 4, 6]})
 
 
-def test_fixed_budget_restarts_are_those_of_aggregate_convergence():
-    # one procedure: with the same seed the restarted values are the ones the
-    # fixed-budget summary has, so the ECDF's mass at each value adds up to the
-    # same sum, minimum and maximum
-    for seed in range(5):
-        ecdf = get_fixed_budget_ecdf(STOPPED_PAIR, STOPPED_BUDGETS, seed=seed)
-        summary = aggregate_convergence(
-            STOPPED, budgets=[3, 4, 6], stopped="restart", seed=seed
-        )
-        mass = ecdf["ecdf"].diff()[1:] * 9  # 3 runs x 3 budgets
-        values = ecdf["raw_y"][1:]
-        total = (summary["mean"] * summary["n_defined"]).sum()
-        assert (values * mass).sum() == pytest.approx(total, rel=1e-12)
-        assert (values.min(), values.max()) == (
-            summary["best"].min(),
-            summary["worst"].max(),
-        )
-        assert ecdf["n_restarted"].unique().to_list() == [2]
+def _restarted(hits, used, b):
+    """E_t(b) by its definition (ecdf.md, EC-7), recursively: ``hits`` the runs'
+    hitting times of t (inf when not reached), ``used`` their B_i."""
+    failed = [u for t, u in zip(hits, used) if not np.isfinite(t)]
+
+    @functools.cache
+    def e(x):
+        if x < 0:
+            return 0.0
+        return (sum(t <= x for t in hits) + sum(e(x - u) for u in failed)) / len(hits)
+
+    return e(b)
+
+
+def _hitting_times(df, target, maximization=False):
+    """Per run of ``df`` (one pair and group): its first evaluation with a value at
+    least as good as ``target`` (inf if none), and its last evaluation (B_i)."""
+    good = pl.col("raw_y") >= target if maximization else pl.col("raw_y") <= target
+    runs = df.group_by("run_id").agg(
+        hit=pl.col("evaluations").filter(good).min(), used=pl.col("evaluations").max()
+    )
+    return runs["hit"].fill_null(np.inf).to_list(), runs["used"].to_list()
+
+
+def _ragged(seed, n=5):
+    """``n`` runs of one pair with random values at evaluations 1..L_i, L_i random."""
+    rng = np.random.default_rng(seed)
+    rows = [
+        (i, 1, 2, "A", e, float(10 ** rng.uniform(-3, 2)))
+        for i in range(n)
+        for e in range(1, int(rng.integers(3, 13)) + 1)
+    ]
+    columns = ["run_id", "function_id", "dimension", "algorithm_name"]
+    return pl.DataFrame(rows, schema=[*columns, "evaluations", "raw_y"], orient="row")
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_target_ecdf_restarts_are_the_expected_restarted_runs(maximization):
+    # E_t(b) computed directly from its definition, per target, averaged
+    df = _ragged(3)
+    targets = get_ecdf_targets(df, n=6)
+    budgets = [1, 4, 9, 13, 20, 37, 60]
+    ours = get_ecdf(df, targets, x_values=budgets, maximization=maximization)
+    times = [_hitting_times(df, t, maximization) for t in targets["target"]]
+    for b, value in zip(budgets, ours["ecdf"]):
+        expected = np.mean([_restarted(h, u, b) for h, u in times])
+        assert value == pytest.approx(expected, rel=1e-12)
+    # the exact steps agree with the samples, up to the largest budget asked for
+    steps = get_ecdf(df, targets, maximization=maximization, x_values=None)
+    carried = get_ecdf(
+        df,
+        targets,
+        x_values=budgets,
+        maximization=maximization,
+        stopped="carry_forward",
+    )
+    assert (ours["ecdf"] >= carried["ecdf"] - 1e-12).all()
+    at = ours.filter(pl.col("evaluations") <= steps["evaluations"].max())
+    for _, b, value in at.rows():
+        last = steps.filter(pl.col("evaluations") <= b)["ecdf"][-1]
+        assert last == pytest.approx(value, rel=1e-12)
+
+
+def test_runs_that_reach_a_target_are_not_restarted():
+    # every run reaches 1e4 at evaluation 1: restarts change nothing; no run reaches
+    # 1e-5: it stays unreached; for 1e0 two runs stop (at 100) without reaching it
+    targets = pl.DataFrame({"function_id": 1, "dimension": 2, "target": [1e4]})
+    xs = [1, 100, 1e4]
+    assert get_ecdf(THREE, targets, x_values=xs)["ecdf"].to_list() == [1, 1, 1]
+    never = targets.with_columns(target=pl.lit(1e-5))
+    assert get_ecdf(THREE, never, x_values=xs)["ecdf"].to_list() == [0, 0, 0]
+    once = targets.with_columns(target=pl.lit(1e-4))
+    ecdf = get_ecdf(THREE, once, x_values=[100, 200, 300])["ecdf"].to_list()
+    # E(b) = 1[b >= 10]/3 + 2/3 E(b - 100)
+    assert ecdf == pytest.approx([1 / 3, 1 / 3 + 2 / 9, 1 / 3 + 2 / 9 + 4 / 27])
+
+
+def test_continuum_and_fixed_budget_restarts_are_the_same_restarts():
+    # EC-5 and EC-10 with restarts: the AUC over m targets tends to the AOCC, and the
+    # fixed-budget AUC is the mean continuum ECDF over its budgets
+    other = _ragged(6, 4).with_columns(run_id=pl.col("run_id") + 9, function_id=2)
+    df = pl.concat([_ragged(5, 6), other.cast({"function_id": pl.Int64})])
+    aocc = get_ecdf_auc(df, continuous=True, b_hi=40)["auc"].item()
+    carried = get_ecdf_auc(df, continuous=True, b_hi=40, stopped="carry_forward")
+    assert aocc > carried["auc"].item() + 0.05
+    for m in (10, 301):
+        auc = get_ecdf_auc(df, get_ecdf_targets(df, n=m), b_hi=40)["auc"].item()
+        assert abs(auc - aocc) < 1 / m
+    budgets = get_ecdf_budgets(df, 6).with_columns(pl.col("budget") * 3)
+    lo, hi = 1e-3, 1e2
+    auc = get_fixed_budget_ecdf_auc(df, budgets, f_lo=lo, f_hi=hi)
+    bounds = (
+        budgets.select(PAIR)
+        .unique()
+        .join(pl.DataFrame({"target": [lo, hi]}), how="cross")
+    )
+    per_pair = [
+        get_ecdf(
+            df.filter(function_id=f),
+            bounds.filter(function_id=f),
+            continuous=True,
+            x_values=budgets.filter(function_id=f)["budget"],
+        )["ecdf"].mean()
+        for f in (1, 2)
+    ]
+    assert auc["auc"].item() == pytest.approx(np.mean(per_pair), rel=1e-12)
+
+
+@pytest.mark.parametrize("maximization", [False, True])
+def test_fixed_budget_restarts_are_the_expected_restarted_runs(maximization):
+    df = _ragged(7)
+    budgets = pl.DataFrame({"function_id": 1, "dimension": 2, "budget": [2, 7, 15, 31]})
+    ours = get_fixed_budget_ecdf(df, budgets, maximization=maximization)
+    for _, v, value, _ in ours.rows()[1:]:
+        h, u = _hitting_times(df, v, maximization)
+        expected = np.mean([_restarted(h, u, b) for b in budgets["budget"]])
+        assert value == pytest.approx(expected, rel=1e-12, abs=1e-15)
 
 
 def test_restarts_only_improve_on_carrying_forward():
@@ -632,89 +738,115 @@ def test_restarts_only_improve_on_carrying_forward():
     assert "n_restarted" not in carried.columns
     # at 3 and 4 the stopped runs keep 1 and 2, at 6 also run 3 has 5
     np.testing.assert_allclose(carried["ecdf"], [3 / 9, 6 / 9, 7 / 9, 7 / 9, 7 / 9])
-    for seed in range(5):
-        restarted = get_fixed_budget_ecdf(
-            STOPPED_PAIR, STOPPED_BUDGETS, x_values=xs, seed=seed
-        )
-        assert (restarted["ecdf"] >= carried["ecdf"] - 1e-12).all()
-        auc = get_fixed_budget_ecdf_auc(STOPPED_PAIR, STOPPED_BUDGETS, seed=seed)
-        before = get_fixed_budget_ecdf_auc(
-            STOPPED_PAIR, STOPPED_BUDGETS, stopped="carry_forward"
-        )
-        assert auc["auc"].item() >= before["auc"].item()
-        assert auc["n_restarted"].item() == 2
+    # v = 1: E(b) = 1[b >= 3]/3 + E(b - 3)/3 + E(b - 6)/3 is 1/3, 1/3 and 4/9
+    restarted = get_fixed_budget_ecdf(STOPPED_PAIR, STOPPED_BUDGETS, x_values=xs)
+    np.testing.assert_allclose(
+        restarted["ecdf"], [10 / 27, 6 / 9, 7 / 9, 7 / 9, 7 / 9], rtol=1e-12
+    )
+    assert restarted["n_restarted"].unique().to_list() == [2]
+    auc = get_fixed_budget_ecdf_auc(STOPPED_PAIR, STOPPED_BUDGETS)
+    before = get_fixed_budget_ecdf_auc(
+        STOPPED_PAIR, STOPPED_BUDGETS, stopped="carry_forward"
+    )
+    assert auc["auc"].item() > before["auc"].item()
+    assert auc["n_restarted"].item() == 2
 
 
-def test_restarts_are_seeded_mirrored_and_need_no_evals_used():
-    options = {"budgets": STOPPED_BUDGETS, "seed": 1}
-    first = get_fixed_budget_ecdf(STOPPED_PAIR, **options)
-    assert first.equals(get_fixed_budget_ecdf(STOPPED_PAIR, **options))
+def test_restarts_are_the_mean_of_aggregate_convergences_chains():
+    # one procedure: FB-6 draws the restarts, EC-7 takes their expected value; with
+    # 30000 chains the fraction of values at most 1 is within 5 standard errors
+    copies = 10000
+    run_id = pl.col("run_id") * copies + pl.col("copy")
+    many = STOPPED.join(pl.DataFrame({"copy": range(copies)}), how="cross")
+    many = many.with_columns(run_id=run_id).drop("copy")
+    summary = aggregate_convergence(
+        many,
+        budgets=[3, 4, 6],
+        stopped="restart",
+        custom_op=lambda s: float((s <= 1).sum()),
+    )
+    drawn = (summary["<lambda>"] / summary["n_runs"]).mean()
+    assert abs(drawn - 10 / 27) < 5 * np.sqrt(10 / 27 * 17 / 27 / 30000)
+
+
+def test_restarts_are_deterministic_mirrored_and_need_no_evals_used():
+    first = get_fixed_budget_ecdf(STOPPED_PAIR, STOPPED_BUDGETS)
+    assert first.equals(get_fixed_budget_ecdf(STOPPED_PAIR, STOPPED_BUDGETS))
     # without evals_used B_i is the last logged evaluation, here the same
     unused = STOPPED_PAIR.drop("evals_used")
-    assert first.equals(get_fixed_budget_ecdf(unused, **options))
+    assert first.equals(get_fixed_budget_ecdf(unused, STOPPED_BUDGETS))
     high = get_fixed_budget_ecdf(
-        STOPPED_PAIR.with_columns(-pl.col("raw_y")), maximization=True, **options
+        STOPPED_PAIR.with_columns(-pl.col("raw_y")), STOPPED_BUDGETS, maximization=True
     )
     assert high.with_columns(-pl.col("raw_y")).equals(first)
-    alone = get_fixed_budget_ecdf_auc(STOPPED_PAIR, by=[], **options)
+    alone = get_fixed_budget_ecdf_auc(STOPPED_PAIR, STOPPED_BUDGETS, by=[])
     assert alone.columns == ["auc", "n_restarted"]
-    with pytest.raises(ValueError, match="carry_forward"):
-        get_fixed_budget_ecdf(STOPPED_PAIR, stopped="exclude")
+    for function in (get_fixed_budget_ecdf, get_ecdf):
+        with pytest.raises(ValueError, match="carry_forward"):
+            function(STOPPED_PAIR, stopped="exclude")
 
 
 # Validation against cocopp 2.9.1 (ecdf.md, "Implementation (I33)")
 
-COPIES = (
-    1000  # chains per run: copies leave the runs that restarts draw from as they are
-)
 COCOPP_SAMPLES = 20000  # tests/golden/cocopp/generate.py
 
 
 def _coco_old(dimension):
-    """DIRECT on f6 (five runs, mostly unsuccessful for small targets), each run
-    copied ``COPIES`` times; ``raw_y`` is the precision."""
+    """DIRECT on f6 (five runs, mostly unsuccessful for small targets); ``raw_y`` is
+    the precision."""
     manager = DataManager()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         manager.add_folder(fixture_path("coco_old"))
     columns = ["function_id", "dimension", "algorithm_name", "evals_used"]
-    data = manager.load(include_columns=columns).filter(dimension=dimension)
-    run_id = pl.col("run_id").rank("dense").cast(pl.Int64) * COPIES + pl.col("copy")
-    copies = pl.DataFrame({"copy": range(COPIES)})
-    return data.join(copies, how="cross").with_columns(run_id=run_id).drop("copy")
+    return manager.load(include_columns=columns).filter(dimension=dimension)
+
+
+def _within_cocopp(joined):
+    """Every cell within 5 standard errors of cocopp's sample of 20000."""
+    p = joined["ours"].clip(0, 1)
+    se = (p * (1 - p) / COCOPP_SAMPLES).sqrt()
+    diff = (joined["ours"] - joined["ecdf"]).abs()
+    assert (diff <= 5 * se + 1e-12).all()
+    return diff
 
 
 @pytest.mark.parametrize("dimension", [2, 3])
-def test_fixed_budget_restarts_match_cocopp(dimension):
+def test_restarts_match_cocopp(dimension):
     # cocopp's runtime ECDF with simulated restarts (drawSP, as pprldmany) gives per
-    # target t and budget b the fraction of simulated runtimes T(t) <= b. As
-    # T(t) <= b exactly when V(b) <= t (EC-9), that is the fixed-budget ECDF with the
-    # one budget b at v = t (cocopp's grid level of t). Both estimate one
-    # probability by Monte Carlo: each cell must lie within 5 standard errors
+    # target t and budget b the fraction of 20000 simulated runtimes T(t) <= b. Ours
+    # is its expected value: the target ECDF of t at b, and, as T(t) <= b exactly
+    # when V(b) <= t (EC-9), the fixed-budget ECDF with the one budget b at v = t
+    # (cocopp's grid level of t)
     gold = golden_cocopp(f"ecdf_restarts_{dimension}D", "coco_old")
     data = _coco_old(dimension)
+    pair = data.select(PAIR).unique()
     targets = gold["target"].unique().sort()
     levels = [cocopp_level(t) for t in targets]
-    pair = data.select(PAIR).unique()
-    cells = pl.concat(
-        get_fixed_budget_ecdf(
-            data, pair.with_columns(budget=int(b)), x_values=levels, seed=1
-        ).select(target=targets, budget=pl.lit(b), ours="ecdf")
-        for b in gold["budget"].unique().sort()
+    budget = gold["budget"].unique().sort()
+    target_ecdf = pl.concat(
+        get_ecdf(data, pair.with_columns(target=level), x_values=budget).select(
+            target=pl.lit(t), budget="evaluations", ours="ecdf"
+        )
+        for t, level in zip(targets, levels)
     )
-    joined = gold.join(cells, on=["target", "budget"])
-    assert joined.height == gold.height == 510
-    diff = (joined["ours"] - joined["ecdf"]).abs()
-    p = ((joined["ours"] + joined["ecdf"]) / 2).clip(0, 1)
-    n = data["run_id"].n_unique()
-    se = (p * (1 - p) * (1 / n + 1 / COCOPP_SAMPLES)).sqrt()
-    assert (diff <= 5 * se + 1e-12).all()
-    assert diff.mean() < 0.002
+    fixed_budget = pl.concat(
+        get_fixed_budget_ecdf(
+            data, pair.with_columns(budget=int(b)), x_values=levels
+        ).select(target=targets, budget=pl.lit(b), ours="ecdf")
+        for b in budget
+    )
+    cells = []
+    for ours in (target_ecdf, fixed_budget):
+        joined = gold.join(ours, on=["target", "budget"], maintain_order="left")
+        assert joined.height == gold.height == 510
+        _within_cocopp(joined)
+        cells.append(joined["ours"])
+    np.testing.assert_allclose(*cells, rtol=1e-12, atol=1e-15)
     # the fixed-budget ECDF over the ten budgets is the mean of a target's cells
-    budget = gold["budget"].unique().cast(pl.Int64)
-    budgets = pair.join(pl.DataFrame({"budget": budget}), how="cross")
+    budgets = pair.join(pl.DataFrame({"budget": budget.cast(pl.Int64)}), how="cross")
     mean = gold.group_by("target").agg(pl.col("ecdf").mean()).sort("target")["ecdf"]
-    ecdf = get_fixed_budget_ecdf(data, budgets, x_values=levels, seed=2)["ecdf"]
+    ecdf = get_fixed_budget_ecdf(data, budgets, x_values=levels)["ecdf"]
     assert (ecdf - mean).abs().max() < 0.005
     carried = get_fixed_budget_ecdf(
         data, budgets, x_values=levels, stopped="carry_forward"
