@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- Publication figures (`iohinspector.figures`, D11): `FigureSpec` is a
+  JSON-serialisable, validated description of a figure, and
+  `render(spec, data) -> bytes` draws it as PDF, SVG or PNG, the same bytes on
+  every machine. Venue presets (`VENUES`: LNCS, IEEE conference, ACM sigconf,
+  Elsevier, generic) set the single- and double-column widths and fonts from the
+  venues' LaTeX classes; palettes are colour-blind safe and every series also
+  has its own line style and marker. The first kind is the BBOB-style ECDF:
+  step lines over log10(evaluations / dimension), sparse markers, the final
+  value marked, and labels at the right ordered by final value. Gallery:
+  `docs/figures/`.
+
 ## 0.2.1
 
 ### New

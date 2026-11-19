@@ -1,14 +1,15 @@
 # WP I19: Figures: spec, venue presets, BBOB-style ECDF
 Branch: wp/I19-figure-spec
-Status: in progress
+Status: ready for review
 
 ## Done
 - steps 1-2: `FigureSpec` (JSON dataclasses, validation) and venue presets and palettes
 - step 3: `render(spec, data) -> bytes`, the BBOB-style ECDF, direct labels
+- step 4: snapshot tests against `docs/figures/*.png`, written by the gallery
+  (`python -m tests.test_figures.sample`); CHANGELOG and FUNCTION_REFERENCE
 
 ## Next step
-Step 4: snapshot tests against `docs/figures/*.png`, written by the gallery
-(`python -m tests.test_figures.sample`).
+None: remove this file, then review.
 
 ## Decisions
 - Package `iohinspector.figures`: `spec.py` (FigureSpec), `venues.py` (presets,
@@ -41,6 +42,14 @@ Step 4: snapshot tests against `docs/figures/*.png`, written by the gallery
   largest budget, the final value marked; x is log10(evaluations / dimension)
   with exponent tick labels by default; sparse markers are spread on the x
   scale with a per-curve phase so curves do not share positions.
+
+- Snapshots: PNG at 150 dpi, RMS tolerance 2. Layout moves a few pixels between
+  matplotlib minor versions (3.10 vs 3.11: RMS 23 to 37), so each snapshot runs
+  only on the minor version that wrote its baseline (read from the PNG's
+  `Software` metadata) and skips otherwise. CI on Python 3.10 gets matplotlib
+  3.10 and skips; 3.11 to 3.13 run them. Linux and macOS with 3.11 agree.
+- The gallery and the snapshot baselines are the same files (docs/figures/, 10
+  PNGs, 400 KB), from closed-form sample data in `tests/test_figures/sample.py`.
 
 ## Open questions / Blocked
 - none

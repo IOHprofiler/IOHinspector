@@ -19,11 +19,7 @@ from .venues import LINESTYLES, MARKERS, PALETTES, VENUES
 
 KINDS = {"ecdf": ecdf_plot}
 CM = 1 / 2.54
-METADATA = {
-    "pdf": {"CreationDate": None},
-    "svg": {"Date": None},
-    "png": {"Software": None},
-}
+METADATA = {"pdf": {"CreationDate": None}, "svg": {"Date": None}, "png": {}}
 TICK_FORMATS = {
     "exponent": lambda v, _: f"${round(math.log10(v), 6):g}$",
     "power": lambda v, _: f"$10^{{{round(math.log10(v), 6):g}}}$",
@@ -183,26 +179,26 @@ def _sparse_markers(ax, curve: Curve, style, *, n: int, phase: float, step: bool
 
 def _legend(fig, ax, spec: FigureSpec, curves: list[Curve], styles) -> None:
     """Direct labels or a legend, both ordered by final value, highest first."""
-    order = sorted(curves, key=lambda c: -c.y[-1])
-    size = mpl.rcParams["legend.fontsize"]
-    if spec.legend.mode == "direct":
-        ends = [
-            (styles[c.label]["name"], c.x[-1], c.y[-1], styles[c.label]["color"])
-            for c in order
-        ]
-        texts = add_direct_labels(ax, ends, size)
-        fig.draw_without_rendering()  # lay out, so the axes' height is known
-        place_direct_labels(ax, texts, size)
-        return
-    if spec.legend.mode == "none":
-        return
-    handles = [_handle(styles[c.label]) for c in order]
-    if spec.legend.mode == "box":
-        ax.legend(handles=handles, loc=spec.legend.loc, ncols=spec.legend.columns)
-    else:
+    order = [
+        styles[c.label] | {"end": c} for c in sorted(curves, key=lambda c: -c.y[-1])
+    ]
+    mode, columns = spec.legend.mode, spec.legend.columns
+    if mode == "direct":
+        _direct_labels(fig, ax, order)
+    elif mode == "box":
+        ax.legend(handles=list(map(_handle, order)), loc=spec.legend.loc, ncols=columns)
+    elif mode == "outside":
         fig.legend(
-            handles=handles, loc="outside right center", ncols=spec.legend.columns
+            handles=list(map(_handle, order)), loc="outside right center", ncols=columns
         )
+
+
+def _direct_labels(fig, ax, order: list[dict]) -> None:
+    size = mpl.rcParams["legend.fontsize"]
+    ends = [(s["name"], s["end"].x[-1], s["end"].y[-1], s["color"]) for s in order]
+    texts = add_direct_labels(ax, ends, size)
+    fig.draw_without_rendering()  # lay out, so the axes' height is known
+    place_direct_labels(ax, texts, size)
 
 
 def _handle(style: dict) -> Line2D:
