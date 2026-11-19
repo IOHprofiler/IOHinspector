@@ -4,6 +4,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 from iohinspector.align import align_data
+from iohinspector.metrics import get_ecdf_auc
 from iohinspector.metrics.eaf import (
     RECTANGLE,
     get_discritized_eaf_single_objective,
@@ -462,6 +463,69 @@ def test_equal_eafs_have_no_difference():
     # moocore fails when there is no rectangle at all
     same = pl.DataFrame({"run_id": [1], "x": [1.0], "y": [1.0]})
     assert get_eaf_diff_data(same, same, "x", "y").height == 0
+
+
+def _uneven(seed=2):
+    """Two algorithms on two pairs, f integer in [0, 10] at evaluations 1..10;
+    A has 2 runs on function 1 and 1 on function 2, B 1 and 3."""
+    rng = np.random.default_rng(seed)
+    runs = [("A", 1)] * 2 + [("A", 2)] + [("B", 1)] + [("B", 2)] * 3
+    return pl.DataFrame(
+        {
+            "run_id": np.repeat(np.arange(len(runs)), 10),
+            "algorithm_name": np.repeat([a for a, _ in runs], 10),
+            "function_id": np.repeat([f for _, f in runs], 10),
+            "dimension": 5,
+            "evaluations": np.tile(np.arange(1, 11), len(runs)),
+            "raw_y": rng.integers(0, 11, 10 * len(runs)).astype(float),
+        }
+    )
+
+
+def test_area_under_the_eaf_is_the_aocc():
+    # q = (10 - f) / 10 is a multiple of 0.1 and alpha(b, .) is constant on
+    # (q_(j-1), q_j], and on [b, b + 1) in b: the sums below are exact integrals
+    data = _uneven()
+    bounds = pl.DataFrame({"function_id": [1, 2], "dimension": 5}).join(
+        pl.DataFrame({"target": [0.0, 10.0]}), how="cross"
+    )
+    common = {"targets": bounds, "scale_f_log": False}
+    aocc = get_ecdf_auc(data, b_hi=10, continuous=True, **common)
+    grid = {"eval_values": range(1, 10), "f_values": [k / 10 for k in range(1, 11)]}
+
+    def area(weighting):
+        eaf = get_eaf(data, mode="discretised", weighting=weighting, **grid, **common)
+        volume = eaf.group_by("algorithm_name").agg(auc=pl.col("eaf").sum() * 0.1)
+        return volume.with_columns(pl.col("auc") / 9).sort("algorithm_name")
+
+    with pytest.warns(UserWarning, match=r"weighting='pairs'\), as in the AOCC"):
+        pairs = area("pairs")
+    aocc = aocc.sort("algorithm_name")
+    assert pairs["algorithm_name"].to_list() == aocc["algorithm_name"].to_list()
+    np.testing.assert_allclose(pairs["auc"], aocc["auc"], rtol=1e-12)
+    with pytest.warns(UserWarning, match="A: \\[1, 2\\]; B: \\[1, 3\\]"):
+        runs = area("runs")
+    assert not np.allclose(runs["auc"], pairs["auc"])
+
+
+def test_precise_eaf_weighs_pairs_by_repeating_runs():
+    # with weighting="pairs" the precise EAF is that of each pair's runs repeated
+    # up to the least common multiple of the group's run counts
+    data = _uneven()
+    copies = {("A", 1): 1, ("A", 2): 2, ("B", 1): 3, ("B", 2): 1}
+    repeated = pl.concat(
+        part.with_columns(pl.col("run_id") * 10 + k)
+        for (a, f), part in data.group_by("algorithm_name", "function_id")
+        for k in range(copies[a, f])
+    )
+    with pytest.warns(UserWarning, match="different numbers of runs"):
+        weighted = get_eaf(data, weighting="pairs")
+    keys = ["algorithm_name", "percentile", "evaluations", "quality"]
+    assert_frame_equal(weighted.sort(keys), get_eaf(repeated).sort(keys))
+    with pytest.warns(UserWarning):
+        assert get_eaf(data).sort(keys).height != weighted.height
+    with pytest.raises(ValueError, match="weighting"):
+        get_eaf(data, weighting="functions")
 
 
 def test_pareto_eaf_reads_each_run_as_one_set():

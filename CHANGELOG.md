@@ -12,7 +12,9 @@
   groups, as rectangles or on the grid. `metrics.get_eaf_margin` compares two or
   more groups on the grid: each group's EAF minus the best of the others. A
   group that spans several (function, dimension) pairs uses the normalised
-  quality of the continuum ECDF.
+  quality of the continuum ECDF, each run weighing equally, or each pair with
+  `weighting="pairs"`, which makes the volume under the EAF the AOCC; a
+  warning says when the pairs have different numbers of runs.
 
 ### Fixed
 

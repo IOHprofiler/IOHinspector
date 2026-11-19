@@ -3,6 +3,7 @@ the single-objective EAF and EAF differences of the groups of ``by``, precise or
 discretised, and the multi-objective EAF of 0.0.8."""
 
 import math
+import warnings
 from collections.abc import Callable, Iterable, Sequence
 
 import numpy as np
@@ -27,6 +28,7 @@ OPTIONS = (
     "scale_f_log",
     "targets",
     "maximization",
+    "weighting",
     "fval_var",
     "eval_var",
 )
@@ -352,11 +354,12 @@ def _attainment(  # pylint: disable=R0913,R0914,R0917
     runs, grid, by, scope, value, larger, eval_var
 ) -> pl.DataFrame:
     """alpha(b, y) of each group of ``by`` on the ``grid`` of its scope: the
-    fraction of its runs whose best-so-far value at budget b is y or better;
-    before its first row a run has attained nothing (AL-5). With the scope columns."""
+    fraction of its runs, by ``weight``, whose best-so-far value at budget b is y
+    or better; before its first row a run has attained nothing (AL-5). With the
+    scope columns."""
     keys = list(dict.fromkeys([*by, *scope]))
     budgets = grid.select(*scope, eval_var).unique()
-    at = _join(runs.select("run_id", *keys).unique("run_id"), budgets, scope)
+    at = _join(runs.select("run_id", "weight", *keys).unique("run_id"), budgets, scope)
     trace = runs.select("run_id", eval_var, pl.col(value).alias("_v"))
     at = at.sort(eval_var).join_asof(
         trace.sort(eval_var, maintain_order=True),  # the last of a tie: the best
@@ -367,15 +370,65 @@ def _attainment(  # pylint: disable=R0913,R0914,R0917
     v, y = pl.col("_v"), pl.col(value)
     hit = (v >= y) if larger else (v <= y)
     cells = _join(at, grid, [*scope, eval_var])
+    w = pl.col("weight")
     alpha = cells.group_by([*keys, eval_var, value]).agg(
-        eaf=hit.fill_null(False).mean()
+        eaf=(hit.fill_null(False) * w).sum() / w.sum()
     )
     return alpha.sort([*keys, eval_var, value], nulls_last=True)
 
 
+def _weigh(runs: pl.DataFrame, by: list[str], weighting: str, mode: str):
+    """``runs`` with each run's ``weight`` within its group of ``by`` (EA-6): 1, or
+    with ``weighting="pairs"`` 1/n for the n runs of its (function, dimension)
+    pair, so that each pair weighs equally, as in the AOCC (EC-2). moocore has no
+    weights, so for the precise EAF each pair's runs are instead repeated up to
+    the least common multiple of the group's run counts. Warns when the pairs of
+    a group have different numbers of runs."""
+    if weighting not in ("runs", "pairs"):
+        raise ValueError(f"weighting {weighting!r}: runs or pairs")
+    n = pl.col("run_id").n_unique().over(list(dict.fromkeys([*by, *PAIR])))
+    runs = runs.with_columns(n=n)
+    counts = runs.group_by(by).agg(pl.col("n").unique().sort())
+    uneven = counts.filter(pl.col("n").list.len() > 1)
+    if uneven.height:
+        _warn_runs(uneven.sort(by, nulls_last=True), weighting)
+    if weighting == "runs" or uneven.is_empty():
+        return runs.with_columns(weight=pl.lit(1.0)).drop("n")
+    if mode == "discretised":
+        return runs.with_columns(weight=1 / pl.col("n")).drop("n")
+    lcm = counts.with_columns(
+        m=pl.col("n").map_elements(lambda n: math.lcm(*n), return_dtype=pl.Int64)
+    )
+    copies = pl.col("m") // pl.col("n")
+    runs = runs.join(lcm.drop("n"), on=by, nulls_equal=True, maintain_order="left")
+    k = runs.select(copies.max()).item()
+    runs = runs.with_columns(copy=pl.int_ranges(copies)).explode("copy")
+    run = pl.col("run_id").rank("dense").cast(pl.Int64) * k + pl.col("copy")
+    return runs.with_columns(run.alias("run_id"), weight=pl.lit(1.0)).drop(
+        "n", "m", "copy"
+    )
+
+
+def _warn_runs(uneven: pl.DataFrame, weighting: str) -> None:
+    rows = [f"{', '.join(map(str, r[:-1]))}: {r[-1]}" for r in uneven.rows()]
+    more = f"; and {len(rows) - 5} more" if len(rows) > 5 else ""
+    action = (
+        "each pair weighs equally (weighting='pairs'), as in the AOCC"
+        if weighting == "pairs"
+        else "each run weighs equally (weighting='runs'), so a pair weighs by its "
+        "number of runs and the area under the EAF is not the AOCC, which weighs "
+        "each pair equally; weighting='pairs' makes them agree"
+    )
+    warnings.warn(
+        f"the {tuple(PAIR)} pairs of a group of by have different numbers of runs: "
+        f"{action}. Runs per pair: " + "; ".join(rows[:5]) + more,
+        stacklevel=6,
+    )
+
+
 def _prepare(data: pl.DataFrame, by: Sequence[str], mode: str, options: dict):
     """``data`` with the pair columns (one pair when absent), ``by`` as a list, the
-    traces of ``_traces`` and the options of ``_grid``."""
+    traces of ``_traces`` weighted by ``_weigh``, and the options of ``_grid``."""
     if mode not in ("precise", "discretised"):
         raise ValueError(f"mode {mode!r}: precise or discretised")
     unknown = set(options) - set(OPTIONS)
@@ -383,12 +436,16 @@ def _prepare(data: pl.DataFrame, by: Sequence[str], mode: str, options: dict):
         raise TypeError(f"unknown options {sorted(unknown)}; the options are {OPTIONS}")
     data = data.with_columns(pl.lit(0).alias(c) for c in PAIR if c not in data.columns)
     data, by = _one_group(data, by)
-    grid = ("eval_values", "f_values", "scale_eval_log")
-    traced = _traces(data, by, **{k: v for k, v in options.items() if k not in grid})
+    grid = ("eval_values", "f_values", "scale_eval_log", "weighting")
+    trace_options = {k: v for k, v in options.items() if k not in grid}
+    runs, value, larger, scope = _traces(data, by, **trace_options)
+    runs = _weigh(runs, by, options.get("weighting", "runs"), mode)
     grid_options = {
-        k: v for k, v in options.items() if k not in ("targets", "maximization")
+        k: v
+        for k, v in options.items()
+        if k not in ("targets", "maximization", "weighting")
     }
-    return data, by, traced, grid_options
+    return data, by, (runs, value, larger, scope), grid_options
 
 
 def _finish(result: pl.DataFrame, data: pl.DataFrame, eval_var: str) -> pl.DataFrame:
@@ -439,6 +496,12 @@ def get_eaf(
               By default those of ``get_ecdf_targets(data)``, as for the continuum
               ECDF: the observed range of each pair.
             - ``maximization`` (False): larger values are better.
+            - ``weighting`` (``"runs"``): when a group spans several pairs, each
+              run is one attainment set, so a pair weighs by its number of runs.
+              ``"pairs"``: each pair weighs equally, each of its n runs 1/n, as
+              in the AOCC (EC-2); the area under this EAF over q in [0, 1] is
+              then the continuum ECDF, and its volume the AOCC (EA-6). Both
+              warn when the pairs of a group have different numbers of runs.
             - ``fval_var`` (``"raw_y"``), ``eval_var`` (``"evaluations"``).
 
     Returns:
@@ -462,9 +525,10 @@ def get_eaf(
     return _finish(result, data, eval_var)
 
 
-def _groups(runs: pl.DataFrame, by: list[str], scope: list[str], two: bool) -> None:
+def _groups(prepared, two: bool) -> None:
     """Check the number of groups of ``by`` in each scope: exactly two for a
     difference, at least two for a margin (EA-2)."""
+    _, by, (runs, _, _, scope), _ = prepared
     n = pl.struct(by).n_unique()
     n = runs.select(n.over(scope) if scope else n).to_series()
     if two and not (n == 2).all():
@@ -487,14 +551,10 @@ def _minus_best_other(cell: list[str]) -> pl.Expr:
     return pl.col("eaf") - pl.when(pl.col("eaf") < best).then(best).otherwise(second)
 
 
-def _margin(data, by, options, column: str, two: bool) -> pl.DataFrame:
+def _margin(prepared, eval_var: str, column: str) -> pl.DataFrame:
     """alpha of each group of ``by`` minus the largest alpha of the other groups,
     on the grid of ``get_eaf(mode="discretised")``, in ``column`` (EA-2)."""
-    data, by, (runs, value, larger, scope), grid_options = _prepare(
-        data, by, "discretised", options
-    )
-    _groups(runs, by, scope, two)
-    eval_var = options.get("eval_var", "evaluations")
+    data, by, (runs, value, larger, scope), grid_options = prepared
     grid = _grid(data, scope, value, **grid_options)
     alpha = _attainment(runs, grid, by, scope, value, larger, eval_var)
     cell = [*scope, eval_var, value]
@@ -529,11 +589,12 @@ def get_eaf_difference(
             (evaluations and values) and ``eaf_diff``; discretised: ``by``,
             ``eval_var``, the value (``fval_var`` or ``quality``) and ``eaf_diff``.
     """
-    if mode == "discretised":
-        return _margin(data, by, options, "eaf_diff", two=True)
-    data, by, (runs, value, larger, scope), _ = _prepare(data, by, mode, options)
-    _groups(runs, by, scope, two=True)
+    prepared = _prepare(data, by, mode, options)
+    _groups(prepared, two=True)
     eval_var = options.get("eval_var", "evaluations")
+    if mode == "discretised":
+        return _margin(prepared, eval_var, "eaf_diff")
+    _, by, (runs, value, larger, scope), _ = prepared
     result = _each(runs, scope, lambda s: _rectangles(s, by, value, larger, eval_var))
     return result.select(*by, *RECTANGLE).drop(ALL, strict=False)
 
@@ -562,4 +623,6 @@ def get_eaf_margin(
         pl.DataFrame: ``by``, ``eval_var``, the value (``fval_var`` or ``quality``)
             and ``eaf_margin``.
     """
-    return _margin(data, by, options, "eaf_margin", two=False)
+    prepared = _prepare(data, by, "discretised", options)
+    _groups(prepared, two=False)
+    return _margin(prepared, options.get("eval_var", "evaluations"), "eaf_margin")

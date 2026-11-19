@@ -80,6 +80,9 @@ over infinitely many log-spaced targets, AOCC_S is its AUC, and the m-target
 ECDF and its AUC converge to these as m grows (the target ECDF approximates the
 EAF [LopezIbanez2025]). The bounds must be fixed per pair before alignment;
 the equivalence does not hold when they are taken from the aligned data.
+mean_i q_i(b) is also the area under the EAF of the runs over q in [0, 1], so
+AOCC_S is the volume under the EAF; across several pairs this holds for the
+EAF that weighs each pair equally ([eaf](eaf.md), EA-6).
 
 ### Multi-function rank table
 

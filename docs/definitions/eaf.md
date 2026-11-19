@@ -70,6 +70,25 @@ default bounds are 10² and 10⁻⁸ on Δf = f − f_opt for BBOB data (AL-7), 
 COCO's grid; for other data they are the observed range of each pair. The user
 can set both.
 
+### Weighting of the pairs, and the AOCC
+
+Pooling the runs of several pairs makes each run one attainment set, so a pair
+weighs in proportion to its number of runs, while the AOCC weighs each pair
+equally (EC-2). Weighing run i of pair p by w_i = 1/(|P| n_p), with n_p the
+pair's runs and |P| the group's pairs, gives the pair-weighted EAF
+
+    α_w(b, q) = Σ_i w_i 1[ q_i(b) ≥ q ].
+
+For every budget b its area over the quality axis is
+
+    ∫_0^1 α_w(b, q) dq = Σ_i w_i q_i(b),
+
+the continuum ECDF of [ecdf](ecdf.md) (EC-6), so its normalised volume over
+[b_lo, b_hi] × [0, 1] is the AOCC (EC-5). The AOCC is therefore the volume
+under the pair-weighted EAF. Both are computed from the same normalised
+quality with the same bounds, so they cannot disagree. When every pair has
+the same number of runs the two weightings are the same EAF.
+
 ## How IOHanalyzer implements it
 
 - `generate_data.EAF` (`R/DataSetList.R` 2020–2086): values from
@@ -136,6 +155,11 @@ can set both.
   true EAF as `moocore` returns it, at any budget. *Discretised*: evaluation
   and target axes are both discretised so the EAF is a matrix; default 50
   log-spaced budgets × 50 log-spaced values, both axes adjustable. Decided by the D6 review (dvermetten, 2026-11-06).
+- **EA-6.** A multi-function EAF weighs each run equally by default (pooled
+  runs), and each pair equally on request, which makes its volume the AOCC.
+  A clear warning is given when the pairs of a group do not all have the
+  same number of runs. Decided by the review of #45 (dvermetten,
+  2026-11-19).
 
 ## Questions answered by the D6 review
 
@@ -174,10 +198,23 @@ run metadata). The same bounds apply to AOCC through EC-5 (see
   dimension) pair, f is replaced by the normalised quality q of the continuum
   ECDF (EC-5) in a column `quality`, with the same default bounds
   (`targets.get_ecdf_targets`, so the suite bounds of TG-8 apply), and the
-  discretised value grid is linear in q over [0, 1]. Each run is one attainment
-  set, so a pair weighs in proportion to its runs. With `by` naming the pair
+  discretised value grid is linear in q over [0, 1]. With `by` naming the pair
   columns every group has one pair and the values stay f; differences are then
   taken within each pair.
+- Weighting (EA-6), the option `weighting` of every EAF function:
+  `"runs"` (default), each run one attainment set; `"pairs"`, each pair
+  equally. Discretised, `"pairs"` is a weighted mean, each run 1/n_p.
+  Precise, `moocore.eaf` has no weights, so each pair's runs are repeated up
+  to the least common multiple of the group's run counts (the surfaces are
+  then those of equally many runs per pair). Both warn, with the run counts
+  per pair, when a group's pairs have different numbers of runs, and say
+  whether the area under the EAF is the AOCC. A test checks that the
+  discretised `"pairs"` EAF, on a grid where the sums are exact integrals,
+  has the volume `get_ecdf_auc(continuous=True)` returns, and that the precise
+  one equals the EAF of the repeated runs. `get_ecdf_auc` itself is unchanged.
+  The AOCC uses only the pairs every group has by default (`pairs="common"`,
+  EC-2), the EAF each group's own pairs; they are the same when the groups
+  share their pairs.
 - The EA-4 bug cannot occur: there is no separate budget bound for the
   multi-function EAF.
 
