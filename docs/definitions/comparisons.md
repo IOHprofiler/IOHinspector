@@ -4,7 +4,8 @@ Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "KS tests with Holm correction", "Win-fraction heatmap"
 (and the dominance graph drawn from the same tests).
-Implemented in: I15.
+Implemented in: I15 (`iohinspector.metrics.ks_test`, `holm`, `get_ks_tests`,
+`get_win_fractions`).
 Sources: [IOHanalyzer], [R], [iohinspector]; see [references](references.md).
 Glicko-2 has its own page, [glicko2](glicko2.md).
 
@@ -39,9 +40,16 @@ largest vertical gap between two such curves. Under maximisation of values the
 samples are negated first.
 
 The exact setting is R's `ks.test(x, y, alternative = "greater", exact = TRUE)`
-(`psmirnov`), which also handles ties; the +∞ of failed runs are ties. Checked
-in R 4.3.3: x = (1, 2, 3, ∞, ∞), y = (2, 3, ∞, ∞, ∞) gives p = 0.8333 exact and
-0.8187 asymptotic. "Sufficiently small" is R's own rule: n · m < 10000.
+(`psmirnov`), which also handles ties; the +∞ of failed runs are ties.
+"Sufficiently small" is R's own rule: n · m < 10000.
+
+R 4.3.3 itself does not treat equal +∞ values as ties in the exact p-value: its
+tie pattern is `diff(sort(z)) != 0`, and ∞ − ∞ is NaN, so the pattern has NA
+there, which the C routine reads as "not tied". For x = (1, 2, 3, ∞, ∞),
+y = (2, 3, ∞, ∞, ∞) (D⁺ = 0.2) R gives p = 0.8333 exact; with the +∞ as ties,
+as R gives when 10⁹ stands in for ∞, p = 0.7183 (= 181/252). The asymptotic
+p-value, 0.8187, does not depend on ties. I15 follows the definition: equal
++∞ values are ties (found in I15; for the reviewer).
 
 ### Holm correction
 
@@ -176,6 +184,36 @@ offers robust-ranking bootstrap comparisons (`get_robustrank_over_time`,
 Remaining points for H1: "sufficiently small" is n · m < 10000 as in R's
 `ks.test`; the measure list in CM-5 is a proposal (the review named ERT and
 mean hitting time).
+
+## How iohinspector implements it (I15)
+
+`metrics/stats.py`:
+
+- `ks_test(x, y, exact=None)` returns (D⁺, p, method) for "x is better than
+  y". The exact p-value is a line-by-line port of R 4.3.3's
+  `psmirnov_exact_ties_upper` (`stats/src/ks.c`); the asymptotic one is R's
+  `1 − (1 − exp(−2 n D⁺²))`.
+- `holm(p)` is `p.adjust(p, "holm")`, NaN for a missing p-value.
+- `get_ks_tests(sample, value, by, view=..., higher_is_better=..., exact=...,
+  alpha=0.01, drop_failures=False)` takes the output of `get_runtime_sample` or
+  `get_value_sample`. Each `view` (for example one target) is one Holm family.
+  One row per ordered pair: the `by` columns of a, those of c with the suffix
+  `_vs`, `d_plus`, `p_value`, `method`, `p_adjusted`, `better` (S_ac, the
+  dominance-graph edge a → c) and `decision` (S_ac − S_ca, the heat map).
+  `drop_failures=True` is IOHanalyzer's behaviour (CM-2, golden tests only).
+- `get_win_fractions(data, targets, by, perspective=..., measure=..., k=10)`:
+  `MEASURES` is the registry of CM-5, the summary column per measure:
+  `aggregate_running_time` (`ert` → ERT, `mean`, `par_k`, `median`) or
+  `aggregate_convergence` (`mean`, `median`, `best`). Targets per (function,
+  dimension) pair, by default `get_target_dt`. W_ac is averaged over the pairs
+  both groups have; a = c is included (0.5).
+
+Golden tests (`tests/test_metrics/test_stats.py`): `KS_by_FV` and `KS_by_RT`
+on `ioh040_min`, `ioh040_max` and `ioh040_cons` with `exact=False` and
+`drop_failures=True` agree to 1e-12; under maximisation `KS_by_RT` is the
+transpose (CM-3). All `Heatmaps_*` files agree to 1e-12 with `measure="mean"`
+once the pairs are cut to IOHanalyzer's first n_functions matrices (the defect
+above).
 
 ## Test tolerance
 

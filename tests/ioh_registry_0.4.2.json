@@ -1,0 +1,57 @@
+{
+  "source": "https://github.com/IOHprofiler/IOHexperimenter/releases/download/v0.4.2/registry.json",
+  "sha256": "e61c7bcbf5380d3408cda1564e6c690fb6eade12f4b78003f030770703a0e9f6",
+  "note": "only target_bounds per suite; the rest of the registry is left out",
+  "schema_version": 1,
+  "ioh_version": "0.4.2",
+  "suites": {
+    "BBOB": {
+      "target_bounds": {
+        "scale": "log",
+        "relative_to_optimum": true,
+        "lower": 1e-08,
+        "upper": 100.0
+      }
+    },
+    "SBOX": {
+      "target_bounds": {
+        "scale": "log",
+        "relative_to_optimum": true,
+        "lower": 1e-08,
+        "upper": 100.0
+      }
+    },
+    "PBO": {
+      "target_bounds": {
+        "scale": "linear",
+        "relative_to_optimum": true,
+        "lower": 0.0,
+        "upper": null
+      }
+    },
+    "Submodular": {
+      "target_bounds": {
+        "scale": "linear",
+        "relative_to_optimum": false,
+        "lower": null,
+        "upper": null
+      }
+    },
+    "RealStarDiscrepancy": {
+      "target_bounds": {
+        "scale": "linear",
+        "relative_to_optimum": false,
+        "lower": null,
+        "upper": null
+      }
+    },
+    "IntegerStarDiscrepancy": {
+      "target_bounds": {
+        "scale": "linear",
+        "relative_to_optimum": false,
+        "lower": null,
+        "upper": null
+      }
+    }
+  }
+}

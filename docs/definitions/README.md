@@ -112,6 +112,7 @@ golden tests name the decision there.
 | TG-5 | Budget grids rounded, never truncated, include the maximum | no |
 | TG-6 | Explicit `perspective` argument; inverted `which` defaults and bug B1 not ported | yes (defaults) |
 | TG-7 | cocopp's runlength-based targets: enhancement after launch | – |
+| TG-8 | Default bounds from the IOHexperimenter suite registry (BBOB, SBOX: 1e-8 to 1e2 on Δf) | – (new) |
 
 ### ECDF, AUC, AOCC, ranks ([ecdf](ecdf.md))
 
@@ -125,6 +126,8 @@ golden tests name the decision there.
 | EC-6 | Current `get_data_ecdf` kept under a clear name, with EC-5 bounds | – |
 | EC-7 | No simulated restarts | no (cocopp: yes) |
 | EC-8 | Rank tables per pair, average ties, missing last | no |
+| EC-9 | Fixed-budget ECDF, inclusive (V(b) ≤ v), budgets per pair, exact | yes |
+| EC-10 | Fixed-budget AUC as exact normalised integral over [v_lo, v_hi] | yes |
 
 ### Distributions ([distributions](distributions.md))
 
@@ -188,7 +191,7 @@ golden tests name the decision there.
 | DS-8 | Result fields keep the service's names | – |
 | DS-9 | KS: scipy two-sided, exact when nₐ·n_b < 10 000, no tie jitter. AD: Scholz–Stephens midrank statistic, p from its limit distribution, held in [1e-5, 0.99999] | slightly (AD p) |
 | DS-10 | At least two values per sample; identical samples p = 1; group order by the mean of member means; k ≥ 2 | yes, edge cases |
-| DS-11 | Sequential pDSC as dsc-core (run pairs closer than ε → midpoint), runs paired up to the shorter sample; Monte Carlo: median p over seeded shuffles | yes (Monte Carlo) |
+| DS-11 | Sequential pDSC as dsc-core (run pairs closer than ε → midpoint), runs paired up to the shorter sample; Monte Carlo: upper median p over seeded shuffles | yes (Monte Carlo) |
 | DS-12 | `parametric_tests` always false; no paired t-test or ANOVA | only n ≤ 2 or tiny α |
 | DS-13 | k = 2: one-sided Wilcoxon (`wilcoxon-signed-rank-less`), scipy defaults, t = 0 | not recorded |
 | DS-14 | n < 2: no omnibus methods, "not enough problems" | not recorded |
