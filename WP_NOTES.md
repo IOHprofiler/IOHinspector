@@ -45,7 +45,7 @@ the ECDF data of `get_shapley_values` were hidden in a closure, so a marginal no
 built on the upper envelope could not be defined on them. Now
 `get_portfolio_ecdf(data, targets, by, ...)` returns `(players, ecdf, width)` and
 `envelope_value(ecdf, width)` is the default value; `get_shapley_values` is these two
-plus `shapley_values`. Tests, exact and sampled, against a direct computation over all orders:
+plus `shapley_values`. Tests against a direct computation over all orders (the marginal also sampled):
 - another value: the parallel portfolio, 1 − Π(1 − ECDF) per step;
 - another marginal, not a difference of values: the share of the budget axis on
   which a is strictly ahead of every member of S.

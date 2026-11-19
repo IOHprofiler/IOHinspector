@@ -270,9 +270,9 @@ Replaces each function value of an infeasible row by its penalised value: `relat
 
 ---
 
-### Portfolio and cumulative difference
+### Shapley values of portfolios
 
-Definitions: `docs/definitions/portfolio.md` (SH-1 to SH-4) and `docs/definitions/cdp.md` (CD-1 to CD-4).
+Definitions: `docs/definitions/portfolio.md` (SH-1 to SH-4).
 
 #### `get_shapley_values(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, marginal=None, exact_limit=15, samples=5, seed=None, **options)`
 The Shapley value of each group of `by` in the portfolio of all groups. A portfolio's value is the area under its virtual-best ECDF: per (function, dimension) pair and target, the largest single-target ECDF of a member, integrated over [b_lo, b_hi] as in `get_ecdf_auc` and summed. Values are divided by the value of all groups, so they sum to 1; exact up to `exact_limit` groups, sampled with `seed` above. `options` as in `get_ecdf`.
@@ -283,6 +283,20 @@ The Shapley value of each group of `by` in the portfolio of all groups. A portfo
 Shapley values of any game. `value` maps a boolean matrix of coalitions (one row each) to their values; `marginal(v, S, a)` defaults to v(S ∪ {a}) − v(S).
 
 **Returns:** `(phi, se)`, numpy arrays divided by v(N).
+
+#### `get_portfolio_ecdf(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, **options)`
+The ECDF data of the `get_shapley_values` game, to define another portfolio value or marginal contribution on with `shapley_values` (see "Another value or marginal contribution" in `portfolio.md`). Identical steps are merged.
+
+**Returns:** `(players, ecdf, width)`: the groups of `by`, the ECDF of each group on each step (groups × steps) and the step widths on the budget axis, divided by its length.
+
+#### `envelope_value(ecdf, width)`
+The default portfolio value on these data, v(S) = Σ width · max over S of ecdf, as a `value` for `shapley_values`.
+
+---
+
+### Cumulative difference plot
+
+Definitions: `docs/definitions/cdp.md` (CD-1 to CD-4).
 
 #### `get_cumulative_difference(data, *, target=None, budget=None, by=["algorithm_name"], maximization=False, subsample=True, seed=None, alpha=0.05, epsilon=1e-80, n_bootstrap=1000, fval_var="raw_y", eval_var="evaluations")`
 The cumulative difference plot of the two groups of `by` on one pair: runtimes to `target` (a failed run is the worst) or values at `budget`. The larger group is subsampled to the size of the smaller, with a warning, unless `subsample=False`.
