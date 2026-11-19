@@ -140,6 +140,17 @@ Deprecated in 0.2.0: use `get_ecdf(data, continuous=True, x_values=...)`. The co
 
 ### EAF
 
+The EAF and EAF differences of `docs/definitions/eaf.md` (EA-1 to EA-5).
+
+#### `get_eaf(data, by=["algorithm_name"], *, mode="precise", percentiles=(0, 10, ..., 100), eval_values=50, f_values=50, scale_eval_log=True, scale_f_log=True, targets=None, maximization=False, weighting="pairs", fval_var="raw_y", eval_var="evaluations")`
+The single-objective EAF of each group of `by`, on the runs' best-so-far traces. `mode="precise"`: the attainment surfaces at `percentiles` (`moocore.eaf`; levels as IOHanalyzer's `eaf::eafs`), columns `by`, `eval_var`, the value and `percentile`. `mode="discretised"`: the fraction of runs that reached each value within each budget, on 50 x 50 log-spaced budgets and values per pair by default, columns `by`, `eval_var`, the value and `eaf`. The value is `fval_var`, or the normalised quality `quality` (larger is better) when a group spans several (function, dimension) pairs. Then each pair weighs equally (`weighting="pairs"`, the default), as in the AOCC: the volume under the EAF is `get_ecdf_auc(continuous=True)`; or each run (`weighting="runs"`). Both warn when the pairs have different numbers of runs.
+
+#### `get_eaf_difference(data, by=["algorithm_name"], *, mode="precise", **options)`
+The difference of the EAFs of exactly two groups, A minus B for A and B minus A for B (`options` as in `get_eaf`). `mode="precise"`: the rectangles where it is constant (`moocore.eafdiff`), columns `by`, `x_min`, `y_min`, `x_max`, `y_max`, `eaf_diff`. `mode="discretised"`: on the grid of `get_eaf`, columns `by`, `eval_var`, the value and `eaf_diff`.
+
+#### `get_eaf_margin(data, by=["algorithm_name"], **options)`
+The margin of each group's EAF over the best of the other groups (two or more), on the grid of `get_eaf(mode="discretised")` (`options` as in `get_eaf`): positive where the group attains more often than every other. Columns `by`, `eval_var`, the value and `eaf_margin`. For two groups it equals the discretised `get_eaf_difference`.
+
 #### `get_discritized_eaf_single_objective(data, eval_var="evaluations", fval_var="raw_y", eval_min=1, eval_max=None, scale_eval_log=True, n_quantiles=100)`
 Generate discretized EAF data for single-objective optimization analysis.
 

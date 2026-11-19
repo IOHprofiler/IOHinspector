@@ -4,6 +4,21 @@
 
 ### New
 
+- EAF and EAF differences (`docs/definitions/eaf.md`): `metrics.get_eaf` is the
+  single-objective EAF of each group of `by` on the runs' best-so-far traces,
+  as attainment surfaces at IOHanalyzer's levels (`mode="precise"`, moocore) or
+  on a grid of budgets and values (`mode="discretised"`).
+  `metrics.get_eaf_difference` is the difference of the EAFs of exactly two
+  groups, as rectangles or on the grid. `metrics.get_eaf_margin` compares two or
+  more groups on the grid: each group's EAF minus the best of the others. A
+  group that spans several (function, dimension) pairs uses the normalised
+  quality of the continuum ECDF, each pair weighing equally by default
+  (`weighting="pairs"`), so the volume under the EAF is the AOCC, or each run
+  with `weighting="runs"`; a warning says when the pairs have different
+  numbers of runs. The precise mode weighs pairs, and compares groups of
+  different sizes, by repeating runs, up to `MAX_SETS` (100,000) attainment
+  sets.
+
 - Shapley values of algorithm portfolios (`docs/definitions/portfolio.md`):
   `metrics.get_shapley_values(data, targets, by)` gives each group's share of the
   area under the virtual-best ECDF, exact for any number of groups: the value is
@@ -66,6 +81,13 @@
   `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg; `metrics.hochberg` is
   Hochberg's correction, next to `holm`). They
   reproduce the published DSCTool example. scipy is now a direct dependency.
+
+### Fixed
+
+- `get_eaf_pareto_data` and `get_eaf_diff_data` read each run as one set when
+  its rows are not together (moocore needs them together), and
+  `get_eaf_diff_data` returns no rows instead of failing when there is no
+  difference.
 
 ### Deprecated
 
