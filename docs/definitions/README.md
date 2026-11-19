@@ -191,7 +191,7 @@ golden tests name the decision there.
 | DS-8 | Result fields keep the service's names | – |
 | DS-9 | KS: scipy two-sided, exact when nₐ·n_b < 10 000, no tie jitter. AD: Scholz–Stephens midrank statistic, p from its limit distribution, held in [1e-5, 0.99999] | slightly (AD p) |
 | DS-10 | At least two values per sample; identical samples p = 1; group order by the mean of member means; k ≥ 2 | yes, edge cases |
-| DS-11 | Sequential pDSC as dsc-core (run pairs closer than ε → midpoint), runs paired up to the shorter sample; Monte Carlo: median p over seeded shuffles | yes (Monte Carlo) |
+| DS-11 | Sequential pDSC as dsc-core (run pairs closer than ε → midpoint), runs paired up to the shorter sample; Monte Carlo: upper median p over seeded shuffles | yes (Monte Carlo) |
 | DS-12 | `parametric_tests` always false; no paired t-test or ANOVA | only n ≤ 2 or tiny α |
 | DS-13 | k = 2: one-sided Wilcoxon (`wilcoxon-signed-rank-less`), scipy defaults, t = 0 | not recorded |
 | DS-14 | n < 2: no omnibus methods, "not enough problems" | not recorded |

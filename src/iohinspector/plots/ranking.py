@@ -1,3 +1,4 @@
+import warnings
 from typing import Iterable, Optional, Sequence
 
 import polars as pl
@@ -58,7 +59,11 @@ def plot_tournament_ranking(
             dataframe used to create the plot.
     """
     # candlestick plot based on average and volatility
-    dt_elo = get_tournament_ratings(data, by, fid_vars, fval_var, nrounds, maximization)
+    with warnings.catch_warnings():  # the figures move to get_tournament_ranking (I20)
+        warnings.simplefilter("ignore", DeprecationWarning)
+        dt_elo = get_tournament_ratings(
+            data, by, fid_vars, fval_var, nrounds, maximization
+        )
     pdf = dt_elo.to_pandas()
 
     plot_args = _create_plot_args(

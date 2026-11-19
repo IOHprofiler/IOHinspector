@@ -14,8 +14,10 @@ This document provides a comprehensive reference of all functions available in t
   - [Multi-Objective](#multi-objective)
   - [Parameters, positions and penalties](#parameters-positions-and-penalties)
   - [Ranking](#ranking)
+  - [Statistical comparisons](#statistical-comparisons)
   - [Single Run](#single-run)
   - [Trajectory](#trajectory)
+  - [DSC (Deep Statistical Comparison)](#dsc)
   - [Utils](#metrics-utils)
 - [Plotting Functions](#plotting-functions)
   - [Attractor Network Plots](#attractor-network-plots)
@@ -281,6 +283,12 @@ Replaces each function value of an infeasible row by its penalised value: `relat
 
 ### Ranking
 
+#### `get_tournament_ranking(data, targets=None, by=["algorithm_name"], *, seed, perspective="fixed_target", method="glicko2", rounds=25, tau=0.5, maximization=False, ...)`
+Ratings of the groups of `by` from a tournament (`docs/definitions/glicko2.md`). Each round, on each (function, dimension) pair and target (`targets`: `function_id`, `dimension`, `target`; by default `get_target_dt`), every unordered pair of groups plays one game between one random run of each: the better runtime or value wins, a failure loses, equal values draw. Glicko-2 rates each round as a period (τ = `tau`); Elo (`method="elo"`, K = 20) rates game by game. Per group, best first: `rating`, `deviation`, `volatility` (null for Elo), `games`, `wins`, `draws`, `losses`.
+
+#### `glicko2(games, n_players, *, tau=0.5, init=(1500, 350, 0.06), rdmax=350)` and `elo(games, n_players, *, k=20, init=1500)`
+Ratings from a game list with columns `round`, `player`, `opponent` (0 .. n_players - 1) and `score` (the player's: 1, 0.5 or 0). `glicko2` is `PlayerRatings::glicko2`.
+
 #### `get_tournament_ratings(data, by=["algorithm_name"], fid_vars=["function_name"], fval_var="raw_y", nrounds=25, maximization=False)`
 Calculate ELO ratings from tournament-style algorithm competition.
 
@@ -321,6 +329,23 @@ Calculate robust ranking changes between evaluation timesteps.
 
 ---
 
+### Statistical comparisons
+
+#### `ks_test(x, y, *, exact=None)`
+One-sided two-sample KS test of "x is better (smaller) than y": `(d_plus, p, method)`. Exact when `n * m < 10000` (R's rule), else asymptotic; `inf` values are the largest and tie with each other.
+
+#### `holm(p)`
+Holm-adjusted p-values, as R's `p.adjust(p, "holm")`; NaN stays NaN and does not count.
+
+#### `hochberg(p)`
+Hochberg-adjusted p-values, as R's `p.adjust(p, "hochberg")`; NaN as in `holm`. Used by the DSC post-hoc test.
+
+#### `get_ks_tests(sample, value, by=["algorithm_name"], *, view=(), higher_is_better=False, exact=None, alpha=0.01, drop_failures=False)`
+Every ordered pair of groups of `by` in a sample (`get_runtime_sample`: `value="runtime"`, `view=["target"]`; `get_value_sample`: `value="value"`, `view=["budget"]`), Holm-corrected per view: the `by` columns, those of the other group with the suffix `_vs`, `n`, `m`, `d_plus`, `p_value`, `method`, `p_adjusted`, `better` (the dominance-graph edge) and `decision` (1, 0 or -1, the heat map).
+
+#### `get_win_fractions(data, targets=None, by=["algorithm_name"], *, perspective="fixed_target", measure=None, k=10, maximization=False, ...)`
+The fraction of targets on which each group beats each other group by `measure` (`MEASURES`: fixed target `ert` (default), `mean`, `par_k`, `median`; fixed budget `mean` (default), `median`, `best`), averaged over targets, then over (function, dimension) pairs: `by`, `by` with the suffix `_vs`, `win_fraction`, `n_pairs`.
+
 ### Single Run
 
 #### `get_heatmap_single_run_data(data, vars, eval_var="evaluations", var_mins=[-5], var_maxs=[5])`
@@ -354,6 +379,24 @@ Generate aligned performance trajectories for algorithm comparison over fixed ev
 
 **Returns:**
 - `pl.DataFrame`: DataFrame with aligned trajectory data where each row corresponds to a specific evaluation and performance value.
+
+---
+
+### DSC
+
+Definitions: `docs/definitions/dsc.md` (DS-1 to DS-14). Deep Statistical Comparison, computed locally (no DSCTool service). An algorithm is a group of `by`; a problem is a (function, dimension) pair; smaller values are better.
+
+#### `get_dsc_sample(data, *, perspective="fixed_target", targets=None, by=["algorithm_name"], na="par", k=10, maximization=False, fval_var="raw_y", eval_var="evaluations")`
+One value per run and problem: the runtime at the problem's target, or with `perspective="fixed_budget"` the best value at its budget (negated when maximising). A failed run counts as k times the run set's largest budget (`na="par"`), as the run set's ERT (`"ert"`) or is left out (`"remove"`). `targets` (`function_id`, `dimension`, `target`) defaults to `targets.get_target_dt`.
+
+#### `get_dsc_ranking(sample, *, by=["algorithm_name"], problem=["function_id", "dimension"], value="value", test="AD", alpha=0.05, epsilon=0.0, monte_carlo_iterations=0, seed=None)`
+DSC ranks per problem from pairwise AD or KS tests at level alpha / m; with `epsilon` > 0, practical DSC (sequential, or seeded Monte Carlo). **Returns:** `DscRanking` with `ranked_matrix` (problem, `by`, `rank`), `number_algorithms`, `valid_methods`, `parametric_tests` and `dropped_problems` (problems not every algorithm has).
+
+#### `get_dsc_omnibus(ranking, *, method=None, alpha=0.05)`
+Friedman, Friedman aligned ranks or Iman-Davenport (k >= 3), or the one-sided Wilcoxon test (k = 2), on the ranks. **Returns:** `DscOmnibus` with `method`, `message`, `p_value`, `t`, `algorithm_means` and `n`.
+
+#### `get_dsc_posthoc(omnibus)`
+Every algorithm as control against the others, with the statistic that matches the omnibus method. **Returns:** `DscPosthoc` with `omnibus`, `method` and `adjusted_p_values` (control `by`, other `by` with suffix `_vs`, `ZValue`, `UnadjustedPValue`, `Holm`, `Hochberg`; small means the control is better).
 
 ---
 
