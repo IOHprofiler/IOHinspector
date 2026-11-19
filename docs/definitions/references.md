@@ -172,7 +172,8 @@ Corrections to the starting list in `plan/iohinspector.md` are marked
   Reference implementation of [Arza2023]. Checked: CRAN.
 - **[eaf]**, **[moocore]**: the R package `eaf` (used by IOHanalyzer) and the
   Python package `moocore` (a dependency of iohinspector), both maintained by
-  M. López-Ibáñez. Versions are pinned in I03 and I17.
+  M. López-Ibáñez. `eaf` 2.5 is pinned in I03; I17 checked `moocore`
+  0.1.8 and 0.3.2 against it (see [eaf](eaf.md)).
 - **[Shapley1953]** L. S. Shapley. A value for n-person games. In H. W. Kuhn,
   A. W. Tucker (eds.), *Contributions to the Theory of Games II*, Annals of
   Mathematics Studies 28, Princeton University Press, pp. 307–318, 1953.

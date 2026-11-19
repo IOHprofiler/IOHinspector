@@ -47,8 +47,19 @@ Every EAF output, the EAF and the EAF difference alike, comes in two modes
 For two run sets A and B, Δ(b, y) = α_A(b, y) − α_B(b, y). It is reported
 either exactly, as the rectangles where Δ is constant (`eafdiff` with
 `rectangles = TRUE`), or on a grid of 50 log-spaced budgets × 50 log-spaced
-values. With more than two algorithms, each algorithm is compared with the
-pointwise maximum of the others: Δ_a = α_a − max_{c ≠ a} α_c.
+values.
+
+### EAF margin (more than two groups)
+
+With more than two algorithms there is no single difference. Each algorithm
+is compared with the pointwise maximum of the others, its *margin*:
+M_a = α_a − max_{c ≠ a} α_c. M_a > 0 where a attains more often than every
+other algorithm (by its lead over the next best) and M_a < 0 where another
+attains more often (by how far a is behind the best). This is a comparison of
+several EAFs rather than a difference of two, so it has its own name and
+function; for two algorithms it equals the difference. It is discretised only
+(an exact version would need every group's EAF on the union of all
+coordinates).
 
 ### Several functions
 
@@ -58,6 +69,25 @@ instead of f. Its area is the AOCC (equivalence in [ecdf](ecdf.md)). The
 default bounds are 10² and 10⁻⁸ on Δf = f − f_opt for BBOB data (AL-7), as in
 COCO's grid; for other data they are the observed range of each pair. The user
 can set both.
+
+### Weighting of the pairs, and the AOCC
+
+Pooling the runs of several pairs makes each run one attainment set, so a pair
+weighs in proportion to its number of runs, while the AOCC weighs each pair
+equally (EC-2). Weighing run i of pair p by w_i = 1/(|P| n_p), with n_p the
+pair's runs and |P| the group's pairs, gives the pair-weighted EAF
+
+    α_w(b, q) = Σ_i w_i 1[ q_i(b) ≥ q ].
+
+For every budget b its area over the quality axis is
+
+    ∫_0^1 α_w(b, q) dq = Σ_i w_i q_i(b),
+
+the continuum ECDF of [ecdf](ecdf.md) (EC-6), so its normalised volume over
+[b_lo, b_hi] × [0, 1] is the AOCC (EC-5). The AOCC is therefore the volume
+under the pair-weighted EAF. Both are computed from the same normalised
+quality with the same bounds, so they cannot disagree. When every pair has
+the same number of runs the two weightings are the same EAF.
 
 ## How IOHanalyzer implements it
 
@@ -111,9 +141,12 @@ can set both.
 - **EA-1.** α(b, y) on best-so-far values, with levels at 0, 10, …, 100 % by
   default, computed with `moocore` once its level convention is checked
   against `eaf` (I17).
-- **EA-2.** EAF differences in the two modes of EA-5 (rectangles, and the
-  discretised matrix with a 50 × 50 log grid by default); with more than two
-  algorithms, against the pointwise maximum of the others.
+- **EA-2.** The EAF difference is of exactly two groups, in the two modes of
+  EA-5 (rectangles, and the discretised matrix with a 50 × 50 log grid by
+  default). More than two groups are compared by the EAF margin, each against
+  the pointwise maximum of the others, discretised only. Decided by the review
+  of #45 (dvermetten, 2026-11-19): the multi-group comparison is not a
+  difference of EAFs and is a separate function with a clearer name.
 - **EA-3.** Multi-function EAFs use the normalised quality q with fixed
   bounds per pair. For BBOB data the default bounds are 10² (upper) and 10⁻⁸
   (lower) on Δf; otherwise the observed range per pair. Decided by the D6 review (dvermetten, 2026-11-06).
@@ -122,6 +155,11 @@ can set both.
   true EAF as `moocore` returns it, at any budget. *Discretised*: evaluation
   and target axes are both discretised so the EAF is a matrix; default 50
   log-spaced budgets × 50 log-spaced values, both axes adjustable. Decided by the D6 review (dvermetten, 2026-11-06).
+- **EA-6.** A multi-function EAF weighs each pair equally by default, so
+  its volume is the AOCC, and each run equally on request (pooled runs). A
+  clear warning is given when the pairs of a group do not all have the same
+  number of runs. The option was asked for by the review of #45 (dvermetten,
+  2026-11-19); the user made pairs the default (2026-11-19).
 
 ## Questions answered by the D6 review
 
@@ -136,6 +174,110 @@ review did not say how BBOB data is recognised; TG-8 of [targets](targets.md)
 settles it (the suite name in the run metadata, matched against the
 IOHexperimenter suite registry). The same bounds apply to AOCC through EC-5 (see
 [ecdf](ecdf.md)).
+
+## Implementation (I17)
+
+`iohinspector.metrics`, in `metrics/eaf.py`:
+
+- `get_eaf(data, by, mode=...)`: the EAF of each group of `by` (EA-1). Each
+  run's attainment set is its best-so-far trace: its first row and every row
+  where the best-so-far value improves; before its first row a run has
+  attained nothing (AL-5). `mode="precise"` gives the attainment surfaces at
+  `percentiles` (default 0, 10, …, 100) from `moocore.eaf`;
+  `mode="discretised"` gives α on a grid of budgets × values (EA-5): 50
+  log-spaced budgets over each pair's logged evaluations and 50 log-spaced
+  values over its logged values by default (`eval_values`, `f_values`: a
+  count or the values themselves).
+- `get_eaf_difference(data, by, mode=...)`: Δ of EA-2 for exactly two
+  groups, once for each (Δ_B = −Δ_A), in the same two modes. Precise: the
+  rectangles of `moocore.eafdiff` where Δ is constant. Discretised: Δ on the
+  grid of `get_eaf`. Other numbers of groups raise `ValueError`.
+- `get_eaf_margin(data, by, **options)`: the margin M_a of EA-2 for two or
+  more groups, column `eaf_margin`, on the grid of `get_eaf`; for two groups
+  it is the discretised `get_eaf_difference`.
+- Several pairs (EA-3): when a group of `by` spans more than one (function,
+  dimension) pair, f is replaced by the normalised quality q of the continuum
+  ECDF (EC-5) in a column `quality`, with the same default bounds
+  (`targets.get_ecdf_targets`, so the suite bounds of TG-8 apply), and the
+  discretised value grid is linear in q over [0, 1]. With `by` naming the pair
+  columns every group has one pair and the values stay f; differences are then
+  taken within each pair.
+- Weighting (EA-6), the option `weighting` of every EAF function:
+  `"pairs"` (default), each pair equally, so the volume under the EAF is the
+  AOCC without an option; `"runs"`, each run one attainment set.
+  Discretised, `"pairs"` is a weighted mean, each run 1/n_p. Precise,
+  `moocore.eaf` has no weights, so each pair's runs are repeated up to the
+  least common multiple of the group's run counts (the surfaces are then
+  those of equally many runs per pair). The repetition is capped at
+  `MAX_SETS` = 100,000 attainment sets in all; above it a `ValueError`
+  suggests `mode="discretised"`, which weighs the runs instead. Both
+  weightings warn, with the run counts per pair, when a group's pairs have
+  different numbers of runs, and say whether the area under the EAF is the
+  AOCC. A test checks that the
+  discretised `"pairs"` EAF, on a grid where the sums are exact integrals,
+  has the volume `get_ecdf_auc(continuous=True)` returns, and that the precise
+  one equals the EAF of the repeated runs. `get_ecdf_auc` itself is unchanged.
+  The AOCC uses only the pairs every group has by default (`pairs="common"`,
+  EC-2), the EAF each group's own pairs; they are the same when the groups
+  share their pairs.
+- The EA-4 bug cannot occur: there is no separate budget bound for the
+  multi-function EAF.
+
+Checks of `moocore` 0.1.8 and 0.3.2, as EA-1 requires (the golden tests
+repeat them for the installed version):
+
+- On IOHanalyzer's own inputs (each run's best-so-far value at 20 budgets of
+  the pair) `moocore.eaf` returns IOHanalyzer's surfaces exactly, so it maps
+  percentages to levels as `eaf::eafs` does: the surface at p % is attained by
+  at least ⌈p n / 100⌉ of the n runs, and by at least one. With 5 runs, 0, 10
+  and 20 % are the same surface.
+- `moocore.eaf` reads a set from consecutive rows; interleaved rows give a
+  wrong EAF. iohinspector sorts by run first. The 0.0.8 functions
+  `get_eaf_pareto_data` and `get_eaf_diff_data` did not, and now do.
+- `moocore.eafdiff` assumes both sides have equally many sets (it splits the
+  sets in half), and counts Δ in sets. With n_A ≠ n_B runs each side's runs
+  are repeated up to lcm(n_A, n_B), and Δ is the count divided by that. As
+  for the pair weighting (EA-6), more than `MAX_SETS` sets in all raise a
+  `ValueError` that suggests `mode="discretised"`.
+- `moocore.eafdiff` fails when there is no rectangle at all; that is an empty
+  result. Rectangles with Δ = 0 are kept, as `eaf::eafdiff` keeps them.
+
+Golden tests (`tests/test_metrics/test_eaf.py`) on `ioh040_min`,
+`ioh040_max`, `ioh040_cons` and `ioh040_pos`:
+
+- `EAF`, `EAF_logx`: equal, except one value of `ioh040_min` in the 17th
+  digit, because IOHanalyzer takes a run's final best value from the JSON
+  summary rather than the `.dat` row.
+- `EAF_Difference`: equal on the minimisation fixtures. IOHanalyzer's
+  `generate_data.EAF_Difference` ignores maximisation (it always minimises), so
+  on `ioh040_max` the test reproduces it with `maximization=False` and checks
+  that the agreed result differs.
+- `EAF_diff_Approximate`, which with more than two algorithms is the margin
+  (`get_eaf_margin`): equal to 1e-12 on IOHanalyzer's grid. Its value grid
+  differs from `seq_fv` at the ends (`10^log10(x)` is 1 ulp off; a lower end of
+  0 becomes 1e-12, TG-3), which matters where a grid value equals a logged
+  value, so the test passes IOHanalyzer's grid. Under maximisation IOHanalyzer
+  labels the values in reverse order, because `get_RT_summary` returns the
+  success rates sorted by target; the test undoes that.
+- `ECDF_From_EAF` (the EAF-based ECDF) is not ported; the continuum ECDF of
+  [ecdf](ecdf.md) is that view.
+
+The 0.0.8 functions are kept unchanged, without a deprecation, because none
+gives the output of a new call:
+
+- `get_discritized_eaf_single_objective`: on its quality levels (bounds 10⁻⁸
+  and 10²) it equals `get_eaf(mode="discretised")` with the matching budgets
+  and values, except at q = 0, which it counts as attained by every run, also
+  by runs worse than 10² and runs with no value yet (`transform_fval` clips
+  and fills with 0); `get_eaf` counts only runs that reached the value. It
+  also uses the fixed quality on a single pair, where `get_eaf` uses f, and
+  returns a wide table, one column per budget. A test checks this on
+  `ioh040_cons`.
+- `get_eaf_data`: the aligned values at 50 budgets, not an EAF.
+- `get_eaf_pareto_data`, `get_eaf_diff_data`: the bi-objective EAF and EAF
+  difference of any two objective columns, one point set per run; `get_eaf`
+  and `get_eaf_difference` take the runs' best-so-far traces in (evaluations,
+  f) and groups of `by`.
 
 ## Test tolerance
 
