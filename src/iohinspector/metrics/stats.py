@@ -13,7 +13,14 @@ from .distributions import _split
 from .fixed_budget import aggregate_convergence
 from .fixed_target import aggregate_running_time
 
-__all__ = ["MEASURES", "get_ks_tests", "get_win_fractions", "holm", "ks_test"]
+__all__ = [
+    "MEASURES",
+    "get_ks_tests",
+    "get_win_fractions",
+    "hochberg",
+    "holm",
+    "ks_test",
+]
 
 #: R's rule for an exact p-value (``ks.test``): n m below this (CM-1).
 EXACT_BELOW = 10000
@@ -80,6 +87,19 @@ def holm(p) -> np.ndarray:
     """Holm's step-down adjustment of the p-values ``p`` (R's
     ``p.adjust(p, "holm")``). NaN values stay NaN and do not count towards the
     family size."""
+    return _adjust(p, step_up=False)
+
+
+def hochberg(p) -> np.ndarray:
+    """Hochberg's step-up adjustment of the p-values ``p`` (R's
+    ``p.adjust(p, "hochberg")``), with NaN values as in ``holm``."""
+    return _adjust(p, step_up=True)
+
+
+def _adjust(p, *, step_up: bool) -> np.ndarray:
+    """The i-th smallest of the n p-values times n - i + 1, made monotone: by a
+    running maximum from the smallest (Holm) or a running minimum from the
+    largest (Hochberg), capped at 1."""
     p = np.asarray(p, dtype=float)
     out = p.copy()
     ok = ~np.isnan(p)
@@ -87,9 +107,13 @@ def holm(p) -> np.ndarray:
     n = len(q)
     if n > 1:
         order = np.argsort(q, kind="stable")
-        adjusted = np.minimum(1, np.maximum.accumulate((n - np.arange(n)) * q[order]))
+        scaled = (n - np.arange(n)) * q[order]
+        if step_up:
+            adjusted = np.minimum.accumulate(scaled[::-1])[::-1]
+        else:
+            adjusted = np.maximum.accumulate(scaled)
         q = np.empty(n)
-        q[order] = adjusted
+        q[order] = np.minimum(1, adjusted)
         out[ok] = q
     return out
 

@@ -15,6 +15,7 @@ from iohinspector.metrics import (
     get_runtime_sample,
     get_value_sample,
     get_win_fractions,
+    hochberg,
     holm,
     ks_test,
 )
@@ -99,6 +100,15 @@ def test_holm_matches_r():
     np.testing.assert_allclose(holm([0.5, 0.5, 0.01, 0.02]), [1, 1, 0.04, 0.06])
     assert holm([0.3]).tolist() == [0.3]
     assert holm([]).tolist() == []
+
+
+def test_hochberg_matches_r():
+    p = hochberg([0.01, np.nan, 0.04, 0.03, 0.2, 0.001])
+    r = [0.04, np.nan, 0.08, 0.08, 0.2, 0.005]  # R 4.3.3 p.adjust(p, "hochberg")
+    np.testing.assert_allclose(p, r, rtol=1e-15)
+    np.testing.assert_allclose(hochberg([0.03, 0.01, 0.05, 0.02, 0.04]), [0.05] * 5)
+    assert hochberg([0.6, 0.9]).tolist() == [0.9, 0.9]
+    assert hochberg([0.3]).tolist() == [0.3]
 
 
 def _sample(groups: dict[str, list[float]], value: str = "runtime") -> pl.DataFrame:

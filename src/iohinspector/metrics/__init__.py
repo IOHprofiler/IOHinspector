@@ -1,3 +1,4 @@
+from .dsc import get_dsc_omnibus, get_dsc_posthoc, get_dsc_ranking, get_dsc_sample
 from .utils import (
     get_sequence,
     group_label,
@@ -32,7 +33,14 @@ from .ranking import (
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
-from .stats import MEASURES, get_ks_tests, get_win_fractions, holm, ks_test
+from .stats import (
+    MEASURES,
+    get_ks_tests,
+    get_win_fractions,
+    hochberg,
+    holm,
+    ks_test,
+)
 from .parameters import (
     apply_penalty,
     get_logged_rows,
@@ -72,6 +80,7 @@ __all__ = [
     "get_win_fractions",
     "glicko2",
     "group_label",
+    "hochberg",
     "holm",
     "ks_test",
     "normalize_objectives",
@@ -80,4 +89,8 @@ __all__ = [
     "get_logged_rows",
     "get_parameter_sample",
     "get_parameter_summary",
+    "get_dsc_sample",
+    "get_dsc_ranking",
+    "get_dsc_omnibus",
+    "get_dsc_posthoc",
 ]
