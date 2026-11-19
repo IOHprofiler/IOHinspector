@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- Deep Statistical Comparison, computed locally (`docs/definitions/dsc.md`):
+  `metrics.get_dsc_sample` (one value per run and problem; failed runs as
+  PAR-k, k = 10 by default, ERT or removed), `get_dsc_ranking` (AD or KS ranks
+  per problem, practical DSC with a seed), `get_dsc_omnibus` (Friedman,
+  aligned ranks, Iman-Davenport, or Wilcoxon for two algorithms) and
+  `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg). They
+  reproduce the published DSCTool example. scipy is now a direct dependency.
+
 ## 0.2.1
 
 ### New

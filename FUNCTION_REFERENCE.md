@@ -16,6 +16,7 @@ This document provides a comprehensive reference of all functions available in t
   - [Ranking](#ranking)
   - [Single Run](#single-run)
   - [Trajectory](#trajectory)
+  - [DSC (Deep Statistical Comparison)](#dsc)
   - [Utils](#metrics-utils)
 - [Plotting Functions](#plotting-functions)
   - [Attractor Network Plots](#attractor-network-plots)
@@ -344,6 +345,24 @@ Generate aligned performance trajectories for algorithm comparison over fixed ev
 
 **Returns:**
 - `pl.DataFrame`: DataFrame with aligned trajectory data where each row corresponds to a specific evaluation and performance value.
+
+---
+
+### DSC
+
+Definitions: `docs/definitions/dsc.md` (DS-1 to DS-14). Deep Statistical Comparison, computed locally (no DSCTool service). An algorithm is a group of `by`; a problem is a (function, dimension) pair; smaller values are better.
+
+#### `get_dsc_sample(data, *, perspective="fixed_target", targets=None, by=["algorithm_name"], na="par", k=10, maximization=False, fval_var="raw_y", eval_var="evaluations")`
+One value per run and problem: the runtime at the problem's target, or with `perspective="fixed_budget"` the best value at its budget (negated when maximising). A failed run counts as k times the run set's largest budget (`na="par"`), as the run set's ERT (`"ert"`) or is left out (`"remove"`). `targets` (`function_id`, `dimension`, `target`) defaults to `targets.get_target_dt`.
+
+#### `get_dsc_ranking(sample, *, by=["algorithm_name"], problem=["function_id", "dimension"], value="value", test="AD", alpha=0.05, epsilon=0.0, monte_carlo_iterations=0, seed=None)`
+DSC ranks per problem from pairwise AD or KS tests at level alpha / m; with `epsilon` > 0, practical DSC (sequential, or seeded Monte Carlo). **Returns:** `DscRanking` with `ranked_matrix` (problem, `by`, `rank`), `number_algorithms`, `valid_methods`, `parametric_tests` and `dropped_problems` (problems not every algorithm has).
+
+#### `get_dsc_omnibus(ranking, *, method=None, alpha=0.05)`
+Friedman, Friedman aligned ranks or Iman-Davenport (k >= 3), or the one-sided Wilcoxon test (k = 2), on the ranks. **Returns:** `DscOmnibus` with `method`, `message`, `p_value`, `t`, `algorithm_means` and `n`.
+
+#### `get_dsc_posthoc(omnibus)`
+Every algorithm as control against the others, with the statistic that matches the omnibus method. **Returns:** `DscPosthoc` with `omnibus`, `method` and `adjusted_p_values` (control `by`, other `by` with suffix `_vs`, `ZValue`, `UnadjustedPValue`, `Holm`, `Hochberg`; small means the control is better).
 
 ---
 
