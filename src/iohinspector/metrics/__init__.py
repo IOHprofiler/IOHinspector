@@ -1,3 +1,4 @@
+from .dsc import get_dsc_omnibus, get_dsc_posthoc, get_dsc_ranking, get_dsc_sample
 from .utils import (
     get_sequence,
     group_label,
@@ -14,7 +15,14 @@ from .distributions import (
     get_value_sample,
     get_violin,
 )
-from .ecdf import get_data_ecdf, get_ecdf, get_ecdf_auc, get_rank_table
+from .ecdf import (
+    get_data_ecdf,
+    get_ecdf,
+    get_ecdf_auc,
+    get_fixed_budget_ecdf,
+    get_fixed_budget_ecdf_auc,
+    get_rank_table,
+)
 from .eaf import (
     get_discritized_eaf_single_objective,
     get_eaf,
@@ -25,13 +33,24 @@ from .eaf import (
     get_eaf_diff_data,
 )
 from .ranking import (
+    elo,
+    get_tournament_ranking,
     get_tournament_ratings,
+    glicko2,
     get_robustrank_over_time,
     get_robustrank_changes,
 )
 from .attractor_network import get_attractor_network
 from .trajectory import get_trajectory
 from .single_run import get_heatmap_single_run_data
+from .stats import (
+    MEASURES,
+    get_ks_tests,
+    get_win_fractions,
+    hochberg,
+    holm,
+    ks_test,
+)
 from .parameters import (
     apply_penalty,
     get_logged_rows,
@@ -40,7 +59,9 @@ from .parameters import (
 )
 
 __all__ = [
+    "MEASURES",
     "add_normalized_objectives",
+    "elo",
     "aggregate_convergence",
     "aggregate_running_time",
     "get_aocc",
@@ -55,23 +76,36 @@ __all__ = [
     "get_eaf_pareto_data",
     "get_ecdf",
     "get_ecdf_auc",
+    "get_fixed_budget_ecdf",
+    "get_fixed_budget_ecdf_auc",
     "get_heatmap_single_run_data",
     "get_rank_table",
     "get_overview",
     "get_histogram",
+    "get_ks_tests",
     "get_robustrank_changes",
     "get_robustrank_over_time",
     "get_runtime_sample",
     "get_sequence",
+    "get_tournament_ranking",
     "get_tournament_ratings",
     "get_trajectory",
     "get_value_sample",
     "get_violin",
+    "get_win_fractions",
+    "glicko2",
     "group_label",
+    "hochberg",
+    "holm",
+    "ks_test",
     "normalize_objectives",
     "transform_fval",
     "apply_penalty",
     "get_logged_rows",
     "get_parameter_sample",
     "get_parameter_summary",
+    "get_dsc_sample",
+    "get_dsc_ranking",
+    "get_dsc_omnibus",
+    "get_dsc_posthoc",
 ]

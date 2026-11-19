@@ -3,7 +3,8 @@
 Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix row: "Glicko-2 ranking" (iohinspector has Elo instead).
-Implemented in: I15.
+Implemented in: I15 (`iohinspector.metrics.get_tournament_ranking`, `glicko2`,
+`elo`).
 Sources: [IOHanalyzer], [PlayerRatings], [Glickman2022], [iohinspector]; see
 [references](references.md).
 
@@ -154,6 +155,34 @@ standard deviation of the ratings over the last 5 % of rounds.
 Remaining points for H1: τ = 0.5 (Glickman's example value) is my pick within
 0.3–1.2; the Elo defaults (K = 20, 1500, scale 400) are skelo's, because
 iohinspector 0.0.8 uses them.
+
+## How iohinspector implements it (I15)
+
+`metrics/ranking.py`:
+
+- `fmin(f, a, b, tol)` is R 4.3.3's `optimize` (`Brent_fmin`, a non-finite
+  value counts as the largest double), line by line.
+- `glicko2(games, n_players, tau=0.5, init=(1500, 350, 0.06), rdmax=350)` is
+  `PlayerRatings::glicko2` 1.1-0 with γ = 0, on a game list (`round`, `player`,
+  `opponent`, `score`). Each player's sums are taken in game order, as in its C
+  routine.
+- `elo(games, n_players, k=20, init=1500)` rates the games in the given order.
+  The spread is the standard deviation of a player's ratings after its games
+  in the last 5 % of the rounds, at least the last round.
+- `get_tournament_ranking(data, targets, by, seed=..., perspective=...,
+  method="glicko2", rounds=25, tau=0.5)` plays GL-1. Targets per (function,
+  dimension) pair, by default `get_target_dt`; several per pair each add one
+  game per round. Groups, pairs and targets are visited in sorted order and
+  the draws come from `numpy.random.default_rng(seed)`, so a seed always gives
+  the same games. A fixed-budget run without a value yet counts as a failure.
+- `get_tournament_ratings` (0.0.8, Elo on raw rows) is deprecated.
+
+Golden tests (`tests/test_metrics/test_glicko2.py`) feed the six recorded game
+lists `glicko2_games_by_*` into `glicko2(tau=1.2)`: games, wins, draws and
+losses match exactly; rating, deviation and volatility match PlayerRatings bit
+for bit or to about 1e-11 relative, depending on the platform's C library
+(`exp`, `log`); the test uses 1e-9. Glickman's example gives
+PlayerRatings' values above to all printed digits.
 
 ## Test tolerance
 

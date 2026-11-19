@@ -1,7 +1,8 @@
 """Target and budget grids (``docs/definitions/targets.md``, TG-*).
 
 Ports of IOHanalyzer's ``seq_FV``, ``seq_RT``, ``get_ECDF_targets`` and
-``get_target_dt``, plus the COCO ``bbob`` grid.
+``get_target_dt``, plus the COCO ``bbob`` grid and the default bounds of the
+IOHexperimenter suite registry (TG-8).
 """
 
 import warnings
@@ -11,11 +12,24 @@ from decimal import Decimal, localcontext
 import numpy as np
 import polars as pl
 
-__all__ = ["bbob_targets", "get_ecdf_targets", "get_target_dt", "seq_fv", "seq_rt"]
+__all__ = [
+    "bbob_targets",
+    "get_ecdf_budgets",
+    "get_ecdf_targets",
+    "get_target_dt",
+    "seq_fv",
+    "seq_rt",
+]
 
 PAIR = ["function_id", "dimension"]
 #: Lower end of log-spaced targets when the data has no positive value (TG-3).
 LOG_FLOOR = 1e-12
+#: Default target bounds (lower, upper) per suite, upper-case name (TG-8): the
+#: ``target_bounds`` of the IOHexperimenter suite registry (ioh 0.4.2) for the
+#: suites that give both. They are log-scale precisions f - f_opt, which the
+#: IOHexperimenter and COCO readers store in ``raw_y``. ``tests/test_targets.py``
+#: checks this table against the registry file.
+SUITE_BOUNDS = {"BBOB": (1e-8, 1e2), "SBOX": (1e-8, 1e2)}
 
 
 def spaced(lower: float, upper: float, n: int, log: bool = False) -> np.ndarray:
@@ -85,25 +99,70 @@ def bbob_targets() -> np.ndarray:
         return np.array([float(Decimal(10) ** e) for e in exponents])
 
 
-def get_ecdf_targets(
+def _suite_bounds(suites: Iterable[str | None]) -> tuple[float | None, float | None]:
+    """The registry's bounds of a pair whose runs are all of one suite in
+    ``SUITE_BOUNDS`` (TG-8), else none."""
+    names = {str(s).upper() for s in suites}
+    if len(names) != 1:
+        return None, None
+    return SUITE_BOUNDS.get(names.pop(), (None, None))
+
+
+def get_ecdf_targets(  # pylint: disable=too-many-arguments
     data: pl.DataFrame,
     kind: str = "log-linear",
     *,
     n: int = 10,
+    lower: float | None = None,
+    upper: float | None = None,
     fval_var: str = "raw_y",
 ) -> pl.DataFrame:
     """Targets per (function, dimension) pair (TG-1, TG-2): ``kind``
     ``"log-linear"`` or ``"linear"`` (``n`` targets over the pair's observed
-    values), or ``"bbob"`` (the 51 COCO targets)."""
+    values), or ``"bbob"`` (the 51 COCO targets).
+
+    A pair whose runs are all of a suite with registry bounds (``SUITE_BOUNDS``:
+    BBOB and SBOX, 1e-8 to 1e2, matched without regard to case) spans those
+    instead of its observed values (TG-8); the suite comes from a ``suite`` column
+    of ``data``. ``lower`` and ``upper`` replace either bound for every pair.
+    """
     if kind not in ("log-linear", "linear", "bbob"):
         raise ValueError(f"kind {kind!r}: log-linear, linear or bbob")
-    grouped = data.group_by(PAIR, maintain_order=True).agg(pl.col(fval_var))
-    targets = [
-        bbob_targets() if kind == "bbob" else seq_fv(v, n, log=kind == "log-linear")
-        for v in grouped[fval_var]
-    ]
-    targets = grouped.drop(fval_var).with_columns(target=pl.Series(targets))
+    if "suite" not in data.columns:
+        data = data.with_columns(suite=pl.lit(None, pl.String))
+    grouped = data.group_by(PAIR, maintain_order=True).agg(
+        pl.col(fval_var), pl.col("suite").unique()
+    )
+    log = kind == "log-linear"
+    targets = []
+    for values, suites in zip(grouped[fval_var], grouped["suite"]):
+        lo, hi = _suite_bounds(suites)
+        lo = lo if lower is None else lower
+        hi = hi if upper is None else upper
+        targets.append(
+            bbob_targets()
+            if kind == "bbob"
+            else seq_fv(values, n, log=log, lower=lo, upper=hi)
+        )
+    targets = grouped.select(PAIR).with_columns(target=pl.Series(targets))
     return targets.explode("target").sort(PAIR, maintain_order=True)
+
+
+def get_ecdf_budgets(
+    data: pl.DataFrame,
+    n: int = 10,
+    *,
+    log: bool = True,
+    eval_var: str = "evaluations",
+) -> pl.DataFrame:
+    """Budgets per (function, dimension) pair for the fixed-budget ECDF (EC-9):
+    ``n`` from the pair's smallest to its largest logged evaluation, log-spaced
+    or linear, rounded as ``seq_rt`` (TG-5). Columns ``function_id``,
+    ``dimension`` and ``budget``."""
+    grouped = data.group_by(PAIR, maintain_order=True).agg(pl.col(eval_var))
+    budgets = [seq_rt(e, n, log=log) for e in grouped[eval_var]]
+    budgets = grouped.drop(eval_var).with_columns(budget=pl.Series(budgets))
+    return budgets.explode("budget").sort(PAIR, maintain_order=True)
 
 
 def get_target_dt(  # pylint: disable=too-many-arguments
