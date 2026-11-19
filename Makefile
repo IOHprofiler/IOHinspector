@@ -37,6 +37,8 @@ golden-image: golden-ctx
 golden-r: golden-image
 	$(DOCKER) run --rm -u $$(id -u):$$(id -g) -v $(GOLDEN):/work $(IMAGE) \
 	  Rscript /work/r/generate.R /work/fixtures /work/iohanalyzer
+	$(DOCKER) run --rm -u $$(id -u):$$(id -g) -v $(GOLDEN):/work $(IMAGE) \
+	  Rscript /work/r/rvcompare.R /work/rvcompare
 
 golden-venv:
 	test -x $(GOLDEN_PY) || uv venv --python 3.11 $(GOLDEN_VENV)
@@ -51,5 +53,5 @@ golden-fixtures: golden-venv
 
 # Regenerate and fail if any committed output changes or an uncommitted one appears.
 golden-check: golden
-	git diff --exit-code --stat -- tests/golden/iohanalyzer tests/golden/cocopp tests/golden/fixtures
+	git diff --exit-code --stat -- tests/golden/iohanalyzer tests/golden/rvcompare tests/golden/cocopp tests/golden/fixtures
 	test -z "$$(git ls-files --others --exclude-standard -- tests/golden)"

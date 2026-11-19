@@ -13,6 +13,7 @@ This document provides a comprehensive reference of all functions available in t
   - [Fixed Target](#fixed-target)
   - [Multi-Objective](#multi-objective)
   - [Parameters, positions and penalties](#parameters-positions-and-penalties)
+  - [Portfolio and cumulative difference](#portfolio-and-cumulative-difference)
   - [Ranking](#ranking)
   - [Statistical comparisons](#statistical-comparisons)
   - [Single Run](#single-run)
@@ -279,6 +280,46 @@ The raw rows where every one of `columns` has a value: two columns for a correla
 
 #### `apply_penalty(data, method="relative", *, factor=1.0, exponent=1.0, feasible="zero", maximization=False, violation="violation", fval_var="raw_y")`
 Replaces each function value of an infeasible row by its penalised value: `relative` f + c·|v|^p, `absolute` f + c, `value` c, or `ignore`. A penalty always makes a value worse (subtracted when maximising). `feasible` is `"zero"` (v = 0 is feasible), `"nonpositive"` or a function of the violation expression. Metrics on the result compute best-so-far values from the penalised rows.
+
+---
+
+### Shapley values of portfolios
+
+Definitions: `docs/definitions/portfolio.md` (SH-1 to SH-4).
+
+#### `get_shapley_values(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, marginal=None, exact_limit=15, samples=5, seed=None, **options)`
+The Shapley value of each group of `by` in the portfolio of all groups. A portfolio's value is the area under its virtual-best ECDF: per (function, dimension) pair and target, the largest single-target ECDF of a member, integrated over [b_lo, b_hi] as in `get_ecdf_auc` and summed. Values are divided by the value of all groups, so they sum to 1; exact up to `exact_limit` groups, sampled with `seed` above. `options` as in `get_ecdf`.
+
+**Returns:** `pl.DataFrame` with `by`, `shapley` and `se` (0 when exact).
+
+#### `shapley_values(n_players, value, *, marginal=None, exact_limit=15, samples=5, seed=None)`
+Shapley values of any game. `value` maps a boolean matrix of coalitions (one row each) to their values; `marginal(v, S, a)` defaults to v(S ∪ {a}) − v(S).
+
+**Returns:** `(phi, se)`, numpy arrays divided by v(N).
+
+#### `get_portfolio_ecdf(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, **options)`
+The ECDF data of the `get_shapley_values` game, to define another portfolio value or marginal contribution on with `shapley_values` (see "Another value or marginal contribution" in `portfolio.md`). Identical steps are merged.
+
+**Returns:** `(players, ecdf, width)`: the groups of `by`, the ECDF of each group on each step (groups × steps) and the step widths on the budget axis, divided by its length.
+
+#### `envelope_value(ecdf, width)`
+The default portfolio value on these data, v(S) = Σ width · max over S of ecdf, as a `value` for `shapley_values`.
+
+---
+
+### Cumulative difference plot
+
+Definitions: `docs/definitions/cdp.md` (CD-1 to CD-4).
+
+#### `get_cumulative_difference(data, *, target=None, budget=None, by=["algorithm_name"], maximization=False, subsample=True, seed=None, alpha=0.05, epsilon=1e-80, n_bootstrap=1000, fval_var="raw_y", eval_var="evaluations")`
+The cumulative difference plot of the two groups of `by` on one pair: runtimes to `target` (a failed run is the worst) or values at `budget`. The larger group is subsampled to the size of the smaller, with a warning, unless `subsample=False`.
+
+**Returns:** `CumulativeDifference` with `curves` (`p`, `y_a`, `y_b`, `diff`, each with `_lower` and `_upper`) and `runs` (`run_id`, `by`, `group`, `value`, `used`).
+
+#### `cumulative_difference(x_a, x_b, *, alpha=0.05, epsilon=1e-80, n_bootstrap=1000, seed=None)`
+RVCompare's bootstrap estimate on two equally large samples (smaller is better).
+
+**Returns:** `pl.DataFrame`, the `curves` above.
 
 ---
 

@@ -113,6 +113,25 @@ def _quality(data, targets, maximization, scale_f_log, fval_var):
     )
 
 
+def _prepare(
+    data: pl.DataFrame,
+    targets: pl.DataFrame | None,
+    by,
+    *,
+    scale_f_log,
+    pairs,
+    fval_var,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """``data`` on the pairs that have targets and are used (EC-2), with ``weight``,
+    and the targets (by default 10 per pair, log-linear or linear)."""
+    if targets is None:
+        kind = "log-linear" if scale_f_log else "linear"
+        targets = get_ecdf_targets(data, kind, fval_var=fval_var)
+    targets = targets.cast({c: data.schema[c] for c in PAIR})
+    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    return _weights(data, by, pairs), targets
+
+
 def _increments(  # pylint: disable=R0913,R0914
     data: pl.DataFrame,
     targets: pl.DataFrame | None,
@@ -129,12 +148,9 @@ def _increments(  # pylint: disable=R0913,R0914
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), and the largest budget in the selection."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
-    if targets is None:
-        kind = "log-linear" if scale_f_log else "linear"
-        targets = get_ecdf_targets(data, kind, fval_var=fval_var)
-    targets = targets.cast({c: data.schema[c] for c in PAIR})
-    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
-    data = _weights(data, by, pairs)
+    data, targets = _prepare(
+        data, targets, by, scale_f_log=scale_f_log, pairs=pairs, fval_var=fval_var
+    )
     if continuous:
         steps = _quality(data, targets, maximization, scale_f_log, fval_var)
     else:
