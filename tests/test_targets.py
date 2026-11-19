@@ -1,18 +1,25 @@
 """Target and budget grids (docs/definitions/targets.md), with golden tests against
 IOHanalyzer's ``get_ECDF_targets``, ``seq_RT`` and ``get_target_dt`` (WP I03)."""
 
+import json
+import warnings
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 import pytest
 
+from iohinspector import DataManager
+from iohinspector.metrics import get_ecdf, get_ecdf_auc
 from iohinspector.targets import (
+    SUITE_BOUNDS,
     bbob_targets,
     get_ecdf_targets,
     get_target_dt,
     seq_fv,
     seq_rt,
 )
-from tests.golden.load import golden_renamed, logged
+from tests.golden.load import fixture_path, golden_renamed, logged
 
 FIXTURES = pytest.mark.parametrize("fixture", ["ioh040_min", "ioh040_max"])
 PAIR = ["function_id", "dimension"]
@@ -124,3 +131,94 @@ def test_target_dt_matches_iohanalyzer(fixture, perspective):
 def test_target_dt_needs_a_perspective():
     with pytest.raises(ValueError, match="fixed_target or fixed_budget"):
         get_target_dt(logged("ioh040_min"), "by_RT")
+
+
+# Default bounds by suite (TG-8)
+
+#: The ``target_bounds`` of the IOHexperimenter suite registry of ioh 0.4.2: the
+#: release asset ``registry.json`` (its URL and sha256 are in the file) reduced to
+#: ``target_bounds`` per suite.
+REGISTRY = Path(__file__).parent / "ioh_registry_0.4.2.json"
+
+
+def test_suite_bounds_match_the_registry():
+    registry = json.loads(REGISTRY.read_text())
+    assert registry["ioh_version"] == "0.4.2"
+    both = {
+        name: entry["target_bounds"]
+        for name, entry in registry["suites"].items()
+        if None
+        not in (entry["target_bounds"]["lower"], entry["target_bounds"]["upper"])
+    }
+    assert SUITE_BOUNDS == {
+        name.upper(): (bounds["lower"], bounds["upper"])
+        for name, bounds in both.items()
+    }
+    # the table assumes log-scale precisions, which raw_y holds for these suites
+    for bounds in both.values():
+        assert bounds["scale"] == "log" and bounds["relative_to_optimum"]
+
+
+def _suite_runs(suites, values=(5.0, 0.5)):
+    """One run per suite on pair (1, 2), logging ``values``."""
+    return pl.DataFrame(
+        {
+            "run_id": [i for i in range(len(suites)) for _ in values],
+            "function_id": 1,
+            "dimension": 2,
+            "suite": [s for s in suites for _ in values],
+            "evaluations": [e for _ in suites for e in range(1, len(values) + 1)],
+            "raw_y": [v for _ in suites for v in values],
+        }
+    )
+
+
+@pytest.mark.parametrize("suite", ["BBOB", "bbob", "SBOX"])
+def test_registry_suites_get_their_bounds(suite):
+    targets = get_ecdf_targets(_suite_runs([suite, suite]))["target"]
+    np.testing.assert_allclose(targets, 10.0 ** np.linspace(-8, 2, 10), rtol=1e-15)
+    assert targets[[0, -1]].to_list() == [1e-8, 1e2]
+    linear = get_ecdf_targets(_suite_runs([suite]), "linear", n=2)["target"]
+    assert linear.to_list() == [1e-8, 1e2]
+
+
+@pytest.mark.parametrize(
+    "suites", [["PBO"], ["unknown_suite"], ["BBOB", "unknown_suite"], [None]]
+)
+def test_other_suites_keep_the_observed_range(suites):
+    targets = get_ecdf_targets(_suite_runs(suites), n=2)["target"]
+    assert targets.to_list() == [0.5, 5.0]
+    no_column = _suite_runs(suites).drop("suite")
+    assert get_ecdf_targets(no_column, n=2)["target"].to_list() == [0.5, 5.0]
+
+
+def test_the_caller_wins():
+    bbob = _suite_runs(["BBOB"])
+    assert get_ecdf_targets(bbob, n=2, lower=1e-3)["target"].to_list() == [1e-3, 1e2]
+    assert get_ecdf_targets(bbob, n=2, upper=10)["target"].to_list() == [1e-8, 10]
+    assert get_ecdf_targets(bbob, "bbob")["target"].equals(
+        pl.Series("target", bbob_targets())
+    )
+    targets = pl.DataFrame({"function_id": [1], "dimension": [2], "target": [1.0]})
+    assert get_ecdf(bbob, targets, by=())["ecdf"].to_list() == [0.0, 1.0]
+
+
+def test_continuum_ecdf_and_aocc_follow_the_suite_bounds():
+    # between 1e2 and 1e-8 (10 decades) q(0.5) = (2 - log10 0.5) / 10, q(5) one tenth less
+    q = (2 - np.log10(0.5)) / 10
+    bbob = _suite_runs(["BBOB"])
+    ecdf = get_ecdf(bbob, by=(), continuous=True)
+    np.testing.assert_allclose(ecdf["ecdf"], [0, q - 0.1, q], rtol=1e-12)
+    aocc = get_ecdf_auc(bbob, by=(), continuous=True)["auc"].item()
+    assert aocc == pytest.approx(q - 0.1, rel=1e-12)  # over [1, 2]: q(5)
+
+
+def test_coco_bbob_data_gets_the_bbob_bounds():
+    manager = DataManager()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        manager.add_folder(fixture_path("coco"))
+    data = manager.load(include_columns=["function_id", "dimension", "suite"])
+    assert set(data["suite"]) == {"bbob"}
+    targets = get_ecdf_targets(data)["target"]
+    assert targets[[0, -1]].to_list() == [1e-8, 1e2]

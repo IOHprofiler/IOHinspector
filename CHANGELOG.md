@@ -16,6 +16,49 @@
   `metrics.cumulative_difference(x_a, x_b)`, RVCompare's bootstrap with a seed.
   Failed runs count as the worst value; unequal groups are subsampled, with a
   warning and the runs used in `result.runs`.
+- The fixed-budget ECDF and its AUC (`docs/definitions/ecdf.md`, EC-9 and EC-10):
+  `metrics.get_fixed_budget_ecdf` gives, at each value v, the fraction of (run,
+  budget) pairs whose best-so-far value at the budget is v or better (inclusive;
+  IOHanalyzer's `which = 'by_FV'` compares T < b), exact at its steps. Budgets per
+  pair default to 10 log-spaced ones (`targets.get_ecdf_budgets`).
+  `metrics.get_fixed_budget_ecdf_auc` is the exact normalised area over a value
+  range, on log10 by default.
+- Default bounds by suite (`docs/definitions/targets.md`, TG-8): a pair whose runs
+  are all BBOB or SBOX (the suites the IOHexperimenter suite registry gives both
+  bounds for; COCO's `bbob` included) gets targets from 1e-8 to 1e2 instead of
+  its observed range, so the default ECDF, the continuum ECDF and the AOCC use
+  these bounds. The suite comes from a `suite` column, for example
+  `DataManager.load(include_columns=[..., "suite"])`. `get_ecdf_targets` takes
+  `lower` and `upper` to set the bounds of every pair.
+- Statistical comparisons (`docs/definitions/comparisons.md`), comparing the
+  groups of `by`: `metrics.ks_test` is the one-sided two-sample KS test, with
+  the exact p-value when n m < 10000 (a port of R's) and the asymptotic one
+  otherwise; failed runs count as `inf`. `metrics.holm` is Holm's correction.
+  `metrics.get_ks_tests` tests every ordered pair of groups on a runtime or
+  value sample, Holm-corrected per view, with the decisions for the heat map
+  and the dominance graph. `metrics.get_win_fractions` gives the fraction of
+  targets on which one group beats another by a selectable measure
+  (`metrics.MEASURES`: ERT by default, mean, PAR-k or median runtime; mean,
+  median or best value).
+- Tournament ratings (`docs/definitions/glicko2.md`):
+  `metrics.get_tournament_ranking` plays seeded random games between the
+  groups of `by` on every function, dimension and target, and rates them with
+  Glicko-2 (`method="glicko2"`, τ = 0.5 by default; IOHanalyzer's is 1.2) or Elo
+  (`method="elo"`). `metrics.glicko2` and `metrics.elo` rate a given game list;
+  `glicko2` reproduces `PlayerRatings::glicko2`.
+- Deep Statistical Comparison, computed locally (`docs/definitions/dsc.md`):
+  `metrics.get_dsc_sample` (one value per run and problem; failed runs as
+  PAR-k, k = 10 by default, ERT or removed), `get_dsc_ranking` (AD or KS ranks
+  per problem, practical DSC with a seed), `get_dsc_omnibus` (Friedman,
+  aligned ranks, Iman-Davenport, or Wilcoxon for two algorithms) and
+  `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg; `metrics.hochberg` is
+  Hochberg's correction, next to `holm`). They
+  reproduce the published DSCTool example. scipy is now a direct dependency.
+
+### Deprecated
+
+- `metrics.get_tournament_ratings`: use `get_tournament_ranking(data,
+  method="elo", seed=...)`.
 
 ## 0.2.1
 

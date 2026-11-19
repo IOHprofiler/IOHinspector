@@ -428,9 +428,44 @@ The Shiny post-hoc view builds a k × k matrix from the k calls, using the
 correction the user picks (Holm by default, `ui/DSC_interface.R` 256–258),
 and marks p ≤ α (`RT_DSCinterface.R` 138–157; see DQ-19).
 
-## How iohinspector 0.0.8 implements it
+## How iohinspector implements it
 
-No DSC.
+iohinspector 0.0.8 had no DSC. Since I18, `iohinspector.metrics` computes it
+locally (`metrics/dsc.py`), one function per step:
+
+- `get_dsc_sample(data, *, perspective, targets, by, na, k, maximization)`:
+  step 1 with DS-2 and DS-3. `na="par"` (default, k = 10), `"ert"` or
+  `"remove"`; default targets from `get_target_dt` (TG-4).
+- `get_dsc_ranking(sample, *, by, problem, test, alpha, epsilon,
+  monte_carlo_iterations, seed)`: step 2 and practical DSC, returning
+  `DscRanking` (`ranked_matrix`, `number_algorithms`, `valid_methods`,
+  `parametric_tests`, `dropped_problems`). An algorithm is a group of `by`
+  (D17); a problem is a group of `problem`, by default (function, dimension).
+- `get_dsc_omnibus(ranking, *, method, alpha)`: step 3, returning
+  `DscOmnibus` (`method`, `message`, `p_value`, `t`, `algorithm_means`, `n`).
+- `get_dsc_posthoc(omnibus)`: step 4 for every algorithm as control, returning
+  `DscPosthoc` with the omnibus result, the post-hoc `method` and
+  `adjusted_p_values`: the control's `by` columns, the other algorithm's with
+  the suffix `_vs`, and `ZValue`, `UnadjustedPValue`, `Holm`, `Hochberg`.
+
+Details this page left to the implementation:
+
+- The limiting AD distribution F of DS-9 is the approximation `ADinf` of
+  [Marsaglia2004], accurate to about 2e-6.
+- The Monte Carlo median of DS-11 is the upper median of the I p-values (the
+  middle one when I is odd, the larger of the two middle ones when I is even),
+  so that a pair differs exactly when more than half of the iterations say so.
+- `message` is the service's "The null hypothesis is rejected." or, by
+  analogy, "The null hypothesis is not rejected.".
+- With fewer than two problems (DS-14), `valid_methods` is empty and the
+  omnibus call fails with the service's message "Not enough problems for
+  multiple-problem analysis!".
+- k > 4 algorithms gives a warning (DS-4); samples are taken in the given run
+  order for the sequential pDSC (`get_dsc_sample` sorts by `run_id`).
+
+Tests: `tests/test_metrics/test_dsc.py`. The [DSCExample] test downloads the
+files from the Wayback Machine and is skipped offline; the numbers cited on
+this page are tested without the network.
 
 ## Differences
 
