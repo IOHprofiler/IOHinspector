@@ -32,10 +32,17 @@
   IOHanalyzer's `which = 'by_FV'` compares T < b), exact at its steps. Budgets per
   pair default to 10 log-spaced ones (`targets.get_ecdf_budgets`).
   `metrics.get_fixed_budget_ecdf_auc` is the exact normalised area over a value
-  range, on log10 by default. A run that stopped before a budget is continued by
-  simulated restarts by default (EC-7, the procedure of
-  `aggregate_convergence(stopped="restart")`, with `seed` and `n_restarted`);
-  `stopped="carry_forward"` keeps its final value, as IOHanalyzer does.
+  range, on log10 by default.
+- Simulated restarts in every ECDF (`docs/definitions/ecdf.md`, EC-7): a run that
+  stops without reaching a target is continued by runs drawn from its group and
+  pair, as in COCO, by default (`stopped="restart"`) in `get_ecdf`,
+  `get_ecdf_auc` (continuum and AOCC included), `get_shapley_values`,
+  `get_portfolio_ecdf`, `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc`.
+  The ECDF is the expected value over the restarts, computed exactly from the
+  runs' runtimes (no seed); the fixed-budget results report `n_restarted`.
+  `stopped="carry_forward"` gives the ECDF without restarts, as IOHanalyzer.
+  The deprecated `get_data_ecdf` and `get_aocc` keep no restarts. The BBOB-style
+  figure draws every curve to the largest budget of all groups.
 - Default bounds by suite (`docs/definitions/targets.md`, TG-8): a pair whose runs
   are all BBOB or SBOX (the suites the IOHexperimenter suite registry gives both
   bounds for; COCO's `bbob` included) gets targets from 1e-8 to 1e2 instead of
@@ -136,7 +143,7 @@ whole before the release (I29). The COCO reader also reads the `bbob-new` format
     type 7 quantiles `q2` ... `q98`, `best`, `worst`, `geometric_mean` (only
     when every value is > 0), `n_runs`, `n_defined`, and with `evals_used`
     `n_active`. New keywords `budgets`, and `stopped="restart"` with `seed`
-    for simulated restarts of runs that stopped before a budget.
+    (0 by default) for simulated restarts of runs that stopped before a budget.
   - `get_overview(data, by, *, eval_var, fval_var, maximization)`: per run set
     `n_runs`, `budget`, the best, worst, mean and
     median final values, `n_best`, `worst_recorded`, `min_runtime` and

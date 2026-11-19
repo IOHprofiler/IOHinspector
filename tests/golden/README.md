@@ -75,7 +75,7 @@ multi-algorithm metrics need at least two algorithms); `versions.json` names eve
 | DSC (partial) | none | see below |
 | AOCC | none from IOHanalyzer | see below |
 | cocopp (COCO fixtures) | `cocopp/coco/{runtimes_51targets,art_51targets,art_table_targets,ecdf_51targets}`, the same with `_2D` and `_3D` in `cocopp/coco_old/` | `DataSet.detEvals`, `detERT`, `detSuccesses` |
-| Runtime ECDF with simulated restarts (fixed-budget ECDF, EC-7) | `cocopp/coco_old/ecdf_restarts_{2D,3D}`: per target and budget, the fraction of 20000 simulated restart runtimes at most the budget | `toolsstats.drawSP`, as `pprldmany` calls it |
+| Runtime ECDF with simulated restarts (target and fixed-budget ECDFs, EC-7) | `cocopp/coco_old/ecdf_restarts_{2D,3D}`: per target and budget, the fraction of 20000 simulated restart runtimes at most the budget | `toolsstats.drawSP`, as `pprldmany` calls it |
 
 Not produced, and why:
 

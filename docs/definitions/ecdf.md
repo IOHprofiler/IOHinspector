@@ -519,5 +519,45 @@ seeded with 0 by default. A run whose final value is the best of its run set
 is not restarted, and a chain stops drawing once it has drawn such a run: no
 later restart can improve its value.
 
+The fixed-budget ECDF is computed from pieces of the runs' traces: each row
+at which a run improves gives the levels it reaches at its evaluation T, cut
+at the final levels of its run set, so that F is fixed on a piece. On the
+values of a piece the run adds (1/m) Σ_k E(b_k − T), the renewal function
+of F at b_k − T, which is the number of budgets b_k ≥ T without restarts. One
+path serves both options; the golden tests against IOHanalyzer's
+`ECDF_by_FV` check it with `"carry_forward"`. The target ECDF continues the
+hits of each run set and F (the continuum: its pieces of normalised quality)
+by the recursion for r, up to the horizon. The fixed-budget ECDF looks the
+renewal function up at its budgets.
+
+Tests: E_t computed from its definition, by recursion, matches the target
+ECDF, the fixed-budget ECDF and the portfolio game to 1e-12 on small data
+with runs of different lengths, minimising and maximising. The AUC over m
+targets is within 1/m of the AOCC and the fixed-budget AUC is the mean
+continuum ECDF over its budgets, with restarts. The summary's simulated
+chains (FB-6) average to E_t: on 30000 chains within 5 standard errors.
+
 Validation against cocopp 2.9.1 (`tests/golden/cocopp/coco_old/`,
-`ecdf_restarts_2D.parquet` and `_3D`, written by `generate.py`): see below.
+`ecdf_restarts_2D.parquet` and `_3D`, written by `generate.py`). The fixture
+is `coco_old`: DIRECT on f6, 2-D and 3-D, five runs each with B_i between
+3·10⁴ and 10⁵, most of them unsuccessful for the small targets. cocopp's
+`drawSP`, called as `pprldmany` calls it but with 20000 samples (seeded),
+gives for each of the 51 targets 10^(2 − k/5) and each of 10 budgets
+round(10^(1 + 5k/9)), 10 to 10⁶, the fraction of simulated restart runtimes
+at most the budget: 510 cells per dimension. The test
+(`test_restarts_match_cocopp`) computes each cell twice: with `get_ecdf` for
+that one target, sampled at the budgets, and with `get_fixed_budget_ecdf`
+with that one budget, at v = the target (cocopp's grid level of it, as in
+`tests/io/test_coco_cocopp.py`). The two agree to 1e-12. Ours is the
+expected value, cocopp's a sample of 20000, so every cell must lie within 5
+of cocopp's binomial standard errors. Measured: the largest cell difference
+is 0.0054 in 2-D and 0.0056 in 3-D, at most 2.6 and 1.6 standard errors over
+the 148 and 106 cells where cocopp's sample varies, and the mean absolute
+difference is 0.00010 and 0.00007; 445 and 466 cells agree exactly (targets
+that no run or every run reaches within the budget, and budgets before any
+restart can end, where cocopp's derandomised first draw is exact). The
+fixed-budget ECDF over all ten budgets differs from the mean of cocopp's
+cells by at most 0.0005 (2-D) and 0.0006 (3-D), the test bound being 0.005;
+carrying forward instead differs by up to 0.071 and 0.099.
+
+Cost: `docs/notes/simulated-restarts.md`.
