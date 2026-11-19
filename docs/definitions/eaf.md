@@ -255,6 +255,23 @@ Golden tests (`tests/test_metrics/test_eaf.py`) on `ioh040_min`,
 - `ECDF_From_EAF` (the EAF-based ECDF) is not ported; the continuum ECDF of
   [ecdf](ecdf.md) is that view.
 
+The 0.0.8 functions are kept unchanged, without a deprecation, because none
+gives the output of a new call:
+
+- `get_discritized_eaf_single_objective`: on its quality levels (bounds 10⁻⁸
+  and 10²) it equals `get_eaf(mode="discretised")` with the matching budgets
+  and values, except at q = 0, which it counts as attained by every run, also
+  by runs worse than 10² and runs with no value yet (`transform_fval` clips
+  and fills with 0); `get_eaf` counts only runs that reached the value. It
+  also uses the fixed quality on a single pair, where `get_eaf` uses f, and
+  returns a wide table, one column per budget. A test checks this on
+  `ioh040_cons`.
+- `get_eaf_data`: the aligned values at 50 budgets, not an EAF.
+- `get_eaf_pareto_data`, `get_eaf_diff_data`: the bi-objective EAF and EAF
+  difference of any two objective columns, one point set per run; `get_eaf`
+  and `get_eaf_difference` take the runs' best-so-far traces in (evaluations,
+  f) and groups of `by`.
+
 ## Test tolerance
 
 Attainment surfaces and difference rectangles must match `eaf`'s output

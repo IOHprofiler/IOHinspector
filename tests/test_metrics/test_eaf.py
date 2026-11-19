@@ -528,6 +528,27 @@ def test_precise_eaf_weighs_pairs_by_repeating_runs():
         get_eaf(data, weighting="functions")
 
 
+def test_discretised_eaf_of_0_0_8_differs_at_quality_0():
+    # get_discritized_eaf_single_objective is kept, not an alias of
+    # get_eaf(mode="discretised"): on its quality levels between 1e-8 and 1e2 the
+    # two agree except at q = 0, which 0.0.8 counts as attained by every run, even
+    # one worse than 1e2 (transform_fval clips), and it has its own layout
+    data = logged("ioh040_cons").filter(
+        pl.col("function_id") == 1, pl.col("algorithm_name") == "rs"
+    )
+    old = get_discritized_eaf_single_objective(data)
+    q = old["eaf_target"].to_numpy()
+    budgets = [int(c) for c in old.columns[1:]]
+    new = get_eaf(
+        data, [], mode="discretised", eval_values=budgets, f_values=10 ** (2 - 10 * q)
+    )
+    new = new.pivot(on="evaluations", index="raw_y", values="eaf")
+    new = new.sort("raw_y", descending=True).drop("raw_y").to_numpy()
+    old = old.drop("eaf_target").to_numpy()
+    np.testing.assert_array_equal(new[1:], old[1:])
+    assert (old[0] == 1).all() and not (new[0] == 1).all()
+
+
 def test_pareto_eaf_reads_each_run_as_one_set():
     shuffled = SIMPLE_MO_DATA.sample(fraction=1.0, shuffle=True, seed=3)
     assert_frame_equal(
