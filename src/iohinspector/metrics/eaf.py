@@ -32,8 +32,9 @@ OPTIONS = (
     "fval_var",
     "eval_var",
 )
-#: The most attainment sets the precise EAF may repeat runs up to with
-#: ``weighting="pairs"`` (EA-6); beyond it ``get_eaf`` raises ``ValueError``.
+#: The most attainment sets the precise mode may repeat runs up to, for
+#: ``weighting="pairs"`` (EA-6) and for a difference of unequal groups (EA-2);
+#: beyond it a ``ValueError`` suggests ``mode="discretised"``.
 MAX_SETS = 100_000
 #: The columns of an EAF difference rectangle (``moocore.eafdiff``).
 RECTANGLE = ["x_min", "y_min", "x_max", "y_max", "eaf_diff"]
@@ -298,14 +299,26 @@ def _surfaces(runs, value, larger, eval_var, percentiles) -> pl.DataFrame:
     return pl.DataFrame(surfaces, schema=[eval_var, value, "percentile"], orient="row")
 
 
+def _check_sets(sets: int) -> None:
+    """Raise when repeating runs gives more than ``MAX_SETS`` attainment sets."""
+    if sets > MAX_SETS:
+        raise ValueError(
+            "the precise mode repeats runs up to the least common multiple of "
+            f"their counts: {sets} attainment sets, more than MAX_SETS = "
+            f"{MAX_SETS}. Use mode='discretised', which weighs the runs instead"
+        )
+
+
 def _rectangles(runs, by, value, larger, eval_var) -> pl.DataFrame:
     """The rectangles where the EAF difference of the two groups of ``by`` in
     ``runs`` is constant (EA-2, precise), once for each group: its EAF minus the
     other's. moocore compares equally many runs, so each group's runs are repeated
-    up to the least common multiple of the two run counts."""
+    up to the least common multiple of the two run counts, at most ``MAX_SETS``
+    sets in all."""
     groups = runs.sort(by, nulls_last=True).partition_by(by, maintain_order=True)
     n = [g["run_id"].n_unique() for g in groups]
     m = math.lcm(*n)
+    _check_sets(2 * m)
     x, y = (_sets(g, value, larger, eval_var, m // k) for g, k in zip(groups, n))
     rect = _eafdiff(x, y)
     rect[:, 4] /= m  # moocore counts the difference in runs of m
@@ -405,14 +418,9 @@ def _weigh(runs: pl.DataFrame, by: list[str], weighting: str, mode: str):
     copies = pl.col("m") // pl.col("n")
     runs = runs.join(lcm.drop("n"), on=by, nulls_equal=True, maintain_order="left")
     k, sets = runs.unique("run_id").select(copies.max().alias("k"), copies.sum()).row(0)
-    if sets > MAX_SETS:
-        raise ValueError(
-            f"weighting='pairs' in the precise mode repeats each pair's runs up to "
-            f"the least common multiple of the group's run counts: {sets} "
-            f"attainment sets, more than MAX_SETS = {MAX_SETS}. Use "
-            "mode='discretised', which weighs the runs instead of repeating them"
-        )
-    runs = runs.with_columns(copy=pl.int_ranges(copies)).explode("copy")
+    _check_sets(sets)
+    runs = runs.with_columns(copy=pl.int_ranges(copies))
+    runs = runs.explode("copy", empty_as_null=False)  # never empty
     run = pl.col("run_id").rank("dense").cast(pl.Int64) * k + pl.col("copy")
     return runs.with_columns(run.alias("run_id"), weight=pl.lit(1.0)).drop(
         "n", "m", "copy"

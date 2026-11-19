@@ -546,6 +546,16 @@ def test_precise_pair_weighting_is_capped(monkeypatch):
         assert get_eaf(data, weighting="runs").height
 
 
+def test_precise_difference_repetition_is_capped(monkeypatch):
+    # A has 2 runs and B 1: B's run is repeated, 2 + 2 = 4 sets
+    monkeypatch.setattr(eaf_module, "MAX_SETS", 4)
+    assert get_eaf_difference(TWO).height > 0
+    monkeypatch.setattr(eaf_module, "MAX_SETS", 3)
+    with pytest.raises(ValueError, match="4 attainment sets.*discretised"):
+        get_eaf_difference(TWO)
+    assert get_eaf_difference(TWO, mode="discretised").height > 0
+
+
 def test_discretised_eaf_of_0_0_8_differs_at_quality_0():
     # get_discritized_eaf_single_objective is kept, not an alias of
     # get_eaf(mode="discretised"): on its quality levels between 1e-8 and 1e2 the

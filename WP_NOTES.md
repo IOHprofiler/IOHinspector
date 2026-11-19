@@ -22,19 +22,25 @@ the user's answers (2026-11-19) to the round-1 questions.
   `test_precise_pair_weighting_is_capped` sets the limit to 10 and 9 around
   the 10 sets of its data; discretised and `"runs"` repeat nothing and pass
   (commit df1609b).
+- controller follow-up: the precise `get_eaf_difference` repetition of the
+  two sides up to lcm(n_A, n_B) has the same cap. One check, `_check_sets`,
+  serves both repetitions, with the same `ValueError`.
+  `test_precise_difference_repetition_is_capped` sets the limit to 4 and 3
+  around the 4 sets of its two groups. The `.explode("copy")` in `_weigh`
+  passes `empty_as_null=False` (the lists are never empty), which removes
+  polars 1's `DeprecationWarning` and is valid on both majors.
 
 ## Tests
 `.venv/bin/python -m pytest -q`: 1217 passed, 3 skipped on polars 2.1.0 and on
-polars 1.44.2.
+polars 1.44.2; 1218 after the follow-up, on both.
 
 ## Next step
 None: push, and update #45's body or a comment from this file.
 
 ## Decisions
-- The cap counts the sets after repetition over all groups, and only when
-  something is repeated (pairs of a group with different run counts).
+- The pair cap counts the sets after repetition over all groups, and only
+  when something is repeated (pairs of a group with different run counts).
+  The difference cap counts both sides, 2 lcm(n_A, n_B), in each scope.
 
 ## Open questions / Blocked
-- The precise difference also repeats each side's runs up to the lcm of the
-  two groups' run counts (moocore needs equal sides; this predates the
-  round). The cap does not cover that repetition. Say if it should.
+- none

@@ -236,7 +236,9 @@ repeat them for the installed version):
   `get_eaf_pareto_data` and `get_eaf_diff_data` did not, and now do.
 - `moocore.eafdiff` assumes both sides have equally many sets (it splits the
   sets in half), and counts Δ in sets. With n_A ≠ n_B runs each side's runs
-  are repeated up to lcm(n_A, n_B), and Δ is the count divided by that.
+  are repeated up to lcm(n_A, n_B), and Δ is the count divided by that. As
+  for the pair weighting (EA-6), more than `MAX_SETS` sets in all raise a
+  `ValueError` that suggests `mode="discretised"`.
 - `moocore.eafdiff` fails when there is no rectangle at all; that is an empty
   result. Rectangles with Δ = 0 are kept, as `eaf::eafdiff` keeps them.
 
