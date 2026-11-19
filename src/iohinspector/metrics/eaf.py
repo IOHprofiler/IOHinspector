@@ -420,7 +420,7 @@ def _weigh(runs: pl.DataFrame, by: list[str], weighting: str, mode: str):
     k, sets = runs.unique("run_id").select(copies.max().alias("k"), copies.sum()).row(0)
     _check_sets(sets)
     runs = runs.with_columns(copy=pl.int_ranges(copies))
-    runs = runs.explode("copy", empty_as_null=False)  # never empty
+    runs = runs.explode("copy")  # never empty
     run = pl.col("run_id").rank("dense").cast(pl.Int64) * k + pl.col("copy")
     return runs.with_columns(run.alias("run_id"), weight=pl.lit(1.0)).drop(
         "n", "m", "copy"
