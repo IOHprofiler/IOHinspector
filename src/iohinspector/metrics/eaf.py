@@ -439,7 +439,7 @@ def _prepare(data: pl.DataFrame, by: Sequence[str], mode: str, options: dict):
     grid = ("eval_values", "f_values", "scale_eval_log", "weighting")
     trace_options = {k: v for k, v in options.items() if k not in grid}
     runs, value, larger, scope = _traces(data, by, **trace_options)
-    runs = _weigh(runs, by, options.get("weighting", "runs"), mode)
+    runs = _weigh(runs, by, options.get("weighting", "pairs"), mode)
     grid_options = {
         k: v
         for k, v in options.items()
@@ -496,12 +496,12 @@ def get_eaf(
               By default those of ``get_ecdf_targets(data)``, as for the continuum
               ECDF: the observed range of each pair.
             - ``maximization`` (False): larger values are better.
-            - ``weighting`` (``"runs"``): when a group spans several pairs, each
+            - ``weighting`` (``"pairs"``): when a group spans several pairs,
+              each pair weighs equally, each of its n runs 1/n, as in the AOCC
+              (EC-2); the area under the EAF over q in [0, 1] is then the
+              continuum ECDF, and its volume the AOCC (EA-6). ``"runs"``: each
               run is one attainment set, so a pair weighs by its number of runs.
-              ``"pairs"``: each pair weighs equally, each of its n runs 1/n, as
-              in the AOCC (EC-2); the area under this EAF over q in [0, 1] is
-              then the continuum ECDF, and its volume the AOCC (EA-6). Both
-              warn when the pairs of a group have different numbers of runs.
+              Both warn when the pairs of a group have different numbers of runs.
             - ``fval_var`` (``"raw_y"``), ``eval_var`` (``"evaluations"``).
 
     Returns:

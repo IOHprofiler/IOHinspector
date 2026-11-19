@@ -509,8 +509,8 @@ def test_area_under_the_eaf_is_the_aocc():
 
 
 def test_precise_eaf_weighs_pairs_by_repeating_runs():
-    # with weighting="pairs" the precise EAF is that of each pair's runs repeated
-    # up to the least common multiple of the group's run counts
+    # with weighting="pairs", the default, the precise EAF is that of each pair's
+    # runs repeated up to the least common multiple of the group's run counts
     data = _uneven()
     copies = {("A", 1): 1, ("A", 2): 2, ("B", 1): 3, ("B", 2): 1}
     repeated = pl.concat(
@@ -519,11 +519,11 @@ def test_precise_eaf_weighs_pairs_by_repeating_runs():
         for k in range(copies[a, f])
     )
     with pytest.warns(UserWarning, match="different numbers of runs"):
-        weighted = get_eaf(data, weighting="pairs")
+        weighted = get_eaf(data)
     keys = ["algorithm_name", "percentile", "evaluations", "quality"]
     assert_frame_equal(weighted.sort(keys), get_eaf(repeated).sort(keys))
-    with pytest.warns(UserWarning):
-        assert get_eaf(data).sort(keys).height != weighted.height
+    with pytest.warns(UserWarning, match="weighting='runs'"):
+        assert get_eaf(data, weighting="runs").height != weighted.height
     with pytest.raises(ValueError, match="weighting"):
         get_eaf(data, weighting="functions")
 

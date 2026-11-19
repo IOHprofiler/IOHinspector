@@ -155,11 +155,11 @@ the same number of runs the two weightings are the same EAF.
   true EAF as `moocore` returns it, at any budget. *Discretised*: evaluation
   and target axes are both discretised so the EAF is a matrix; default 50
   log-spaced budgets × 50 log-spaced values, both axes adjustable. Decided by the D6 review (dvermetten, 2026-11-06).
-- **EA-6.** A multi-function EAF weighs each run equally by default (pooled
-  runs), and each pair equally on request, which makes its volume the AOCC.
-  A clear warning is given when the pairs of a group do not all have the
-  same number of runs. Decided by the review of #45 (dvermetten,
-  2026-11-19).
+- **EA-6.** A multi-function EAF weighs each pair equally by default, so
+  its volume is the AOCC, and each run equally on request (pooled runs). A
+  clear warning is given when the pairs of a group do not all have the same
+  number of runs. The option was asked for by the review of #45 (dvermetten,
+  2026-11-19); the user made pairs the default (2026-11-19).
 
 ## Questions answered by the D6 review
 
@@ -203,8 +203,8 @@ IOHexperimenter suite registry). The same bounds apply to AOCC through EC-5 (see
   columns every group has one pair and the values stay f; differences are then
   taken within each pair.
 - Weighting (EA-6), the option `weighting` of every EAF function:
-  `"runs"` (default), each run one attainment set; `"pairs"`, each pair
-  equally. Discretised, `"pairs"` is a weighted mean, each run 1/n_p.
+  `"pairs"` (default), each pair equally, so the volume under the EAF is the
+  AOCC without an option; `"runs"`, each run one attainment set. Discretised, `"pairs"` is a weighted mean, each run 1/n_p.
   Precise, `moocore.eaf` has no weights, so each pair's runs are repeated up
   to the least common multiple of the group's run counts (the surfaces are
   then those of equally many runs per pair). Both warn, with the run counts
