@@ -200,9 +200,11 @@ list.
 `drawSP` draws the first run of each sample from a permutation of the runs
 (derandomised) and each restart uniformly at random. A sample is the sum of
 the drawn unsuccessful runs' `maxevals` and the successful run's runtime; a
-target that no run reaches is never reached. The sample size is
-max(2, ⌊(100 + 1000) / n⌋) · n for the largest run count n, at least 1000
-(`pprldmany.py:765–777`). cocopp has no fixed-budget ECDF.
+target that no run reaches is never reached. The sample size per (function,
+target) is n · max(2, ⌊(100 + 1000 / (1 + h)) / n⌋) for the largest run count
+n, and at least 30 + ⌊970 / (1 + 10h)⌋, with h = `in_a_hurry` (1000 by
+default, so 100 samples for n = 5; 1100 with h = 0; `pprldmany.py:765–777`).
+cocopp has no fixed-budget ECDF.
 
 ## How iohinspector 0.0.8 implements it
 
@@ -411,7 +413,8 @@ example above gives 0.70, 0.733 and 0.75.
 ECDF values are ratios of counts and must match exactly (as rationals; float
 comparison to 1e-12). AUC and AOCC must agree to a relative error of 1e-12.
 Comparisons with IOHanalyzer's sampled ECDF and trapezoid AUC are made on
-IOHanalyzer's 50-point grid.
+IOHanalyzer's 50-point grid. With simulated restarts the comparison with
+cocopp is statistical, within 5 standard errors (Implementation (I33)).
 
 ## Implementation (I28)
 
@@ -443,17 +446,24 @@ before their pair's largest budget. The golden tests against IOHanalyzer use
 `"carry_forward"`.
 
 Validation against cocopp 2.9.1 (`tests/golden/cocopp/coco_old/`,
-`ecdf_restarts_*D.parquet`, from `generate.py`): on the `coco_old` fixture
-(DIRECT on f6, 2-D and 3-D, five runs each, most of them unsuccessful for the
-small targets), cocopp's `drawSP`, called as `pprldmany` calls it with its
-sample size of 1100, gives for each of the 51 targets and each of 10
-log-spaced budgets the fraction of simulated restart runtimes at most the
-budget. The test computes the same cells with `get_fixed_budget_ecdf`, one
-budget at a time, at v = the target (cocopp's grid level), on the five runs
-each copied 400 times (2000 chains; copies leave the distribution the
-restarts draw from unchanged), and compares. Both are Monte Carlo estimates
-of the same probability, so the test bounds the difference by the standard
-error: every cell within 4 standard errors and the mean absolute difference
-below 0.01. The fixed-budget ECDF over all ten budgets is the mean of a
-target's cells and agrees likewise.
-
+`ecdf_restarts_2D.parquet` and `_3D`, written by `generate.py`). The fixture
+is `coco_old`: DIRECT on f6, 2-D and 3-D, five runs each with B_i between
+3·10⁴ and 10⁵, most of them unsuccessful for the small targets. cocopp's
+`drawSP`, called as `pprldmany` calls it but with 20000 samples (seeded),
+gives for each of the 51 targets 10^(2 − k/5) and each of 10 budgets
+round(10^(1 + 5k/9)), 10 to 10⁶, the fraction of simulated restart runtimes
+at most the budget: 510 cells per dimension. The test
+(`test_fixed_budget_restarts_match_cocopp`) computes each cell with
+`get_fixed_budget_ecdf`, with that one budget, at v = the target (cocopp's
+grid level of it, as in `tests/io/test_coco_cocopp.py`), on the five runs each
+copied 1000 times (5000 chains; copies leave the runs that restarts draw from
+as they are). Both are Monte Carlo estimates of the same probability, so the
+test asks every cell to lie within 5 standard errors (binomial, of both
+samples) and the mean absolute difference to be below 0.002. Measured: the
+largest cell difference is 0.0074 in 2-D and 0.0106 in 3-D, the largest
+difference in standard errors 2.3 and 2.2, the mean absolute difference
+0.00015 and 0.00024; 212 and 308 cells agree exactly (the targets that no run
+or every run reaches). The fixed-budget ECDF over all ten budgets, the mean of
+a target's cells, differs from cocopp's by at most 0.0005 (2-D) and 0.0012
+(3-D), the test bound being 0.005; carrying forward instead differs by up to
+0.071 and 0.099.

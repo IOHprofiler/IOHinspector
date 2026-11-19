@@ -1,7 +1,10 @@
+import warnings
+
 import numpy as np
 import polars as pl
 import pytest
 
+from iohinspector import DataManager
 from iohinspector.metrics.ecdf import (
     get_data_ecdf,
     get_ecdf,
@@ -12,7 +15,14 @@ from iohinspector.metrics.ecdf import (
 )
 from iohinspector.metrics.fixed_budget import aggregate_convergence
 from iohinspector.targets import get_ecdf_budgets, get_ecdf_targets
-from tests.golden.load import golden, golden_renamed, logged
+from tests.golden.load import (
+    cocopp_level,
+    fixture_path,
+    golden,
+    golden_cocopp,
+    golden_renamed,
+    logged,
+)
 from tests.test_metrics.test_fixed_budget import STOPPED
 
 pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
@@ -650,3 +660,63 @@ def test_restarts_are_seeded_mirrored_and_need_no_evals_used():
     assert alone.columns == ["auc", "n_restarted"]
     with pytest.raises(ValueError, match="carry_forward"):
         get_fixed_budget_ecdf(STOPPED_PAIR, stopped="exclude")
+
+
+# Validation against cocopp 2.9.1 (ecdf.md, "Implementation (I33)")
+
+COPIES = (
+    1000  # chains per run: copies leave the runs that restarts draw from as they are
+)
+COCOPP_SAMPLES = 20000  # tests/golden/cocopp/generate.py
+
+
+def _coco_old(dimension):
+    """DIRECT on f6 (five runs, mostly unsuccessful for small targets), each run
+    copied ``COPIES`` times; ``raw_y`` is the precision."""
+    manager = DataManager()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        manager.add_folder(fixture_path("coco_old"))
+    columns = ["function_id", "dimension", "algorithm_name", "evals_used"]
+    data = manager.load(include_columns=columns).filter(dimension=dimension)
+    run_id = pl.col("run_id").rank("dense").cast(pl.Int64) * COPIES + pl.col("copy")
+    copies = pl.DataFrame({"copy": range(COPIES)})
+    return data.join(copies, how="cross").with_columns(run_id=run_id).drop("copy")
+
+
+@pytest.mark.parametrize("dimension", [2, 3])
+def test_fixed_budget_restarts_match_cocopp(dimension):
+    # cocopp's runtime ECDF with simulated restarts (drawSP, as pprldmany) gives per
+    # target t and budget b the fraction of simulated runtimes T(t) <= b. As
+    # T(t) <= b exactly when V(b) <= t (EC-9), that is the fixed-budget ECDF with the
+    # one budget b at v = t (cocopp's grid level of t). Both estimate one
+    # probability by Monte Carlo: each cell must lie within 5 standard errors
+    gold = golden_cocopp(f"ecdf_restarts_{dimension}D", "coco_old")
+    data = _coco_old(dimension)
+    targets = gold["target"].unique().sort()
+    levels = [cocopp_level(t) for t in targets]
+    pair = data.select(PAIR).unique()
+    cells = pl.concat(
+        get_fixed_budget_ecdf(
+            data, pair.with_columns(budget=int(b)), x_values=levels, seed=1
+        ).select(target=targets, budget=pl.lit(b), ours="ecdf")
+        for b in gold["budget"].unique().sort()
+    )
+    joined = gold.join(cells, on=["target", "budget"])
+    assert joined.height == gold.height == 510
+    diff = (joined["ours"] - joined["ecdf"]).abs()
+    p = ((joined["ours"] + joined["ecdf"]) / 2).clip(0, 1)
+    n = data["run_id"].n_unique()
+    se = (p * (1 - p) * (1 / n + 1 / COCOPP_SAMPLES)).sqrt()
+    assert (diff <= 5 * se + 1e-12).all()
+    assert diff.mean() < 0.002
+    # the fixed-budget ECDF over the ten budgets is the mean of a target's cells
+    budget = gold["budget"].unique().cast(pl.Int64)
+    budgets = pair.join(pl.DataFrame({"budget": budget}), how="cross")
+    mean = gold.group_by("target").agg(pl.col("ecdf").mean()).sort("target")["ecdf"]
+    ecdf = get_fixed_budget_ecdf(data, budgets, x_values=levels, seed=2)["ecdf"]
+    assert (ecdf - mean).abs().max() < 0.005
+    carried = get_fixed_budget_ecdf(
+        data, budgets, x_values=levels, stopped="carry_forward"
+    )["ecdf"]
+    assert (carried - mean).abs().max() > 0.05  # what restarts change

@@ -30,6 +30,7 @@
       "suffix": "_3D"
     }
   ],
+  "ecdf_restarts": "per target and budget, the fraction of simulated restart runtimes <= budget: toolsstats.drawSP as pprldmany calls it, 20000 samples, np.random.seed(20240423) per data set, budgets round(10^(1 + 5k/9)), k = 0..9",
   "files": "as for the coco fixture, one set per data set with its suffix",
   "numpy": "2.4.6",
   "pyarrow": "26.0.1",

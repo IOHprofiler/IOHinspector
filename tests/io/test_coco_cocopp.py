@@ -23,7 +23,7 @@ import polars as pl
 import pytest
 
 from iohinspector.io.coco import read_coco
-from tests.golden.load import fixture_path, golden_cocopp
+from tests.golden.load import cocopp_level, fixture_path, golden_cocopp
 
 ROOT = Path(__file__).resolve().parents[1]
 #: (reader input, golden fixture, file suffix, dimension)
@@ -33,13 +33,6 @@ CASES = [
     (fixture_path("coco_old"), "coco_old", "_3D", 3),
 ]
 IDS = ["coco", "coco_old-2D", "coco_old-3D"]
-
-
-def cocopp_level(target: float) -> float:
-    """The grid level cocopp's ``detEvals`` uses for ``target``."""
-    i = round(5 * math.log10(target))
-    level = 10 ** (i / 5)
-    return level if level <= target else 10 ** ((i - 1) / 5)
 
 
 def runs_and_trace(folder: Path, dimension: int) -> tuple[pl.DataFrame, pl.DataFrame]:
