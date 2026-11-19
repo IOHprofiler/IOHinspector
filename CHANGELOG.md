@@ -26,6 +26,13 @@
   step lines over log10(evaluations / dimension), sparse markers, the final
   value marked, and labels at the right ordered by final value. Gallery:
   `docs/figures/`.
+- TeX export of the figures (D11): `render(spec, data, fmt="pgf")` writes a PGF
+  picture to `\input` in a LaTeX document, and `figures.pgfplots(spec, data,
+  name)` a pgfplots `name.tex` plus `name.csv` of the curves. Both leave the font
+  to the document and keep the figure's colours, line widths, dashes, markers,
+  sizes and direct labels. `pgf` needs a TeX installation (it measures text); the
+  pgfplots export does not. An optional workflow (`tex.yml`) compiles both in a
+  pinned TeX Live container.
 - The fixed-budget ECDF and its AUC (`docs/definitions/ecdf.md`, EC-9 and EC-10):
   `metrics.get_fixed_budget_ecdf` gives, at each value v, the fraction of (run,
   budget) pairs whose best-so-far value at the budget is v or better (inclusive;

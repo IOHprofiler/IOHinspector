@@ -7,12 +7,15 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: &paths
+    paths:
       - "src/iohinspector/figures/**"
       - "tests/test_figures/**"
       - ".github/workflows/tex.yml"
   pull_request:
-    paths: *paths
+    paths:
+      - "src/iohinspector/figures/**"
+      - "tests/test_figures/**"
+      - ".github/workflows/tex.yml"
 
 jobs:
   tex:

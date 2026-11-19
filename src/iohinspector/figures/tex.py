@@ -5,8 +5,8 @@ The picture sets no font, so it takes the document's. Colours, line widths and
 dashes, markers, text sizes, axis size and limits, and the positions of the
 direct labels are those ``render`` draws. The axis is as large as in the
 matplotlib figure, whose tick labels and direct labels sit outside it: set
-``width`` and ``height`` in the ``.tex`` to fit a column. Needs the LaTeX packages
-``pgfplots`` (``\\usepgfplotslibrary`` is not used) and ``xcolor``.
+``width`` and ``height`` in the ``.tex`` to fit a column. Needs the LaTeX
+packages ``pgfplots`` (compat 1.18 or later) and ``xcolor``.
 """
 
 import io

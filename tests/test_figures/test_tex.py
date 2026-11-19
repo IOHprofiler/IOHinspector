@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 
 from iohinspector.figures import Axis, Data, FigureSpec, Legend, Series, render
-from iohinspector.figures.pgfplots import pgfplots
 from iohinspector.figures.render import tex_escape
+from iohinspector.figures.tex import pgfplots
 
 from .sample import ALGORITHMS, sample_data
 
