@@ -6,6 +6,7 @@ import contextlib
 import dataclasses
 import io
 import math
+import re
 
 import matplotlib as mpl
 import numpy as np
@@ -13,6 +14,7 @@ import polars as pl
 from matplotlib import ticker
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from matplotlib.text import Text
 from matplotlib.style import context as style_context
 
 from .base import Curve, Plot
@@ -23,12 +25,35 @@ from .venues import LINESTYLES, MARKERS, PALETTES, VENUES
 
 KINDS = {"ecdf": ecdf_plot}
 CM = 1 / 2.54
-METADATA = {"pdf": {"CreationDate": None}, "svg": {"Date": None}, "png": {}, "pgf": {}}
+METADATA = {  # without dates; the PGF backend takes none
+    "pdf": {"metadata": {"CreationDate": None}},
+    "svg": {"metadata": {"Date": None}},
+    "png": {"metadata": {}},
+}
 TICK_FORMATS = {
     "exponent": lambda v, _: f"${round(math.log10(v), 6):g}$",
     "power": lambda v, _: f"$10^{{{round(math.log10(v), 6):g}}}$",
     "plain": lambda v, _: f"${v:.12g}$",
 }
+
+
+TEX_SPECIAL = {
+    "#": r"\#",
+    "%": r"\%",
+    "&": r"\&",
+    "_": r"\_",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def tex_escape(text: str) -> str:
+    """``text`` for LaTeX: its special characters made literal, except in
+    ``$...$`` math, which stays as it is."""
+    plain = re.compile("|".join(map(re.escape, TEX_SPECIAL)))
+    parts = text.split("$")
+    parts[::2] = [plain.sub(lambda m: TEX_SPECIAL[m[0]], t) for t in parts[::2]]
+    return "$".join(parts)
 
 
 def render(spec: FigureSpec, data: pl.DataFrame, *, fmt: str | None = None) -> bytes:
@@ -43,7 +68,10 @@ def render(spec: FigureSpec, data: pl.DataFrame, *, fmt: str | None = None) -> b
     buffer = io.BytesIO()
     with style(spec):
         fig = _figure(spec, *_prepare(spec, data))
-        fig.savefig(buffer, format=fmt, dpi=spec.dpi, metadata=METADATA[fmt])
+        if fmt == "pgf":  # TeX reads the text
+            for text in fig.findobj(Text):
+                text.set_text(tex_escape(text.get_text()))
+        fig.savefig(buffer, format=fmt, dpi=spec.dpi, **METADATA.get(fmt, {}))
     return buffer.getvalue()
 
 
@@ -141,8 +169,13 @@ def _figure(spec: FigureSpec, plot: Plot, styles: dict) -> Figure:
     if spec.title:
         ax.set_title(spec.title)
     for curve, x, y in marker_points(ax, spec.markers, plot):  # on final limits
-        ax.plot(x, y, marker=styles[curve.label]["marker"], linestyle="none",
-                color=styles[curve.label]["color"])
+        ax.plot(
+            x,
+            y,
+            marker=styles[curve.label]["marker"],
+            linestyle="none",
+            color=styles[curve.label]["color"],
+        )
     _legend(fig, ax, spec, plot.curves, styles)
     return fig
 
