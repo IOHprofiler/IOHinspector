@@ -11,6 +11,7 @@ from iohinspector.metrics import (
     aggregate_convergence,
     aggregate_running_time,
     get_data_ecdf,
+    get_eaf,
     get_ecdf,
     get_ecdf_auc,
     get_overview,
@@ -25,6 +26,7 @@ METRICS = [
     aggregate_convergence,
     aggregate_running_time,
     get_data_ecdf,
+    get_eaf,
     get_ecdf,
     get_ecdf_auc,
     get_overview,
@@ -63,7 +65,7 @@ def manager():
     ],
 )
 def test_metrics_group_by_any_descriptor(manager, metric, by, groups):
-    pair = ["function_id", "dimension"] if "_ecdf" in metric.__name__ else []
+    pair = ["function_id", "dimension"] if "_e" in metric.__name__ else []  # ECDF, EAF
     df = manager.load(include_columns=list(dict.fromkeys([*by, *pair])))
     assert set(metric(df, by=by).select(by).unique().rows()) == groups
 

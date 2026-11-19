@@ -25,7 +25,10 @@ from .ecdf import (
 )
 from .eaf import (
     get_discritized_eaf_single_objective,
+    get_eaf,
     get_eaf_data,
+    get_eaf_difference,
+    get_eaf_margin,
     get_eaf_pareto_data,
     get_eaf_diff_data,
 )
@@ -80,8 +83,11 @@ __all__ = [
     "get_attractor_network",
     "get_data_ecdf",
     "get_discritized_eaf_single_objective",
+    "get_eaf",
     "get_eaf_data",
     "get_eaf_diff_data",
+    "get_eaf_difference",
+    "get_eaf_margin",
     "get_eaf_pareto_data",
     "get_ecdf",
     "get_ecdf_auc",
