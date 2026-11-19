@@ -1,3 +1,4 @@
+from .dsc import get_dsc_omnibus, get_dsc_posthoc, get_dsc_ranking, get_dsc_sample
 from .utils import (
     get_sequence,
     group_label,
@@ -68,4 +69,8 @@ __all__ = [
     "get_logged_rows",
     "get_parameter_sample",
     "get_parameter_summary",
+    "get_dsc_sample",
+    "get_dsc_ranking",
+    "get_dsc_omnibus",
+    "get_dsc_posthoc",
 ]
