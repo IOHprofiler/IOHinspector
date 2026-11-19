@@ -14,8 +14,8 @@ import polars as pl
 from matplotlib import ticker
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
-from matplotlib.text import Text
 from matplotlib.style import context as style_context
+from matplotlib.text import Text
 
 from .base import Curve, Plot
 from .ecdf import ecdf_plot
@@ -72,7 +72,9 @@ def render(spec: FigureSpec, data: pl.DataFrame, *, fmt: str | None = None) -> b
             for text in fig.findobj(Text):
                 text.set_text(tex_escape(text.get_text()))
         fig.savefig(buffer, format=fmt, dpi=spec.dpi, **METADATA.get(fmt, {}))
-    return buffer.getvalue()
+    out = buffer.getvalue()
+    # the tick labels use matplotlib's \mathdefault, which the document lacks
+    return b"\\providecommand{\\mathdefault}[1]{#1}\n" + out if fmt == "pgf" else out
 
 
 @contextlib.contextmanager
