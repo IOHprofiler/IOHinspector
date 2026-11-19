@@ -4,6 +4,16 @@
 
 ### New
 
+- Publication figures (`iohinspector.figures`, D11): `FigureSpec` is a
+  JSON-serialisable, validated description of a figure, and
+  `render(spec, data) -> bytes` draws it as PDF, SVG or PNG, the same bytes on
+  every machine. Venue presets (`VENUES`: LNCS, IEEE conference, ACM sigconf,
+  Elsevier, generic) set the single- and double-column widths and fonts from the
+  venues' LaTeX classes; palettes are colour-blind safe and every series also
+  has its own line style and marker. The first kind is the BBOB-style ECDF:
+  step lines over log10(evaluations / dimension), sparse markers, the final
+  value marked, and labels at the right ordered by final value. Gallery:
+  `docs/figures/`.
 - The fixed-budget ECDF and its AUC (`docs/definitions/ecdf.md`, EC-9 and EC-10):
   `metrics.get_fixed_budget_ecdf` gives, at each value v, the fraction of (run,
   budget) pairs whose best-so-far value at the budget is v or better (inclusive;
@@ -21,6 +31,35 @@
   these bounds. The suite comes from a `suite` column, for example
   `DataManager.load(include_columns=[..., "suite"])`. `get_ecdf_targets` takes
   `lower` and `upper` to set the bounds of every pair.
+- Statistical comparisons (`docs/definitions/comparisons.md`), comparing the
+  groups of `by`: `metrics.ks_test` is the one-sided two-sample KS test, with
+  the exact p-value when n m < 10000 (a port of R's) and the asymptotic one
+  otherwise; failed runs count as `inf`. `metrics.holm` is Holm's correction.
+  `metrics.get_ks_tests` tests every ordered pair of groups on a runtime or
+  value sample, Holm-corrected per view, with the decisions for the heat map
+  and the dominance graph. `metrics.get_win_fractions` gives the fraction of
+  targets on which one group beats another by a selectable measure
+  (`metrics.MEASURES`: ERT by default, mean, PAR-k or median runtime; mean,
+  median or best value).
+- Tournament ratings (`docs/definitions/glicko2.md`):
+  `metrics.get_tournament_ranking` plays seeded random games between the
+  groups of `by` on every function, dimension and target, and rates them with
+  Glicko-2 (`method="glicko2"`, τ = 0.5 by default; IOHanalyzer's is 1.2) or Elo
+  (`method="elo"`). `metrics.glicko2` and `metrics.elo` rate a given game list;
+  `glicko2` reproduces `PlayerRatings::glicko2`.
+- Deep Statistical Comparison, computed locally (`docs/definitions/dsc.md`):
+  `metrics.get_dsc_sample` (one value per run and problem; failed runs as
+  PAR-k, k = 10 by default, ERT or removed), `get_dsc_ranking` (AD or KS ranks
+  per problem, practical DSC with a seed), `get_dsc_omnibus` (Friedman,
+  aligned ranks, Iman-Davenport, or Wilcoxon for two algorithms) and
+  `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg; `metrics.hochberg` is
+  Hochberg's correction, next to `holm`). They
+  reproduce the published DSCTool example. scipy is now a direct dependency.
+
+### Deprecated
+
+- `metrics.get_tournament_ratings`: use `get_tournament_ranking(data,
+  method="elo", seed=...)`.
 
 ## 0.2.1
 

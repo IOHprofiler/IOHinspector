@@ -5,7 +5,7 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-from . import indicators, metrics, plots
+from . import figures, indicators, metrics, plots
 from ._upgrade import removed_names
 from .align import align_data
 from .indicators import *

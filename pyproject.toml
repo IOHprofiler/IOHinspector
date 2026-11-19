@@ -26,6 +26,7 @@ dependencies = [
   "polars>=1.33.1",
   "pyarrow", 
   "robustranking", 
+  "scipy",
   "seaborn",
   "skelo",
   "networkx"
