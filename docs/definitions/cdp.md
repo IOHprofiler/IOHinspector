@@ -31,9 +31,17 @@ Y_A − Y_B with a bootstrap confidence band:
   quantiles (type 7) of the bootstrap curves; α default 0.05;
 - output per p: Y_A, Y_B and their bands, and the difference with its band.
 
-The precise definition of Y_A and Y_B (the rank-based random variables of
-[Arza2023]) is to be checked against the paper in I16; this page fixes the
-estimator to RVCompare's code.
+Y_A and Y_B are the *quantile random variables* of [Arza2023] (checked in
+I16 against the arXiv version, 2203.07889): random variables on [0, 1] whose
+densities are mixtures of uniform kernels, one per observation of the pooled
+sample, placed by the observation's rank, so that the two densities add up to
+2 everywhere. Tied observations share their kernels in proportion to how many
+come from each sample. In the paper ties are values closer than a threshold,
+as here. RVCompare evaluates these densities on the 2000 points, normalises
+each by its sum (not by its trapezoid integral, so the cumulative functions
+end just below 1, by less than 1e-3) and integrates with the trapezoid rule.
+The paper's bands are the bootstrap bands above, with level sqrt(1 − α) per
+band for joint confidence 1 − α. This page follows RVCompare's code.
 
 ## How IOHanalyzer implements it
 
@@ -77,9 +85,35 @@ No cumulative difference plot.
 Remaining points for H1: the subsample is drawn by seed from the larger set
 only (the smaller set is used whole). Confirm, or ask for repeated subsamples.
 
+## Implementation (I16)
+
+`iohinspector.metrics`, in `metrics/cdp.py`:
+
+- `cumulative_difference(x_a, x_b, *, alpha=0.05, epsilon=1e-80,
+  n_bootstrap=1000, seed=None)`: RVCompare 0.1.8's estimator (CD-1) on two
+  equally large samples, smaller is better, vectorised over the bootstrap
+  samples. Infinite values tie with each other (CD-2); NaN is rejected. Returns
+  `p` and `y_a`, `y_b`, `diff` with their `_lower` and `_upper` bands.
+- `get_cumulative_difference(data, *, target=None, budget=None, by, maximization,
+  subsample=True, seed=None, ...)`: one (function, dimension) pair, `by` makes
+  exactly two groups (A first in sorted order). Fixed target: runtimes, a failed
+  run is `inf` (CD-2). Fixed budget: the best value at the budget, negated when
+  maximising; a run with no evaluation yet at the budget (AL-5) is `inf` too.
+  Unequal groups: the larger is subsampled with the seed and a warning names the
+  sizes (CD-3). The result has `curves` and `runs`: every run with its group,
+  sample value and `used`, so the view and the download can state the original
+  sizes, the size used and the `run_id`s left out.
+
+RVCompare's code is CC0, so it is ported directly.
+
 ## Test tolerance
 
 With the observed samples (the first "bootstrap" sample) the estimates
 Y_A, Y_B and the difference must match RVCompare to 1e-12. Bands depend on the
 random stream and are compared as distributions: the band edges from 1000
-seeded bootstraps must lie within 0.02 of RVCompare's on the I03 fixtures.
+seeded bootstraps must lie within 0.02 of RVCompare's for Y_A and Y_B, and
+within 0.04 for the difference, whose band varies about twice as much between
+seeds (up to 0.037 between two of our own seeds). The I03 fixtures have 5 runs
+per algorithm, too few for their bands to be compared across random streams,
+so only their estimates are compared (to 1e-12); the bands are compared on
+`tests/golden/rvcompare/`, RVCompare itself on two samples of 100 values.
