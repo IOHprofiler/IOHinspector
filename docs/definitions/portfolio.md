@@ -40,8 +40,21 @@ enumeration, the sampling, the normalisation or the caching of v(S).
 
 ### Computation
 
-- For up to 15 algorithms (2^15 subsets) φ is computed exactly by enumerating
-  subsets.
+- The default value (SH-1) with the default marginal contribution is computed
+  exactly, in closed form, for any number of algorithms (Q-SH-2). v is a sum
+  of *maximum games*, one per (pair, target, budget step) c with weight w_c:
+  v(S) = Σ_c w_c max_{a ∈ S} e_{a,c}. The Shapley value is linear in the game,
+  and in a maximum game a gains the increase of the maximum whenever it joins
+  a coalition of lower ECDFs. With the ECDFs of a step sorted ascending,
+  0 = e_(0) ≤ e_(1) ≤ … ≤ e_(n), the algorithm in place i gets
+
+      φ_(i),c = Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1),
+
+  because the slice (e_(j−1), e_(j)] goes to whichever of the n − j + 1
+  algorithms in places j..n comes first in the order, each equally likely.
+  Tied algorithms get equal values. The cost is a sort per step, n log n.
+- Any other value or marginal contribution (SH-4): for up to 15 algorithms
+  (2^15 subsets) φ is computed exactly by enumerating subsets.
 - Above that it is estimated by stratified sampling: for each position
   j = 1..|N|, g random permutations with a placed at position j; φ_a is the
   mean of the marginal contributions over positions. The caller gives g and a
@@ -81,32 +94,36 @@ No Shapley or portfolio function.
 |---|---|---|
 | ECDF normalisation | successful runs only | all runs (EC-1) |
 | Budget axis | sum over 50 grid points | exact AUC (EC-4) |
-| Estimator | stratified permutations, truncated above 10 algorithms, no seed | exact up to 15, else stratified over all positions, seeded |
+| Estimator | stratified permutations, truncated above 10 algorithms, no seed | exact for any number (closed form); other definitions exact up to 15, else stratified over all positions, seeded |
 
 ## Decisions
 
 - **SH-1.** v(S) is the summed AUC of the virtual-best ECDF over pairs and
   targets, with ECDFs over all runs.
-- **SH-2.** Exact Shapley values up to 15 algorithms (2^15 subsets); seeded
-  stratified sampling over **all** positions above that. Decided by the D6 review (dvermetten, 2026-11-06).
+- **SH-2.** The default value (SH-1) is computed exactly for any number of
+  algorithms, in closed form. Other values or marginal contributions (SH-4):
+  exact Shapley values up to 15 algorithms (2^15 subsets); seeded stratified
+  sampling over **all** positions above that. Decided by the D6 review
+  (dvermetten, 2026-11-06), and on #44 for the closed form (Q-SH-2,
+  2026-11-19).
 - **SH-3.** Values are normalised by v(N) and sum to 1.
 - **SH-4.** The Shapley functionality is generic: it takes the portfolio value
   function and the marginal contribution as arguments, with the ECDF-envelope
   value (SH-1) and v(S ∪ {a}) − v(S) as defaults, so other definitions of
   marginal contribution can be added later without rewriting it. Decided by the D6 review (dvermetten, 2026-11-06).
 
-## Questions answered by the D6 review
+## Questions answered
 
-- Q-SH-1 (limit for exact Shapley values): 15 is a good limit. See SH-2.
-- Added requirement: generic marginal contributions. See SH-4.
+- Q-SH-1 (D6 review, limit for exact Shapley values): 15 is a good limit. See
+  SH-2.
+- Added requirement (D6 review): generic marginal contributions. See SH-4.
+- Q-SH-2 (review of #44, answered 2026-11-19; enumeration was 13 times slower
+  than sampling at 15 algorithms): use the closed form for the default value,
+  exact for any number of algorithms. Enumeration up to `exact_limit` and
+  sampling above it remain for other values and marginals. See SH-2 and
+  "Speed" below.
 
-## Open question
-
-- Q-SH-2 (review of #44): exact is 13 times slower than sampling at 15
-  algorithms; lower the limit to 12 or use the closed form for the default
-  value. See "Speed of the exact computation" below.
-
-Remaining points for H1: Q-SH-2.
+Remaining points for H1: none.
 
 ## Implementation (I16)
 
@@ -116,8 +133,9 @@ Remaining points for H1: Q-SH-2.
   seed=None)`: the generic routine (SH-4). `value` takes a boolean matrix, one
   row per coalition and one column per player, and returns v of each row;
   `marginal(v, S, a)` gets the cached value function and the coalitions S
-  without a, and defaults to v(S ∪ {a}) − v(S). Exact (SH-2): v is called once on
-  all 2^n coalitions. Sampled: for each player and position j, `samples` random
+  without a, and defaults to v(S ∪ {a}) − v(S). For `envelope_value` with the
+  default marginal it uses the closed form (Q-SH-2), whatever `exact_limit`.
+  Otherwise, exact (SH-2): v is called once on all 2^n coalitions. Sampled: for each player and position j, `samples` random
   coalitions of j − 1 other players (the predecessors of a in a random
   permutation that puts a at position j), and v is called once per distinct
   coalition. Returns the values divided by v(N) (SH-3) and a standard error per
@@ -131,7 +149,9 @@ Remaining points for H1: Q-SH-2.
   on the budget axis, divided by its length. Identical steps are merged and
   their widths summed, so a step no longer knows its pair, target or budget.
 - `envelope_value(ecdf, width)`: SH-1 on these data,
-  v(S) = Σ width · max_{a ∈ S} ecdf[a].
+  v(S) = Σ width · max_{a ∈ S} ecdf[a]. It also carries the closed form, so
+  `shapley_values` recognises it. Any other function, even one that only calls
+  it, is a custom value and is enumerated or sampled.
 - `get_shapley_values(data, targets, by, *, b_lo, b_hi, scale_eval_log, ...)`:
   `shapley_values` of `envelope_value` on `get_portfolio_ecdf`. Returns `by`,
   `shapley`, `se`.
@@ -173,6 +193,8 @@ Rules for a definition:
 - `marginal(v, S, a)` gets the cached value function, the coalitions S (rows
   without a) and the player a, and returns one number per row. It may use v,
   or data of its own such as `ecdf`, or both.
+- A custom value or marginal is enumerated up to `exact_limit` players and
+  sampled above; the closed form is for the default value only.
 - The values are always divided by v(N). They sum to 1 only with the default
   marginal; with a marginal that does not use v, v only sets that scale.
 - The merged steps of `get_portfolio_ecdf` suit definitions that add up over
@@ -182,30 +204,28 @@ Rules for a definition:
 The tests (`tests/test_metrics/test_portfolio.py`) run both examples above,
 exact and sampled, against a direct computation over all orders.
 
-### Speed of the exact computation (review of #44)
+### Speed (review of #44, Q-SH-2)
 
-`scripts/bench_shapley.py` times `get_shapley_values` exact and sampled
-(5 coalitions per player and position, the default) on a synthetic full-bbob
-set: 24 functions, 6 dimensions, 15 runs per algorithm and pair, the default
-targets, a log budget axis; about 142 000 merged steps at 15 algorithms. On a
-10-core laptop, exact costs about as much as sampling up to 8 algorithms, 1.5
-times as much at 10 (1.3 s against 0.9 s), 3 times as much at 12 (5 s against
-1.6 s) and 13 times as much at 15 (69 s against 5 s). Exact work grows as 2^n · n per step, sampling as n^3.
-The sampled values were within 4·10⁻⁴ of the exact ones (standard error about
-2·10⁻⁴).
+`scripts/bench_shapley.py` builds the game of `get_shapley_values` on a
+synthetic full-bbob set (24 functions, 6 dimensions, 15 runs per algorithm and
+pair, the default targets, a log budget axis) and times the default value
+three ways: the closed form, which `get_shapley_values` uses, and enumeration
+and sampling (5 coalitions per player and position, the default), as for a
+custom value. On a 10-core laptop:
 
-So SH-2's limit of 15 is slow for the default value. Two ways out, for the
-reviewer to choose; the limit stays at 15 until then:
+| algorithms | steps | ECDF data (s) | closed form (s) | enumeration (s) | sampled (s) | enumeration − closed | sampled − closed | max se |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 27 102 | 0.34 | 0.002 | 0.00 | 0.00 | 6·10⁻¹⁷ | 4·10⁻⁴ | 3·10⁻⁴ |
+| 10 | 95 986 | 0.55 | 0.017 | 0.81 | 0.36 | 1·10⁻¹⁶ | 4·10⁻⁴ | 2·10⁻⁴ |
+| 12 | 114 890 | 0.64 | 0.022 | 4.61 | 1.03 | 2·10⁻¹⁶ | 4·10⁻⁴ | 2·10⁻⁴ |
+| 14 | 133 143 | 0.74 | 0.029 | 26.5 | 2.16 | 3·10⁻¹⁶ | 2·10⁻⁴ | 2·10⁻⁴ |
+| 15 | 142 091 | 0.78 | 0.036 | 65.9 | 3.25 | 3·10⁻¹⁶ | 3·10⁻⁴ | 2·10⁻⁴ |
 
-1. Lower the default `exact_limit` to 12, where exact takes a few seconds on a
-   full-bbob set.
-2. Use a closed form for the default value. SH-1 is a sum of *maximum games*,
-   one per step: with the ECDFs of a step sorted ascending,
-   e_(1) ≤ … ≤ e_(n), the algorithm in place i gets
-   Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1) times the step width. That is exact
-   for any number of algorithms and took 0.04 s at 15 (equal to the
-   enumeration within 10⁻¹⁵). Enumeration and sampling would remain for other
-   definitions. The tests already use this form to check the enumeration.
+The differences are the largest absolute difference of a normalised value.
+Enumeration grows as 2^n · n per step, sampling as n^3 and the closed form as
+n log n, so `get_shapley_values` now spends its time on the ECDF data: 0.8 s
+at 15 algorithms, against 69 s with enumeration before Q-SH-2. Custom values
+and marginals still pay the enumeration column up to `exact_limit`.
 
 Golden tests: IOHanalyzer's value (R's `ecdf` of the successful runtimes,
 summed over its 50-point grid) is a custom value function for
@@ -218,5 +238,7 @@ names.
 ## Test tolerance
 
 Exact Shapley values: relative error 1e-12, and the sum must be 1 within
-1e-12. Sampled values: compared with the exact values on a 6-algorithm case,
-within 3 standard errors.
+1e-12. The closed form equals enumeration within a relative 1e-12 for 1 to 15
+algorithms, with ties and steps no algorithm reaches. Sampled values: compared
+with the exact values on a 6-algorithm case, within 3 standard errors (4 on a
+40-algorithm case, where 3 is too tight for 40 values at once).

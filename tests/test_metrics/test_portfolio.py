@@ -12,6 +12,7 @@ from iohinspector.metrics import (
     shapley_values,
 )
 from iohinspector.metrics.distributions import get_runtime_sample
+from iohinspector.metrics.portfolio import _added
 from iohinspector.targets import seq_rt
 from tests.golden.load import golden, logged
 
@@ -44,16 +45,10 @@ def _by_permutations(table, n):
     return _by_orders(n, lambda s, a: table[s | 1 << a] - table[s]) / table[-1]
 
 
-def _max_game(ecdf, width):
-    """The closed form of v(S) = Σ_c w_c max_{a ∈ S} e_{a,c}, a sum of maximum
-    games: with e sorted ascending, φ_(i) = Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1)."""
-    n, m = ecdf.shape
-    phi = np.zeros(n)
-    for c in range(m):
-        order = np.argsort(ecdf[:, c], kind="stable")
-        step = np.diff(np.r_[0, ecdf[order, c]]) / (n - np.arange(n))
-        phi[order] += width[c] * np.cumsum(step)
-    return phi / (ecdf.max(axis=0) @ width)
+def _plain(value):
+    """``value`` as a custom value function: enumerated or sampled, never the
+    closed form."""
+    return lambda coalitions: value(coalitions)
 
 
 @pytest.mark.parametrize("n", [1, 2, 4, 6])
@@ -65,18 +60,37 @@ def test_exact_is_the_mean_over_all_orders(n):
     assert abs(phi.sum() - 1) < TOL and not se.any()
 
 
-@pytest.mark.parametrize("n", [2, 7, 15])
-def test_exact_portfolio_value_matches_the_closed_form(n):
+@pytest.mark.parametrize("n", range(1, 16))
+def test_closed_form_equals_enumeration(n):
+    # Q-SH-2: the default value in closed form, against enumeration up to the limit
     rng = np.random.default_rng(n)
     ecdf, width = rng.random((n, 30)).round(1), rng.random(30)  # with ties
-    phi, _ = shapley_values(n, envelope_value(ecdf, width))
-    np.testing.assert_allclose(phi, _max_game(ecdf, width), rtol=TOL)
+    ecdf[:, :3] = 0  # steps no player reaches
+    value = envelope_value(ecdf, width)
+    phi, se = shapley_values(n, value)
+    enumerated, _ = shapley_values(n, _plain(value))
+    np.testing.assert_allclose(phi, enumerated, rtol=TOL)
+    assert abs(phi.sum() - 1) < TOL and not se.any()
+
+
+def test_closed_form_for_any_number_of_players():
+    n = 40
+    rng = np.random.default_rng(0)
+    ecdf, width = rng.random((n, 200)) ** 3, rng.random(200)
+    ecdf[1] = ecdf[0]  # equal players, equal values
+    value = envelope_value(ecdf, width)
+    phi, se = shapley_values(n, value, exact_limit=0, samples=2, seed=0)
+    assert not se.any() and phi[0] == pytest.approx(phi[1], rel=TOL)
     assert abs(phi.sum() - 1) < TOL
+    sampled, se = shapley_values(n, _plain(value), samples=10, seed=1)
+    assert (np.abs(sampled - phi) < 4 * se).all()  # 40 players: 4, not 3
+    with pytest.raises(ValueError, match="n_players"):
+        shapley_values(n - 1, value)
 
 
 def test_sampled_values_are_within_three_standard_errors():
     rng = np.random.default_rng(6)
-    value = envelope_value(rng.random((6, 50)), rng.random(50))
+    value = _plain(envelope_value(rng.random((6, 50)), rng.random(50)))
     exact, _ = shapley_values(6, value)
     sampled, se = shapley_values(6, value, exact_limit=5, samples=20, seed=1)
     assert (se > 0).all()
@@ -246,9 +260,18 @@ def test_portfolio_by_other_columns_and_sampling():
     exact = get_shapley_values(data, TARGETS, by=by, pairs="all")
     assert exact.columns == ["algorithm_name", "seed", "shapley", "se"]
     assert exact.height == 5  # (C, 1) has no runs
-    sampled = get_shapley_values(
-        data, TARGETS, by=by, pairs="all", exact_limit=2, samples=50, seed=4
+    assert (exact["se"] == 0).all()
+    sampled = get_shapley_values(  # the default marginal, given: sampled
+        data,
+        TARGETS,
+        by=by,
+        pairs="all",
+        marginal=_added,
+        exact_limit=2,
+        samples=50,
+        seed=4,
     )
+    assert (sampled["se"] > 0).all()
     assert (np.abs(sampled["shapley"] - exact["shapley"]) <= 3 * sampled["se"]).all()
 
 

@@ -169,7 +169,7 @@ golden tests name the decision there.
 | ID | Decision | Differs |
 |---|---|---|
 | SH-1 | Portfolio value: summed AUC of the virtual-best ECDF over all runs | yes |
-| SH-2 | Exact Shapley up to 15 algorithms, seeded stratified sampling above | yes |
+| SH-2 | Default value exact for any number of algorithms (closed form); other definitions exact up to 15, seeded stratified sampling above | yes |
 | SH-3 | Normalised by v(N), sum 1 | no |
 | SH-4 | Generic in the portfolio value and the marginal contribution | – |
 | CD-1 | RVCompare 0.1.8 bootstrap estimator, seeded | no |
@@ -260,6 +260,7 @@ Decided by the D6 review (dvermetten, 2026-11-06, IOHinspector#16).
 | Q-CM-3 | Win fractions take a selectable performance measure | CM-5 | [comparisons](comparisons.md) |
 | Q-GL-1 | τ in the recommended range, modifiable; Elo/Glicko-2 switch | GL-2, GL-4 | [glicko2](glicko2.md) |
 | Q-SH-1 | 15 is the limit; Shapley generic in the marginal contribution | SH-2, SH-4 | [portfolio](portfolio.md) |
+| Q-SH-2 | Closed form for the default value, exact for any number of algorithms | SH-2 | [portfolio](portfolio.md) |
 | Q-CD-1 | Subsample by default, shown to the user | CD-3 | [cdp](cdp.md) |
 | Q-EA-1 | BBOB bounds 1e2 and 1e-8; precise and discretised modes | EA-3, EA-5 | [eaf](eaf.md) |
 | Q-DS-2 | PAR-k conventions unified, user-customisable; default k = 10 | DS-3 | [dsc](dsc.md) |

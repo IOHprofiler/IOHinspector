@@ -113,12 +113,15 @@ def shapley_values(  # pylint: disable=too-many-arguments
     φ_a = Σ_{S ⊆ N∖{a}} |S|! (|N| − |S| − 1)! / |N|! · m(S, a), divided by v(N), so
     that the values sum to 1 when m is the default v(S ∪ {a}) − v(S).
 
-    Up to ``exact_limit`` players (2^15 coalitions by default) every coalition is
-    enumerated and v is evaluated once on all of them. Above that, φ_a is estimated
-    by stratified sampling over **all** positions: for each position j = 1..|N|,
-    ``samples`` random permutations with a at position j, that is ``samples`` random
-    coalitions of j − 1 other players; φ_a is the mean over positions of the mean
-    marginal contribution. v is evaluated once per distinct coalition.
+    The default portfolio value (``envelope_value``) with the default marginal is
+    computed in closed form, exactly for any number of players (Q-SH-2). Any other
+    value or marginal: up to ``exact_limit`` players (2^15 coalitions by default)
+    every coalition is enumerated and v is evaluated once on all of them. Above
+    that, φ_a is estimated by stratified sampling over **all** positions: for each
+    position j = 1..|N|, ``samples`` random permutations with a at position j, that
+    is ``samples`` random coalitions of j − 1 other players; φ_a is the mean over
+    positions of the mean marginal contribution. v is evaluated once per distinct
+    coalition.
 
     Args:
         n_players: |N|; players are the indices 0..n_players − 1.
@@ -128,7 +131,8 @@ def shapley_values(  # pylint: disable=too-many-arguments
         marginal: m(v, S, a) for a boolean matrix S of coalitions without player a,
             returning one number per row; ``v`` is the cached value function. Default
             v(S ∪ {a}) − v(S).
-        exact_limit: the largest number of players computed exactly.
+        exact_limit: the largest number of players computed exactly by
+            enumeration; not used by the closed form.
         samples: g, the coalitions per (player, position) when sampling; at least 2
             for a standard error.
         seed: the random seed when sampling.
@@ -139,24 +143,30 @@ def shapley_values(  # pylint: disable=too-many-arguments
     """
     if n_players < 1:
         raise ValueError("a game needs at least one player")
-    marginal = marginal or _added
-    if n_players <= exact_limit:
-        phi, se, total = _exact(value, marginal, n_players)
+    if marginal is None and isinstance(value, _Envelope):
+        if len(value.ecdf) != n_players:
+            raise ValueError("n_players is not the number of rows of the ECDF")
+        (phi, total), se = value.shapley(), np.zeros(n_players)
+    elif n_players <= exact_limit:
+        phi, se, total = _exact(value, marginal or _added, n_players)
     else:
         phi, se, total = _sampled(
-            value, marginal, n_players, samples=samples, seed=seed
+            value, marginal or _added, n_players, samples=samples, seed=seed
         )
     if total == 0:
         return np.full(n_players, np.nan), np.full(n_players, np.nan)
     return phi / total, se / total
 
 
-def envelope_value(ecdf: np.ndarray, width: np.ndarray) -> Value:
-    """The portfolio value of SH-1 on the output of ``get_portfolio_ecdf``:
-    v(S) = Σ width · max_{a ∈ S} ecdf[a], the area under the virtual best of S."""
-    n, m = ecdf.shape
+class _Envelope:
+    """SH-1's value v(S) = Σ width · max_{a ∈ S} ecdf[a], with its Shapley values
+    in closed form (Q-SH-2)."""
 
-    def value(coalitions: np.ndarray) -> np.ndarray:
+    def __init__(self, ecdf: np.ndarray, width: np.ndarray):
+        self.ecdf, self.width = ecdf, width
+
+    def __call__(self, coalitions: np.ndarray) -> np.ndarray:
+        n, m = self.ecdf.shape
         out = np.empty(len(coalitions))
         step = max(1, CHUNK // max(m, 1))
         for start in range(0, len(coalitions), step):
@@ -164,11 +174,35 @@ def envelope_value(ecdf: np.ndarray, width: np.ndarray) -> Value:
             block = coalitions[start:stop]
             best = np.zeros((len(block), m))
             for a in range(n):
-                np.maximum(best, block[:, a, None] * ecdf[a], out=best)
-            out[start:stop] = best @ width
+                np.maximum(best, block[:, a, None] * self.ecdf[a], out=best)
+            out[start:stop] = best @ self.width
         return out
 
-    return value
+    def shapley(self) -> tuple[np.ndarray, float]:
+        """(φ, v(N)) unnormalised. v is a sum of maximum games, one per step: with
+        the ECDFs of a step sorted ascending, e_(1) ≤ … ≤ e_(n) and e_(0) = 0, the
+        player in place i gets Σ_{j ≤ i} (e_(j) − e_(j−1)) / (n − j + 1)."""
+        n, m = self.ecdf.shape
+        share = 1 / (n - np.arange(n))[:, None]  # 1 / (n − j + 1)
+        step = max(1, CHUNK // n)
+        phi = np.zeros(n)
+        for start in range(0, m, step):
+            block = self.ecdf[:, start : start + step]
+            order = np.argsort(block, axis=0, kind="stable")
+            ranked = np.take_along_axis(block, order, axis=0)
+            ranked = np.cumsum(np.diff(ranked, axis=0, prepend=0) * share, axis=0)
+            gain = np.empty_like(block)
+            np.put_along_axis(gain, order, ranked, axis=0)
+            phi += gain @ self.width[start : start + step]
+        return phi, float(self.ecdf.max(axis=0) @ self.width)
+
+
+def envelope_value(ecdf: np.ndarray, width: np.ndarray) -> Value:
+    """The portfolio value of SH-1 on the output of ``get_portfolio_ecdf``:
+    v(S) = Σ width · max_{a ∈ S} ecdf[a], the area under the virtual best of S.
+    With the default marginal, ``shapley_values`` computes its Shapley values in
+    closed form, exactly for any number of players (Q-SH-2)."""
+    return _Envelope(ecdf, width)
 
 
 def _portfolio(  # pylint: disable=R0913,R0914
@@ -313,7 +347,9 @@ def get_shapley_values(  # pylint: disable=too-many-arguments
     fraction of all its runs that reached the target, EC-1), integrated exactly over
     [``b_lo``, ``b_hi``] as in ``get_ecdf_auc`` (EC-4), summed over pairs and
     targets. The Shapley values are normalised by v(N) and sum to 1 (SH-3); they
-    are exact up to ``exact_limit`` groups and sampled, seeded, above (SH-2).
+    are exact for any number of groups, in closed form (SH-2, Q-SH-2). With a
+    custom ``marginal`` they are exact up to ``exact_limit`` groups and sampled,
+    seeded, above.
     Another value or marginal contribution on the same ECDF data: call
     ``shapley_values`` on the output of ``get_portfolio_ecdf``.
 
@@ -322,7 +358,9 @@ def get_shapley_values(  # pylint: disable=too-many-arguments
             one column.
         b_lo, b_hi, scale_eval_log: the budget range and axis, as in
             ``get_ecdf_auc``.
-        marginal, exact_limit, samples, seed: as in ``shapley_values`` (SH-4).
+        marginal, exact_limit, samples, seed: as in ``shapley_values`` (SH-4);
+            ``exact_limit``, ``samples`` and ``seed`` only apply with a
+            ``marginal``.
         **options: ``scale_f_log``, ``maximization``, ``pairs``,
             ``divide_by_dimension``, ``fval_var`` and ``eval_var`` as in
             ``get_ecdf``.
