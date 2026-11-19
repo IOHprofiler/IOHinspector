@@ -61,6 +61,7 @@
   its rows are not together (moocore needs them together), and
   `get_eaf_diff_data` returns no rows instead of failing when there is no
   difference.
+
 ### Deprecated
 
 - `metrics.get_tournament_ratings`: use `get_tournament_ranking(data,
