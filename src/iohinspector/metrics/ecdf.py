@@ -10,6 +10,8 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import PAIR, get_ecdf_budgets, get_ecdf_targets, seq_rt
+from .fixed_budget import _restart
+from .utils import runs_of
 
 ALL = "_all"  # the one group when ``by`` is empty
 
@@ -292,24 +294,35 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     return _area(steps, by, *_axis(pl.col("x"), b_lo, hi, scale_eval_log))
 
 
-def _value_increments(  # pylint: disable=R0913
+def _value_increments(  # pylint: disable=R0913,R0914
     data: pl.DataFrame,
     budgets: pl.DataFrame | None,
     by: list[str],
     *,
     maximization: bool = False,
     pairs: str = "common",
+    stopped: str = "restart",
+    seed: int | None = None,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
-) -> pl.DataFrame:
+) -> tuple[pl.DataFrame, pl.DataFrame | None]:
     """The weighted fixed-budget ECDF increments ``inc`` per group of ``by`` at
     x = V_i(b), each run's best-so-far value at each budget (EC-9), -V_i(b) when
-    maximising so that the ECDF accumulates along x; and a 0 at x = -inf."""
+    maximising so that the ECDF accumulates along x; and a 0 at x = -inf. With
+    restarts (EC-7, FB-6) also ``n_restarted`` per group of ``by``."""
+    # #lizard forgives  (the options of the fixed-budget ECDF, passed on as one)
+    if stopped not in ("carry_forward", "restart"):
+        raise ValueError(f"stopped is 'carry_forward' or 'restart', not {stopped!r}")
     if budgets is None:
         budgets = get_ecdf_budgets(data, eval_var=eval_var)
     budgets = budgets.cast({c: data.schema[c] for c in PAIR})
     data = data.join(budgets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
     data = _weights(data, by, pairs)
+    restart = stopped == "restart"
+    runs = runs_of(data, [*by, *PAIR], eval_var)  # a chain's runs: by, in its pair
+    if restart and "evals_used" not in data.columns:  # B_i as for the ERT (RT-1)
+        used = runs.select("run_id", "evals_used")
+        data = data.join(used, on="run_id", maintain_order="left")
     values = _aligned(
         data,
         budgets,
@@ -318,11 +331,25 @@ def _value_increments(  # pylint: disable=R0913
         y_col=fval_var,
         maximization=maximization,
         eval_var=eval_var,
-    ).filter(pl.col(fval_var).is_not_null())  # no value before the first row (AL-5)
+    )
+    if restart:
+        values = _restart(data, values, runs, eval_var, fval_var, maximization, seed)
+    values = values.filter(pl.col(fval_var).is_not_null())  # none before AL-5
+    n_restarted = pl.col("run_id").filter("stopped").n_unique().alias("n_restarted")
+    counts = values.group_by(by).agg(n_restarted) if restart else None
     x = pl.col(fval_var).cast(pl.Float64) * (-1.0 if maximization else 1.0)
     zero = data.select(by).unique().with_columns(x=-math.inf, inc=pl.lit(0.0))
     steps = values.select(*by, x=x, inc=pl.col("dy") * pl.col("weight"))
-    return pl.concat([zero, steps])
+    return pl.concat([zero, steps]), counts
+
+
+def _with_counts(result: pl.DataFrame, counts: pl.DataFrame | None, by: list[str]):
+    """``result`` with each group's ``n_restarted`` from ``counts``, if any."""
+    if counts is None:
+        return result
+    if by == [ALL]:
+        return result.with_columns(n_restarted=counts["n_restarted"].item())
+    return result.join(counts, on=by, how="left", maintain_order="left")
 
 
 @upgrade_hints
@@ -341,11 +368,15 @@ def get_fixed_budget_ecdf(
     At a value v, the fraction of (run, budget) pairs whose best-so-far value at
     the budget is v or better: V_i(b) <= v (>= when maximising), so the run reached
     v within the budget. Before its first logged row a run has no value and counts
-    as not reached. Averaged over the (function, dimension) pairs of a group as
-    ``get_ecdf`` (EC-2). Exact: without ``x_values`` the result has one row per
-    value at which the ECDF steps, from the worst value to the best, each with the
-    ECDF from there to the next row, and a first row at v = -inf (inf when
-    maximising) with value 0 for every group.
+    as not reached. A run that stopped before the budget (B_i < b, B_i its
+    ``evals_used`` or else its last logged evaluation) is continued by simulated
+    restarts by default (EC-7, as ``aggregate_convergence``'s
+    ``stopped="restart"``, FB-6), drawn from the runs of its group in its pair.
+    Averaged over the (function, dimension) pairs of a group as ``get_ecdf``
+    (EC-2). Exact (for one draw of the restarts): without ``x_values`` the result
+    has one row per value at which the ECDF steps, from the worst value to the
+    best, each with the ECDF from there to the next row, and a first row at
+    v = -inf (inf when maximising) with value 0 for every group.
 
     Args:
         data: the runs' logged rows in evaluation order, as for ``get_ecdf``.
@@ -357,17 +388,21 @@ def get_fixed_budget_ecdf(
         fval_var: the function value column.
         **options: keyword-only: ``maximization`` (False), ``pairs``
             (``"common"``) and ``eval_var`` (``"evaluations"``), as for
-            ``get_ecdf``.
+            ``get_ecdf``; ``stopped``: ``"restart"`` (default) or
+            ``"carry_forward"``, the run's final value (IOHanalyzer's rule); and
+            ``seed``, the seed of the restarts.
 
     Returns:
-        pl.DataFrame: ``by``, ``fval_var`` (float) and ``ecdf``.
+        pl.DataFrame: ``by``, ``fval_var`` (float) and ``ecdf``; with restarts
+            also ``n_restarted``, the runs of the group that stopped before
+            their pair's largest budget.
     """
     data, by = _one_group(data, by)
     sign = -1.0 if options.get("maximization") else 1.0
-    steps = _value_increments(data, budgets, by, fval_var=fval_var, **options)
+    steps, counts = _value_increments(data, budgets, by, fval_var=fval_var, **options)
     xs = None if x_values is None else [sign * v for v in x_values]
     ecdf = _step_function(steps, by, xs).with_columns(pl.col("x") * sign)
-    return ecdf.rename({"x": fval_var})
+    return _with_counts(ecdf.rename({"x": fval_var}), counts, by)
 
 
 @upgrade_hints
@@ -399,10 +434,11 @@ def get_fixed_budget_ecdf_auc(  # pylint: disable=too-many-arguments
             observed range.
         scale_f_log: integrate over log10 of the value.
         fval_var: the function value column.
-        **options: the options of ``get_fixed_budget_ecdf``.
+        **options: the options of ``get_fixed_budget_ecdf``, simulated
+            restarts by default.
 
     Returns:
-        pl.DataFrame: ``by`` and ``auc``.
+        pl.DataFrame: ``by`` and ``auc``; with restarts also ``n_restarted``.
     """
     if f_lo is None or f_hi is None:
         kind = "log-linear" if scale_f_log else "linear"
@@ -411,11 +447,13 @@ def get_fixed_budget_ecdf_auc(  # pylint: disable=too-many-arguments
         f_lo = float(bounds.min()) if f_lo is None else f_lo
         f_hi = float(bounds.max()) if f_hi is None else f_hi
     data, by = _one_group(data, by)
-    steps = _value_increments(data, budgets, by, fval_var=fval_var, **options)
+    steps, counts = _value_increments(data, budgets, by, fval_var=fval_var, **options)
     if not options.get("maximization"):
-        return _area(steps, by, *_axis(pl.col("x"), f_lo, f_hi, scale_f_log))
-    x, lo, hi = _axis(-pl.col("x"), f_lo, f_hi, scale_f_log)
-    return _area(steps, by, -x, -hi, -lo)  # mirrored, so x keeps its order
+        auc = _area(steps, by, *_axis(pl.col("x"), f_lo, f_hi, scale_f_log))
+    else:
+        x, lo, hi = _axis(-pl.col("x"), f_lo, f_hi, scale_f_log)
+        auc = _area(steps, by, -x, -hi, -lo)  # mirrored, so x keeps its order
+    return _with_counts(auc, counts, by)
 
 
 def get_rank_table(

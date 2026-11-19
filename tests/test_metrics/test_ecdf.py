@@ -10,8 +10,10 @@ from iohinspector.metrics.ecdf import (
     get_fixed_budget_ecdf_auc,
     get_rank_table,
 )
+from iohinspector.metrics.fixed_budget import aggregate_convergence
 from iohinspector.targets import get_ecdf_budgets, get_ecdf_targets
 from tests.golden.load import golden, golden_renamed, logged
+from tests.test_metrics.test_fixed_budget import STOPPED
 
 pytestmark = pytest.mark.filterwarnings("ignore:get_data_ecdf:DeprecationWarning")
 
@@ -543,6 +545,7 @@ def _golden_fixed_budget(fixture, strict=True):
         BY_PAIR,
         x_values=gold["x"].unique(),
         maximization=maximization,
+        stopped="carry_forward",  # IOHanalyzer's rule (EC-7)
     )
     joined = gold.join(
         ours.rename({"raw_y": "x"}), on=[*BY_PAIR, "x"], how="left"
@@ -582,3 +585,68 @@ def test_fixed_budget_auc_matches_iohanalyzer_trapezoid(fixture):
         logged(fixture), by=BY_PAIR, maximization=maximization
     )["auc"]
     assert ((agreed >= 0) & (agreed <= 1)).all()
+
+
+# Simulated restarts (EC-7, FB-6), the default of the fixed-budget ECDF
+
+# runs 1 and 2 stop at 3 (values 1 and 2), run 3 is first logged at 6 (value 5)
+STOPPED_PAIR = STOPPED.with_columns(function_id=1, dimension=2)
+STOPPED_BUDGETS = pl.DataFrame({"function_id": 1, "dimension": 2, "budget": [3, 4, 6]})
+
+
+def test_fixed_budget_restarts_are_those_of_aggregate_convergence():
+    # one procedure: with the same seed the restarted values are the ones the
+    # fixed-budget summary has, so the ECDF's mass at each value adds up to the
+    # same sum, minimum and maximum
+    for seed in range(5):
+        ecdf = get_fixed_budget_ecdf(STOPPED_PAIR, STOPPED_BUDGETS, seed=seed)
+        summary = aggregate_convergence(
+            STOPPED, budgets=[3, 4, 6], stopped="restart", seed=seed
+        )
+        mass = ecdf["ecdf"].diff()[1:] * 9  # 3 runs x 3 budgets
+        values = ecdf["raw_y"][1:]
+        total = (summary["mean"] * summary["n_defined"]).sum()
+        assert (values * mass).sum() == pytest.approx(total, rel=1e-12)
+        assert (values.min(), values.max()) == (
+            summary["best"].min(),
+            summary["worst"].max(),
+        )
+        assert ecdf["n_restarted"].unique().to_list() == [2]
+
+
+def test_restarts_only_improve_on_carrying_forward():
+    xs = [1.0, 2.0, 5.0, 8.0, 9.0]
+    carried = get_fixed_budget_ecdf(
+        STOPPED_PAIR, STOPPED_BUDGETS, x_values=xs, stopped="carry_forward"
+    )
+    assert "n_restarted" not in carried.columns
+    # at 3 and 4 the stopped runs keep 1 and 2, at 6 also run 3 has 5
+    np.testing.assert_allclose(carried["ecdf"], [3 / 9, 6 / 9, 7 / 9, 7 / 9, 7 / 9])
+    for seed in range(5):
+        restarted = get_fixed_budget_ecdf(
+            STOPPED_PAIR, STOPPED_BUDGETS, x_values=xs, seed=seed
+        )
+        assert (restarted["ecdf"] >= carried["ecdf"] - 1e-12).all()
+        auc = get_fixed_budget_ecdf_auc(STOPPED_PAIR, STOPPED_BUDGETS, seed=seed)
+        before = get_fixed_budget_ecdf_auc(
+            STOPPED_PAIR, STOPPED_BUDGETS, stopped="carry_forward"
+        )
+        assert auc["auc"].item() >= before["auc"].item()
+        assert auc["n_restarted"].item() == 2
+
+
+def test_restarts_are_seeded_mirrored_and_need_no_evals_used():
+    options = {"budgets": STOPPED_BUDGETS, "seed": 1}
+    first = get_fixed_budget_ecdf(STOPPED_PAIR, **options)
+    assert first.equals(get_fixed_budget_ecdf(STOPPED_PAIR, **options))
+    # without evals_used B_i is the last logged evaluation, here the same
+    unused = STOPPED_PAIR.drop("evals_used")
+    assert first.equals(get_fixed_budget_ecdf(unused, **options))
+    high = get_fixed_budget_ecdf(
+        STOPPED_PAIR.with_columns(-pl.col("raw_y")), maximization=True, **options
+    )
+    assert high.with_columns(-pl.col("raw_y")).equals(first)
+    alone = get_fixed_budget_ecdf_auc(STOPPED_PAIR, by=[], **options)
+    assert alone.columns == ["auc", "n_restarted"]
+    with pytest.raises(ValueError, match="carry_forward"):
+        get_fixed_budget_ecdf(STOPPED_PAIR, stopped="exclude")

@@ -99,15 +99,15 @@ The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the la
 
 **Returns:** `pl.DataFrame` with `by` and `auc`.
 
-#### `get_fixed_budget_ecdf(data, budgets=None, by=["algorithm_name"], *, x_values=None, fval_var="raw_y", maximization=False, pairs="common", eval_var="evaluations")`
-The fixed-budget ECDF: at a value v, the fraction of (run, budget) pairs whose best-so-far value at the budget is v or better (inclusive), averaged over pairs as `get_ecdf`. Exact: one row per step, or sampled at `x_values`. `budgets` per pair (`function_id`, `dimension`, `budget`) comes from `targets.get_ecdf_budgets` (default 10 log-spaced per pair).
+#### `get_fixed_budget_ecdf(data, budgets=None, by=["algorithm_name"], *, x_values=None, fval_var="raw_y", maximization=False, pairs="common", stopped="restart", seed=None, eval_var="evaluations")`
+The fixed-budget ECDF: at a value v, the fraction of (run, budget) pairs whose best-so-far value at the budget is v or better (inclusive), averaged over pairs as `get_ecdf`. Exact: one row per step, or sampled at `x_values`. `budgets` per pair (`function_id`, `dimension`, `budget`) comes from `targets.get_ecdf_budgets` (default 10 log-spaced per pair). A run that stopped before a budget (its `evals_used`, or else its last logged evaluation) is continued by simulated restarts from the runs of its group and pair, seeded by `seed`, as `aggregate_convergence(stopped="restart")`; `stopped="carry_forward"` keeps its final value instead (IOHanalyzer's rule).
 
-**Returns:** `pl.DataFrame` with `by`, `fval_var` and `ecdf`.
+**Returns:** `pl.DataFrame` with `by`, `fval_var` and `ecdf`; with restarts also `n_restarted`, the runs of the group that were restarted.
 
 #### `get_fixed_budget_ecdf_auc(data, budgets=None, by=["algorithm_name"], *, f_lo=None, f_hi=None, scale_f_log=True, fval_var="raw_y", **options)`
-The exact normalised area under the fixed-budget ECDF over the values [f_lo, f_hi], on log10 (default) or a linear axis; larger is better in both directions. The default range spans the pairs' default target bounds (the suite's, or the observed range). It equals the mean over the budgets of the continuum ECDF with these bounds.
+The exact normalised area under the fixed-budget ECDF over the values [f_lo, f_hi], on log10 (default) or a linear axis; larger is better in both directions. The default range spans the pairs' default target bounds (the suite's, or the observed range). It equals the mean over the budgets of the continuum ECDF with these bounds. Simulated restarts by default, as `get_fixed_budget_ecdf`.
 
-**Returns:** `pl.DataFrame` with `by` and `auc`.
+**Returns:** `pl.DataFrame` with `by` and `auc`; with restarts also `n_restarted`.
 
 #### `get_rank_table(summary, value="ERT", *, higher_is_better=False)`
 Adds the `rank` of `value` within each pair: average ranks for ties, `inf` at the bottom, missing values last.

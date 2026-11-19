@@ -10,7 +10,10 @@
   IOHanalyzer's `which = 'by_FV'` compares T < b), exact at its steps. Budgets per
   pair default to 10 log-spaced ones (`targets.get_ecdf_budgets`).
   `metrics.get_fixed_budget_ecdf_auc` is the exact normalised area over a value
-  range, on log10 by default.
+  range, on log10 by default. A run that stopped before a budget is continued by
+  simulated restarts by default (EC-7, the procedure of
+  `aggregate_convergence(stopped="restart")`, with `seed` and `n_restarted`);
+  `stopped="carry_forward"` keeps its final value, as IOHanalyzer does.
 - Default bounds by suite (`docs/definitions/targets.md`, TG-8): a pair whose runs
   are all BBOB or SBOX (the suites the IOHexperimenter suite registry gives both
   bounds for; COCO's `bbob` included) gets targets from 1e-8 to 1e2 instead of
