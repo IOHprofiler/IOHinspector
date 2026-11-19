@@ -1,10 +1,15 @@
 import polars as pl
+import pytest
 
 from iohinspector.indicators import HyperVolume
 from iohinspector.metrics import (
     get_robustrank_changes,
     get_robustrank_over_time,
     get_tournament_ratings,
+)
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:get_tournament_ratings:DeprecationWarning"
 )
 
 DATA = pl.DataFrame(

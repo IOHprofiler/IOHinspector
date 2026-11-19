@@ -18,7 +18,6 @@ from iohinspector.metrics.dsc import (
     get_dsc_posthoc,
     get_dsc_ranking,
     get_dsc_sample,
-    p_adjust,
 )
 
 ALG = ["algorithm"]
@@ -470,12 +469,3 @@ def test_posthoc_follows_the_omnibus_method():
     )
     davenport = get_dsc_omnibus(ranking, method="iman-davenport")
     assert get_dsc_posthoc(davenport).method == "friedman"
-
-
-def test_p_adjust_as_r():
-    holm, hochberg = p_adjust([0.03, 0.01, 0.05, 0.02, 0.04])
-    # p.adjust(c(0.03, 0.01, 0.05, 0.02, 0.04), "holm") and "hochberg"
-    assert holm.tolist() == pytest.approx([0.09, 0.05, 0.09, 0.08, 0.09])
-    assert hochberg.tolist() == pytest.approx([0.05] * 5)
-    holm, hochberg = p_adjust([0.6, 0.9])
-    assert holm.tolist() == [1, 1] and hochberg.tolist() == [0.9, 0.9]

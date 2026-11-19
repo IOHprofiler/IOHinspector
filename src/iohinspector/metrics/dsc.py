@@ -21,6 +21,7 @@ from scipy import stats
 
 from ..targets import PAIR, get_target_dt
 from .distributions import get_runtime_sample, get_value_sample
+from .stats import hochberg, holm
 from .utils import runs_of
 
 __all__ = [
@@ -32,7 +33,6 @@ __all__ = [
     "get_dsc_posthoc",
     "get_dsc_ranking",
     "get_dsc_sample",
-    "p_adjust",
 ]
 
 #: The omnibus methods by number of algorithms (DS-12): k = 2 and k >= 3.
@@ -450,9 +450,9 @@ def get_dsc_posthoc(omnibus: DscOmnibus) -> DscPosthoc:
         others = [a for a in range(k) if a != c]
         z = (m[c] - m[others]) / se
         p = stats.norm.cdf(z)
-        holm, hochberg = p_adjust(p)
         rows += [
-            (*names[c], *names[a], *v) for a, *v in zip(others, z, p, holm, hochberg)
+            (*names[c], *names[a], *v)
+            for a, *v in zip(others, z, p, holm(p), hochberg(p))
         ]
     vs = [f"{c}_vs" for c in by]
     values = ["ZValue", "UnadjustedPValue", "Holm", "Hochberg"]
@@ -461,18 +461,3 @@ def get_dsc_posthoc(omnibus: DscOmnibus) -> DscPosthoc:
     return DscPosthoc(
         omnibus, method, frame.cast(types | dict.fromkeys(values, pl.Float64))
     )
-
-
-def p_adjust(p) -> tuple[np.ndarray, np.ndarray]:
-    """Holm's step-down and Hochberg's step-up adjustments of ``p``, as R's
-    ``p.adjust`` (DQ-20)."""
-    p = np.asarray(p, dtype=float)
-    size = len(p)
-    up = np.argsort(p, kind="stable")
-    down = up[::-1]
-    holm, hochberg = np.empty(size), np.empty(size)
-    holm[up] = np.minimum(1, np.maximum.accumulate((size - np.arange(size)) * p[up]))
-    hochberg[down] = np.minimum(
-        1, np.minimum.accumulate((np.arange(size) + 1) * p[down])
-    )
-    return holm, hochberg

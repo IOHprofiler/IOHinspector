@@ -4,13 +4,35 @@
 
 ### New
 
+- Statistical comparisons (`docs/definitions/comparisons.md`), comparing the
+  groups of `by`: `metrics.ks_test` is the one-sided two-sample KS test, with
+  the exact p-value when n m < 10000 (a port of R's) and the asymptotic one
+  otherwise; failed runs count as `inf`. `metrics.holm` is Holm's correction.
+  `metrics.get_ks_tests` tests every ordered pair of groups on a runtime or
+  value sample, Holm-corrected per view, with the decisions for the heat map
+  and the dominance graph. `metrics.get_win_fractions` gives the fraction of
+  targets on which one group beats another by a selectable measure
+  (`metrics.MEASURES`: ERT by default, mean, PAR-k or median runtime; mean,
+  median or best value).
+- Tournament ratings (`docs/definitions/glicko2.md`):
+  `metrics.get_tournament_ranking` plays seeded random games between the
+  groups of `by` on every function, dimension and target, and rates them with
+  Glicko-2 (`method="glicko2"`, τ = 0.5 by default; IOHanalyzer's is 1.2) or Elo
+  (`method="elo"`). `metrics.glicko2` and `metrics.elo` rate a given game list;
+  `glicko2` reproduces `PlayerRatings::glicko2`.
 - Deep Statistical Comparison, computed locally (`docs/definitions/dsc.md`):
   `metrics.get_dsc_sample` (one value per run and problem; failed runs as
   PAR-k, k = 10 by default, ERT or removed), `get_dsc_ranking` (AD or KS ranks
   per problem, practical DSC with a seed), `get_dsc_omnibus` (Friedman,
   aligned ranks, Iman-Davenport, or Wilcoxon for two algorithms) and
-  `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg). They
+  `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg; `metrics.hochberg` is
+  Hochberg's correction, next to `holm`). They
   reproduce the published DSCTool example. scipy is now a direct dependency.
+
+### Deprecated
+
+- `metrics.get_tournament_ratings`: use `get_tournament_ranking(data,
+  method="elo", seed=...)`.
 
 ## 0.2.1
 
