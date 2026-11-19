@@ -116,7 +116,8 @@ def _restart(  # pylint: disable=R0913,R0914,R0917
     uniformly with replacement from its run set (one seeded chain per run), each
     for its own B_j evaluations, until the largest budget. The value at b is the
     best over the chain up to b, from ``align_data`` on the chain's joined trace.
-    ``runs`` is ``runs_of(data, by)``."""
+    ``runs`` is ``runs_of(data, by)``; ``eval_var`` is Int64 in ``data`` and
+    ``aligned`` (polars 1 makes u64 + i64 a float)."""
     # #lizard forgives  (one procedure, FB-6, kept in one place)
     runs = runs.sort("run_set", "run_id").with_columns(
         position=pl.int_range(pl.len()).over("run_set"),

@@ -319,6 +319,8 @@ def _value_increments(  # pylint: disable=R0913,R0914
     data = data.join(budgets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
     data = _weights(data, by, pairs)
     restart = stopped == "restart"
+    if restart:  # Int64 evaluations, as aggregate_convergence gives _restart
+        data = data.cast({eval_var: pl.Int64})
     runs = runs_of(data, [*by, *PAIR], eval_var)  # a chain's runs: by, in its pair
     if restart and "evals_used" not in data.columns:  # B_i as for the ERT (RT-1)
         used = runs.select("run_id", "evals_used")
