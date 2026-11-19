@@ -55,8 +55,12 @@ its best-so-far, and it counts in n_active. For stopped runs the summary has two
   replacement from the same run set (seeded) and appends its trace after B_i
   evaluations; V_i(b) is the best value over the original run and every
   restart segment up to evaluation b, the last segment being cut at b. Runs
-  with B_i ≥ b are left as they are. The number of restarted runs is reported
-  next to `n_active`.
+  with B_i ≥ b are left as they are, and so is a run whose final value is the
+  best of its run set; a chain stops drawing once it has drawn such a run,
+  since no later restart can improve its value. The seed is 0 by default, so
+  the summary is reproducible. The number of restarted runs is reported next
+  to `n_active`. The ECDFs use the same restarts but compute their expected
+  value instead of drawing them (EC-7 in [ecdf](ecdf.md)).
 
 ### Overview table per run set
 
@@ -173,9 +177,10 @@ positive value for the log axis. Runs are not instance-balanced in this plot
 The restart procedure (draw uniformly with replacement from the run set, one
 chain per run, seeded) was signed off as built (user, 2026-11-12); the review
 named the option but not the procedure. The default stays carry forward for
-the summary. The fixed-budget ECDF and its AUC use the same procedure and
-restart by default (EC-7 in [ecdf](ecdf.md), the D6 review of #42,
-dvermetten, 2026-11-19).
+the summary. Every ECDF restarts by default with the same procedure,
+computing its expected value (EC-7 in [ecdf](ecdf.md), the D6 reviews of #42
+and #48, dvermetten, 2026-11-19), and the seed is fixed by default (review of
+#48).
 
 ## Test tolerance
 
