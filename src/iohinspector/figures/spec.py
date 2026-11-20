@@ -25,7 +25,28 @@ from matplotlib import colors, legend, lines, markers
 from .venues import PALETTES, VENUES
 
 VERSION = 2
-KINDS = ("ecdf",)
+KINDS = (
+    "ecdf",
+    "convergence",
+    "fixed_budget",
+    "ert",
+    "fixed_budget_ecdf",
+    "target_budget",
+    "pairwise_tests",
+    "win_fractions",
+    "box",
+    "violin",
+    "histogram",
+    "eaf",
+    "eaf_difference",
+    "shapley",
+    "cumulative_difference",
+    "parallel_coordinates",
+    "marginals",
+    "parameter_map",
+    "sensitivity",
+)
+MEASURES = ("value", "runtime")
 SPANS = ("single", "double")
 UNITS = {"cm": 1 / 2.54, "in": 1.0, "pt": 1 / 72}  # inches per unit (pt: 1/72 in)
 BACKGROUNDS = ("white", "none", "dark")
@@ -67,7 +88,14 @@ class Data:
     """What is plotted. ``by`` makes the groups (one curve each) and ``label`` is
     their label template (D17, ``metrics.group_label``), such as
     ``"{algorithm_name} ($\\sigma$ = {sigma})"``. ``where`` keeps the runs whose
-    column value is listed, for example ``{"dimension": [10]}``."""
+    column value is listed, for example ``{"dimension": [10]}``.
+
+    The kinds read the rest as they need (see each kind's module): ``at`` is the
+    target (a runtime view: ``measure="runtime"``, ERT) or the budget (a value
+    view: ``measure="value"``) a figure is drawn at, ``None`` for its default;
+    ``mode`` and ``focus`` choose between the looks of a kind and the group it is
+    about; ``options`` are further keyword arguments of its metric, such as
+    ``{"percentiles": [10, 50, 90]}``."""
 
     by: list[str] = field(default_factory=lambda: ["algorithm_name"])
     label: str | None = None
@@ -75,11 +103,17 @@ class Data:
     targets: str = "log-linear"
     per_dimension: bool = True
     maximization: bool = False
+    at: float | None = None
+    measure: str = "value"
+    mode: str | None = None
+    focus: str | None = None
+    options: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.by:
             raise ValueError("data.by: at least one column")
         _one_of("data.targets", self.targets, TARGETS)
+        _one_of("data.measure", self.measure, MEASURES)
 
 
 @dataclass
@@ -108,20 +142,22 @@ class Axis:
     label); ``lim`` is ``[lo, hi]`` with ``None`` for automatic. ``ticks`` formats
     the tick labels of a log axis: ``exponent`` (3), ``power`` (10^3), ``sci``
     (1e3) or ``plain`` (1000). ``tick_count`` asks for about that many major
-    ticks. ``grid``: major grid lines, ``both`` with the minor ones, or none."""
+    ticks. ``grid``: major grid lines, ``both`` with the minor ones, or ``none``;
+    the figure kind's default is major lines, none for categories."""
 
     label: str | None = None
     scale: str | None = None
     lim: list[float | None] | None = None
     ticks: str = "auto"
     tick_count: int | None = None
-    grid: str = "major"
+    grid: str | None = None
 
     def __post_init__(self):
         if self.scale is not None:
             _one_of("axis scale", self.scale, SCALES)
         _one_of("axis ticks", self.ticks, TICKS)
-        _one_of("axis grid", self.grid, GRIDS)
+        if self.grid is not None:
+            _one_of("axis grid", self.grid, GRIDS)
         _positive("axis tick_count", self.tick_count)
         if self.lim is not None and len(self.lim) != 2:
             raise ValueError(f"axis lim {self.lim!r}: [lo, hi]")

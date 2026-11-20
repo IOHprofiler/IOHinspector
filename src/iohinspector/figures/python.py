@@ -5,10 +5,13 @@ Reproduce writes before it) and draws it. What ``render`` takes from the layout,
 such as the axis limits and the heights of the direct labels, is written in as
 numbers."""
 
+import inspect
 import math
 
+import numpy as np
 from matplotlib import colors
 
+from . import marks
 from .render import (
     KINDS,
     TICK_CODE,
@@ -96,6 +99,8 @@ def to_python(spec: FigureSpec, data=None, *, frames=None) -> str:
         n, layout = len(plots), spec.layout
         columns = min(layout.columns, n)
         kinds = [KINDS[p.kind] for p in spec.panels]
+        literal = [p.mark for p, k in zip(plots, kinds) if k.literal]
+        used = set(literal) & set(marks.MARKS)
         out = [
             f'"""{spec.title or "Figure"}: an iohinspector figure as matplotlib code."""',
             "",
@@ -106,6 +111,8 @@ def to_python(spec: FigureSpec, data=None, *, frames=None) -> str:
             "import polars as pl",
             "from matplotlib import ticker",
             "from matplotlib.lines import Line2D",
+            *(["import numpy as np"] * bool(literal)),
+            *(["from types import SimpleNamespace as Curve"] * bool(used)),
             *dict.fromkeys(k.imports for k in kinds),
             "",
             "# data: the runs, from the data code (Reproduce)",
@@ -122,6 +129,7 @@ def to_python(spec: FigureSpec, data=None, *, frames=None) -> str:
             ),
             "}",
             DRAW,
+            *_marks(used),
             "fig, axes = plt.subplots(",
             f"    {math.ceil(n / columns)},",
             f"    {columns},",
@@ -151,22 +159,27 @@ def to_python(spec: FigureSpec, data=None, *, frames=None) -> str:
                 for k, v in panel.data.where.items()
             ]
             labels = [c.label for c in plot.curves]
-            x, y = kind.columns[:2]
-            out += [
-                kind.code(panel),
-                f"ax = axes[{i}]",
-                f"draw(ax, frame, {labels!r}, {x!r}, {y!r}, {float(ax.get_xlim()[1])!r}, {plot.step})",
-            ]
+            if kind.literal:  # the curves are derived from the frame: write them out
+                out += ["# the numbers drawn below, as this call computes them:"]
+                out += [f"# {line}" for line in kind.code(panel).splitlines()]
+                out += [f"ax = axes[{i}]", *_curves(plot, labels)]
+            else:
+                x, y = kind.columns[:2]
+                out += [
+                    kind.code(panel),
+                    f"ax = axes[{i}]",
+                    f"draw(ax, frame, {labels!r}, {x!r}, {y!r}, {float(ax.get_xlim()[1])!r}, {plot.step})",
+                ]
             out += _axes(ax, panel, plot, spec)
             notes: list = []
-            for note in panel.annotations:
+            for note in [*panel.annotations, *plot.annotations]:
                 _annotate(_Calls("ax", notes), note, size)
             out += [repr(c) for c in list(notes)]
             out += _legend(ax, i, spec, plot, styles)
         if fig.legends:  # outside, or one box for all panels
             union = {}
             for plot in plots:
-                for curve in plot.curves:
+                for curve in plot.curves if plot.legend else []:
                     union.setdefault(curve.label, curve)
             entries = legend_entries(spec, list(union.values()), styles)
             loc = (
@@ -189,6 +202,8 @@ def _look(spec: FigureSpec, look: dict) -> dict:
     return {k: look[k] for k in keys} | {
         "markersize": look["marker_size"],
         "markevery": every,
+        "marker_size": look["marker_size"],
+        "color_below": look["color_below"],
     }
 
 
@@ -202,7 +217,8 @@ def _axes(ax, panel, plot, spec: FigureSpec) -> list[str]:
             f"ax.set_{which}label({getattr(ax, f'get_{which}label')()!r})",
         ]
         log = getattr(ax, f"get_{which}scale")() == "log"
-        ticks = axis_settings(own, defaults)["ticks"]
+        settings = axis_settings(own, defaults)
+        ticks = settings["ticks"]
         if own.tick_count:
             n = own.tick_count
             locator = (
@@ -216,8 +232,11 @@ def _axes(ax, panel, plot, spec: FigureSpec) -> list[str]:
                 f"ax.{which}axis.set_major_formatter(ticker.FuncFormatter({TICK_CODE[ticks]}))",
                 f"ax.{which}axis.set_minor_formatter(ticker.NullFormatter())",
             ]
-        if own.grid != "none":
-            out.append(f"ax.grid(True, which={own.grid!r}, axis={which!r})")
+        if settings["names"]:
+            n = len(settings["names"])
+            out.append(f"ax.{which}axis.set_ticks(range({n}), {settings['names']!r})")
+        if settings["grid"] != "none":
+            out.append(f"ax.grid(True, which={settings['grid']!r}, axis={which!r})")
     hidden = [side for side, spine in ax.spines.items() if not spine.get_visible()]
     out += [f"ax.spines[{side!r}].set_visible(False)" for side in hidden]
     for loc in ("left", "center"):
@@ -238,7 +257,7 @@ def _handles(entries: list[dict]) -> str:
 def _legend(ax, i: int, spec: FigureSpec, plot, styles) -> list[str]:
     """The panel's box legend or direct labels, where ``render`` put them."""
     legend = spec.legend
-    if legend.mode == "box" and ax.get_legend():
+    if ax.get_legend():
         entries = legend_entries(spec, plot.curves, styles)
         return [
             f"ax.legend(handles={_handles(entries)}, loc={legend.loc!r}, ncols={legend.columns})"
@@ -261,4 +280,52 @@ def _legend(ax, i: int, spec: FigureSpec, plot, styles) -> list[str]:
             f'textcoords="axes fraction", va="center", ha="left", '
             f"fontsize={text.get_fontsize()!r}, annotation_clip=False, arrowprops={arrow!r})"
         )
+    return out
+
+
+def _marks(used: set) -> list[str]:
+    """The drawing functions of the marks in ``used`` (``marks.py``), as source."""
+    if not used:
+        return []
+    source = [inspect.getsource(getattr(marks, name)) for name in sorted(used)]
+    table = ", ".join(f"{name!r}: {name}" for name in sorted(used))
+    return ["", *("\n\n".join(source).splitlines()), "", f"MARKS = {{{table}}}", ""]
+
+
+def _array(values) -> str:
+    """A numpy array as Python code."""
+    text = repr(values.tolist())
+    return "np.array(" + text.replace("nan", "np.nan").replace("inf", "np.inf") + ")"
+
+
+def _curves(plot, labels: list[str]) -> list[str]:
+    """The code that draws the curves of ``plot`` from their numbers."""
+    if plot.mark == "line":  # as the frame of x and y that ``draw`` takes
+        end = max(float(c.x[-1]) for c in plot.curves)
+        columns: dict = {"label": [c.label for c in plot.curves for _ in c.x]}
+        for name in ("x", "y", "lo", "hi"):
+            parts = [getattr(c, name) for c in plot.curves]
+            if name in "xy" or any(p is not None for p in parts):
+                parts = [
+                    np.full(len(c.x), np.nan) if p is None else p
+                    for c, p in zip(plot.curves, parts)
+                ]
+                columns[name] = _array(np.concatenate(parts))
+        text = ", ".join(f"{k!r}: {v}" for k, v in columns.items())
+        return [
+            f"frame = pl.DataFrame({{{text}}})",
+            f"draw(ax, frame, {labels!r}, 'x', 'y', {end!r}, {plot.step})",
+        ]
+    fields = ("x", "y", "lo", "hi", "z")
+    out = ["CURVES = ["]
+    for c in plot.curves:
+        values = {f: getattr(c, f) for f in fields}
+        args = [f"label={c.label!r}", f"mid={c.mid!r}"]
+        args += [f"{f}={'None' if v is None else _array(v)}" for f, v in values.items()]
+        out.append(f"    Curve({', '.join(args)}),")
+    out += [
+        "]",
+        "for c in CURVES:",
+        f"    MARKS[{plot.mark!r}](ax, c, STYLE[c.label], {plot.fmt!r})",
+    ]
     return out
