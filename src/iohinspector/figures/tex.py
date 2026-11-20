@@ -15,7 +15,15 @@ import matplotlib as mpl
 import polars as pl
 from matplotlib import colors
 
-from .render import _figure, _prepare, axis_settings, marker_points, style, tex_escape
+from .render import (
+    _figure,
+    _prepare,
+    axis_settings,
+    marker_positions,
+    panel_title,
+    style,
+    tex_escape,
+)
 from .spec import FigureSpec
 
 LINESTYLES = {"-": "solid", "--": "dashed", "-.": "dashdot", ":": "dotted"}
@@ -44,15 +52,22 @@ TICKS = {  # log axis tick labels other than the default 10^k; \tick is the natu
 
 
 def pgfplots(
-    spec: FigureSpec, data: pl.DataFrame, name: str = "figure"
+    spec: FigureSpec,
+    data: pl.DataFrame | None = None,
+    name: str = "figure",
+    *,
+    frames: pl.DataFrame | None = None,
 ) -> dict[str, bytes]:
     """The pgfplots picture of ``spec`` as ``{name}.tex``, reading ``{name}.csv``
     (columns ``series``, ``x``, ``y``; series 0 is the highest final value) from
-    the document's folder, and that table."""
+    the document's folder, and that table. ``data`` and ``frames`` are as for
+    ``render``. One panel; annotations and bands are not exported yet."""
+    if len(spec.panels) != 1:
+        raise ValueError("pgfplots: a figure of one panel")
     with style(spec):
-        plot, styles = _prepare(spec, data)
-        fig = _figure(spec, plot, styles)
-        fig.draw_without_rendering()  # the layout: axes size, limits, labels
+        plots, styles = _prepare(spec, data, frames)
+        plot = plots[0]
+        fig = _figure(spec, plots, styles)  # laid out: axes size, limits, labels
         ax = fig.axes[0]
         curves = sorted(plot.curves, key=lambda c: -c.y[-1])  # legend order
         lines = [
@@ -97,6 +112,7 @@ def _color(value) -> str:
 
 
 def _axis_options(spec: FigureSpec, plot, ax) -> str:
+    panel = spec.panels[0]
     rc = mpl.rcParams
     width, height = (v * 72 / ax.figure.dpi for v in (ax.bbox.width, ax.bbox.height))
     opts = [
@@ -113,7 +129,7 @@ def _axis_options(spec: FigureSpec, plot, ax) -> str:
         f"tick label style={{{_font(rc['xtick.labelsize'])}}}",
         f"title style={{{_font(rc['axes.titlesize'])}}}",
     ]
-    for which, own, defaults in (("x", spec.x, plot.x), ("y", spec.y, plot.y)):
+    for which, own, defaults in (("x", panel.x, plot.x), ("y", panel.y, plot.y)):
         lo, hi = getattr(ax, f"get_{which}lim")()
         opts += [
             f"{which}min={lo:.10g}",
@@ -129,8 +145,9 @@ def _axis_options(spec: FigureSpec, plot, ax) -> str:
             opts.append(f"{which}majorgrids")
         if own.grid == "both":
             opts.append(f"{which}minorgrids")
-    if spec.title:
-        opts.append(f"title={{{tex_escape(spec.title)}}}")
+    title = panel_title(spec, panel, 0)
+    if title:
+        opts.append(f"title={{{tex_escape(title)}}}")
     mode, loc = spec.legend.mode, spec.legend.loc.split()
     legend = f"{_font(rc['legend.fontsize'])}, draw={_color(rc['legend.edgecolor'])}, legend cell align=left"
     if mode == "box":
@@ -170,7 +187,7 @@ def _line(look: dict) -> str:
 
 def _markers(ax, spec: FigureSpec, plot, styles, curves) -> list[str]:
     """The sparse markers and the final value of each curve, as inline points."""
-    sparse = {c.label: (x, y) for c, x, y in marker_points(ax, spec.markers, plot)}
+    sparse = {c.label: (x, y) for c, x, y in marker_positions(ax, spec, plot, styles)}
     out = []
     for curve in curves:
         look = styles[curve.label]
@@ -180,7 +197,7 @@ def _markers(ax, spec: FigureSpec, plot, styles, curves) -> list[str]:
         mark, _, extra = MARKS.get(look["marker"], "*").partition(", ")
         c = _color(look["color"])
         out.append(
-            f"\\addplot[only marks, forget plot, color={c}, mark={mark}, mark size={_bp(mpl.rcParams['lines.markersize'] / 2)}, "
+            f"\\addplot[only marks, forget plot, color={c}, mark={mark}, mark size={_bp(look['marker_size'] / 2)}, "
             f"mark options={{solid, fill={c}{', ' + extra if extra else ''}}}] coordinates {{{points}}};"
         )
     return out
@@ -191,6 +208,8 @@ def _direct_labels(ax) -> list[str]:
     its curve by a leader."""
     out = []
     for text in ax.texts:
+        if not (text.get_gid() or "").endswith("-label"):
+            continue  # an annotation
         color, (x, y) = _color(text.arrow_patch.get_edgecolor()), text.xy
         above = text.get_position()
         at = f"(rel axis cs:{above[0]:.4f},{above[1]:.4f})"

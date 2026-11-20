@@ -1,6 +1,7 @@
 """A small closed-form benchmark for figure tests and the gallery, and the
 gallery itself: ``python -m tests.test_figures.sample`` writes every venue
-preset, single and double column, to ``docs/figures/`` (the snapshot baselines).
+preset, single and double column, and two figures of the element model to
+``docs/figures/`` (the snapshot baselines).
 """
 
 import itertools
@@ -9,7 +10,18 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from iohinspector.figures import VENUES, FigureSpec, render
+from iohinspector.figures import (
+    VENUES,
+    Annotation,
+    Data,
+    FigureSpec,
+    Layout,
+    Legend,
+    Panel,
+    Series,
+    apply_style,
+    render,
+)
 
 GALLERY = Path(__file__).parents[2] / "docs" / "figures"
 # name: (convergence rate, budget per dimension)
@@ -49,13 +61,41 @@ def sample_data() -> pl.DataFrame:
 
 
 def gallery_specs() -> dict[str, FigureSpec]:
-    return {
+    specs = {
         f"ecdf-{venue}-{span}": FigureSpec(
             venue=venue, span=span, formats=["png"], dpi=150
         )
         for venue in VENUES
         for span in ("single", "double")
     }
+    # the element model (I35): panels, highlighting, annotations, a dark slide
+    panels = FigureSpec(
+        panels=[
+            Panel(
+                data=Data(where={"dimension": [5]}),
+                title="$d$ = 5",
+                annotations=[
+                    Annotation("line", "half", y=0.5),
+                    Annotation("arrow", "PSO restarts", x=100, y=0.45, x2=3, y2=0.8),
+                ],
+            ),
+            Panel(data=Data(where={"dimension": [20]}), title="$d$ = 20"),
+        ],
+        layout=Layout(columns=2, labels="letters", share_y=True),
+        span="double",
+        palette="highlight",
+        series={
+            "PSO": Series(highlight="yours"),
+            "GA": Series(highlight="other"),
+            "RS": Series(highlight="other"),
+        },
+        legend=Legend(others=True),
+        formats=["png"],
+        dpi=150,
+    )
+    specs["ecdf-panels-highlight"] = panels
+    specs["ecdf-slides-dark"] = apply_style(panels, "slides-dark")
+    return specs
 
 
 def main() -> None:
