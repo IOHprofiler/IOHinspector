@@ -27,6 +27,7 @@ from .format import (
     scan_dataset,
 )
 from .format.schema import ALGORITHM_DESCRIPTORS
+from .targets import PAIR
 
 _EMPTY = {"runs": RUNS_SCHEMA, "descriptors": DESCRIPTORS_SCHEMA, "trace": TRACE_SCHEMA}
 _TABLES = ("runs", "descriptors", "trace", "positions")
@@ -142,7 +143,7 @@ class DataManager:
             raise ValueError(f"no runs column or descriptor is named {unknown}")
         keep = overview.filter(
             pl.lit(True), *(pl.col(c).is_in(list(v)) for c, v in filters.items())
-        )["run_id"]
+        )
         return DataManager([_only(d, keep) for d in self.datasets])
 
     def _distinct(self, column: str) -> tuple[Any, ...]:
@@ -232,12 +233,21 @@ class DataManager:
         return df
 
 
-def _only(dataset: StoredDataset, run_ids: pl.Series) -> StoredDataset:
-    """``dataset`` with only the runs in ``run_ids``."""
-    keep = pl.col("run_id").is_in(run_ids.implode())
+def _only(dataset: StoredDataset, runs: pl.DataFrame) -> StoredDataset:
+    """``dataset`` with only the ``runs`` (``run_id``, ``function_id`` and
+    ``dimension``). The trace and positions are also filtered by the runs' functions
+    and dimensions, which they copy, so that the scan skips row groups (the run ids
+    are hashes, which row-group statistics cannot narrow)."""
+    keep = pl.col("run_id").is_in(runs["run_id"].implode())
+    pairs = [pl.col(c).is_in(runs[c].unique().implode()) for c in PAIR]
     tables = {t: getattr(dataset, t) for t in _TABLES}
     return replace(
-        dataset, **{t: lf.filter(keep) for t, lf in tables.items() if lf is not None}
+        dataset,
+        **{
+            t: lf.filter(keep, *pairs if t in ("trace", "positions") else ())
+            for t, lf in tables.items()
+            if lf is not None
+        },
     )
 
 

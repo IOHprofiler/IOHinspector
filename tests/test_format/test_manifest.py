@@ -102,6 +102,36 @@ def test_write_then_read(tmp_path):
     assert read_manifest(tmp_path) == m
 
 
+def test_read_manifest_checks_the_same_bytes_once(tmp_path, monkeypatch):
+    # the schema check is remembered by the file's bytes: a changed manifest, or
+    # one made invalid, is checked again
+    from iohinspector.format import manifest as module
+
+    checked = []
+
+    def count(manifest):
+        checked.append(manifest["dataset_id"])
+        return validate_manifest(manifest)
+
+    monkeypatch.setattr(module, "validate_manifest", count)
+    monkeypatch.setattr(module, "_VALID", set())
+    write_manifest(tmp_path, _manifest(dataset_id="cached"))
+    checked.clear()  # (write_manifest checks it too)
+    assert read_manifest(tmp_path) == read_manifest(tmp_path)
+    assert checked == ["cached"]
+    write_manifest(tmp_path, _manifest(dataset_id="changed"))
+    checked.clear()
+    read_manifest(tmp_path)
+    assert checked == ["changed"]
+    bad = _manifest(dataset_id="bad")
+    bad["sources"] = [bad["sources"][0]] * 2
+    (tmp_path / "manifest.json").write_text(json.dumps(bad), encoding="utf-8")
+    for _ in range(2):
+        with pytest.raises(ManifestError, match="duplicate source"):
+            read_manifest(tmp_path)
+    assert checked == ["changed", "bad", "bad"]
+
+
 @pytest.mark.parametrize(
     "change, message",
     [

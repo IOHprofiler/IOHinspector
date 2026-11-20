@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 
 from iohinspector import DataManager
+from iohinspector.metrics import restarts
 from iohinspector.metrics.ecdf import (
     get_data_ecdf,
     get_ecdf,
@@ -684,6 +685,66 @@ def test_target_ecdf_restarts_are_the_expected_restarted_runs(maximization):
     for _, b, value, _ in at.rows():
         last = steps.filter(pl.col("evaluations") <= b)["ecdf"][-1]
         assert last == pytest.approx(value, rel=1e-12)
+
+
+@pytest.mark.parametrize("divide", [False, True])
+def test_restarts_in_chunks_and_sampled_are_the_exact_steps(monkeypatch, divide):
+    # the renewal pass in chunks of 7 evaluations gives the same rows (up to rounding
+    # where they are summed); sampled, the restarts are summed at the samples, so
+    # the ECDF there is that of the steps
+    df = _ragged(11).with_columns(dimension=3)
+    targets = get_ecdf_targets(df, n=6)
+    xs = [0.5, 2 / 3, 1, 7 / 3, 3.3, 4.1, 9, 13 + 1 / 3, 20, 37, 60]
+    options = {"targets": targets, "divide_by_dimension": divide}
+    steps = get_ecdf(df, x_values=None, **options)
+    sampled = get_ecdf(df, x_values=xs, **options)
+    budgets = get_ecdf_budgets(df, 5).with_columns(pl.col("budget") * 4)
+    fixed = get_fixed_budget_ecdf(df, budgets)
+    monkeypatch.setattr(restarts, "CHUNK", 7)
+    assert get_ecdf(df, x_values=None, **options).equals(steps)
+    assert get_ecdf(df, x_values=xs, **options).equals(sampled)
+    chunked = get_fixed_budget_ecdf(df, budgets)
+    np.testing.assert_allclose(chunked["ecdf"], fixed["ecdf"], rtol=1e-12)
+    within = sampled.filter(pl.col("evaluations") <= steps["evaluations"].max())
+    assert within.height >= 5
+    for _, x, value, _ in within.rows():
+        last = steps.filter(pl.col("evaluations") <= x)["ecdf"][-1]
+        assert value == pytest.approx(last, rel=1e-12)
+
+
+@pytest.mark.parametrize("chunk", [None, 7])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"scale_eval_log": True, "b_lo": 2},
+        {"divide_by_dimension": True, "b_lo": 0.5},
+        {"continuous": True, "scale_eval_log": True},
+    ],
+)
+def test_restarted_auc_is_the_area_under_the_steps(monkeypatch, options, chunk):
+    # the AUC sums the restarts' weighted increments per chunk instead of building
+    # the step function: the same as the exact area under get_ecdf's steps
+    b = _ragged(12).with_columns(
+        algorithm_name=pl.lit("B"), run_id=pl.col("run_id") + 9
+    )
+    df = pl.concat([_ragged(11), b]).with_columns(dimension=3)
+    if chunk:
+        monkeypatch.setattr(restarts, "CHUNK", chunk)
+    auc = get_ecdf_auc(df, **options).sort("algorithm_name")
+    lo, log = options.get("b_lo", 1.0), options.get("scale_eval_log", False)
+    keep = ("divide_by_dimension", "continuous")
+    steps = get_ecdf(df, **{k: v for k, v in options.items() if k in keep})
+    for (name,), curve in steps.sort("algorithm_name").group_by(
+        "algorithm_name", maintain_order=True
+    ):
+        x, ecdf = curve["evaluations"].to_numpy(), curve["ecdf"].to_numpy()
+        hi = x.max()
+        axis = np.log10 if log else (lambda v: v)
+        ends = axis(np.clip(np.r_[x[1:], hi], lo, hi))
+        area = np.sum(ecdf * (ends - axis(np.clip(x, lo, hi))))
+        value = auc.filter(pl.col("algorithm_name") == name)["auc"].item()
+        assert value == pytest.approx(area / (axis(hi) - axis(lo)), rel=1e-12)
 
 
 def test_runs_that_reach_a_target_are_not_restarted():
