@@ -198,7 +198,15 @@ def test_exact_steps_and_samples():
     # without restarts (EC-7) it stays there; with them it rises after 100
     carried = get_ecdf(THREE, x_values=[1000], stopped="carry_forward")
     assert carried["ecdf"].item() == pytest.approx(22 / 30, rel=1e-12)
-    assert get_ecdf(THREE, x_values=[1000])["ecdf"].item() > 0.99
+    assert "n_restarted" not in carried.columns
+    restarted = get_ecdf(THREE, x_values=[1000])
+    assert restarted["ecdf"].item() > 0.99
+    # the three runs stop at 100, before 1000 but not before the default horizon
+    assert restarted["n_restarted"].item() == 3
+    assert result["n_restarted"].unique().to_list() == [0]
+    auc = get_ecdf_auc(THREE, b_hi=1000, continuous=True)
+    assert auc.columns == ["algorithm_name", "auc", "n_restarted"]
+    assert auc["n_restarted"].item() == 3
 
 
 @pytest.mark.parametrize("maximization", [False, True])
@@ -207,7 +215,7 @@ def test_hit_rule_is_inclusive(maximization):
     targets = pl.DataFrame({"function_id": [1], "dimension": [2], "target": [3.0]})
     result = get_ecdf(df, targets, maximization=maximization)
     first = 1.0 if maximization else 10.0  # 5 >= 3 at once; 3 <= 3 at 10
-    assert result.rows() == [("A", 0.0, 0.0), ("A", first, 1.0)]
+    assert result.rows() == [("A", 0.0, 0.0, 0), ("A", first, 1.0, 0)]
 
 
 def test_a_group_that_reaches_nothing_is_kept():
@@ -270,7 +278,11 @@ def test_continuum_ecdf_quality(maximization):
         {"function_id": [1, 1], "dimension": [2, 2], "target": [1.0, 100.0]}
     )
     result = get_ecdf(df, targets, continuous=True, maximization=maximization)
-    assert result.rows() == [("A", 0.0, 0.0), ("A", 10.0, 0.5), ("A", 100.0, 1.0)]
+    assert result.rows() == [
+        ("A", 0.0, 0.0, 0),
+        ("A", 10.0, 0.5, 0),
+        ("A", 100.0, 1.0, 0),
+    ]
     linear = get_ecdf(
         df, targets, continuous=True, maximization=maximization, scale_f_log=False
     )
@@ -278,7 +290,7 @@ def test_continuum_ecdf_quality(maximization):
     assert linear["ecdf"].to_list() == pytest.approx([0, half, 1], 1e-12)
     one = targets.head(1).with_columns(target=pl.lit(10.0))
     result = get_ecdf(df, one, continuous=True, maximization=maximization)
-    assert result.rows() == [("A", 0.0, 0.0), ("A", 10.0, 1.0)]
+    assert result.rows() == [("A", 0.0, 0.0, 0), ("A", 10.0, 1.0, 0)]
 
 
 @pytest.mark.parametrize("maximization", [False, True])
@@ -669,7 +681,7 @@ def test_target_ecdf_restarts_are_the_expected_restarted_runs(maximization):
     )
     assert (ours["ecdf"] >= carried["ecdf"] - 1e-12).all()
     at = ours.filter(pl.col("evaluations") <= steps["evaluations"].max())
-    for _, b, value in at.rows():
+    for _, b, value, _ in at.rows():
         last = steps.filter(pl.col("evaluations") <= b)["ecdf"][-1]
         assert last == pytest.approx(value, rel=1e-12)
 

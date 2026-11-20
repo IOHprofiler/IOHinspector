@@ -165,11 +165,25 @@ def _restarted(  # pylint: disable=R0913
         level = pl.col(fval_var).cast(pl.Float64) * (1.0 if maximization else -1.0)
         runs = run_sets(data, sets, eval_var, level.max())
         steps = failed(runs, steps.with_columns(level=level), "level")
-    evaluations = pl.lit(float(horizon))
+    steps = steps.with_columns(horizon=_evaluations(horizon, divide_by_dimension))
+    return continued(steps, runs, key, eval_var)
+
+
+def _evaluations(budget: float, divide_by_dimension: bool) -> pl.Expr:
+    """``budget`` on the x axis in evaluations, per row's dimension if divided."""
+    evaluations = pl.lit(float(budget))
     if divide_by_dimension:
         evaluations = evaluations * pl.col("dimension")
-    steps = steps.with_columns(horizon=evaluations.floor().cast(pl.Int64))
-    return continued(steps, runs, key, eval_var)
+    return evaluations.floor().cast(pl.Int64)
+
+
+def _stopped_before(data, by, eval_var, budget: pl.Expr, per_pair=None):
+    """``n_restarted`` per group of ``by``: its runs with B_i below ``budget``, the
+    largest budget of their pair (EC-7), from the pair columns or ``per_pair``."""
+    runs = runs_of(data, list(dict.fromkeys([*by, *PAIR])), eval_var)
+    if per_pair is not None:
+        runs = runs.join(per_pair, on=PAIR)
+    return runs.group_by(by).agg(n_restarted=(pl.col("evals_used") < budget).sum())
 
 
 def _increments(  # pylint: disable=R0913,R0914
@@ -186,10 +200,11 @@ def _increments(  # pylint: disable=R0913,R0914
     horizon: float | None = None,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
-) -> tuple[pl.DataFrame, float]:
+) -> tuple[pl.DataFrame, float, pl.DataFrame | None]:
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), with simulated restarts up to ``horizon`` (by default the
-    largest budget in the selection), and that largest budget."""
+    largest budget in the selection), that largest budget, and with restarts
+    ``n_restarted`` per group of ``by``."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
     restart = restarts(stopped)
     data, targets = _prepare(
@@ -205,13 +220,18 @@ def _increments(  # pylint: disable=R0913,R0914
         steps = _hits(data, targets, maximization, fval_var, eval_var)
     steps = steps.with_columns(inc=pl.col("dy") * pl.col("weight"))
     keep = [*dict.fromkeys([*by, *PAIR]), eval_var, "inc"]
+    counts = None
     if restart:
+        horizon = x_max if horizon is None else horizon
+        counts = _stopped_before(
+            data, by, eval_var, _evaluations(horizon, divide_by_dimension)
+        )
         extra = _restarted(
             data,
             steps,
             by,
             keep[:-2],
-            x_max if horizon is None else horizon,
+            horizon,
             continuous=continuous,
             maximization=maximization,
             divide_by_dimension=divide_by_dimension,
@@ -221,7 +241,7 @@ def _increments(  # pylint: disable=R0913,R0914
         steps = pl.concat([steps.select(keep), extra.cast(steps.select(keep).schema)])
     zero = data.select(by).unique().with_columns(x=pl.lit(0.0), inc=pl.lit(0.0))
     steps = steps.filter(pl.col("inc") != 0).select(*by, x=x, inc="inc")
-    return pl.concat([zero, steps]), x_max
+    return pl.concat([zero, steps]), x_max, counts
 
 
 def _one_group(data: pl.DataFrame, by: Sequence[str]):
@@ -331,15 +351,18 @@ def get_ecdf(
             - ``fval_var`` (``"raw_y"``).
 
     Returns:
-        pl.DataFrame: ``by``, ``eval_var`` (float) and ``ecdf``.
+        pl.DataFrame: ``by``, ``eval_var`` (float) and ``ecdf``; with restarts also
+            ``n_restarted``, the runs of the group that stopped before the
+            largest budget computed (EC-7).
     """
     data, by = _one_group(data, by)
     x_values = None if x_values is None else list(x_values)
     horizon = max(x_values) if x_values else None
-    steps, _ = _increments(
+    steps, _, counts = _increments(
         data, targets, by, eval_var=eval_var, horizon=horizon, **options
     )
-    return _step_function(steps, by, x_values).rename({"x": eval_var})
+    ecdf = _step_function(steps, by, x_values).rename({"x": eval_var})
+    return _with_counts(ecdf, counts, by)
 
 
 @upgrade_hints
@@ -374,12 +397,14 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
         **options: the options of ``get_ecdf``, ``eval_var`` included.
 
     Returns:
-        pl.DataFrame: ``by`` and ``auc``.
+        pl.DataFrame: ``by`` and ``auc``; with restarts also ``n_restarted``,
+            the runs of the group that stopped before b_hi.
     """
     data, by = _one_group(data, by)
-    steps, x_max = _increments(data, targets, by, horizon=b_hi, **options)
+    steps, x_max, counts = _increments(data, targets, by, horizon=b_hi, **options)
     hi = x_max if b_hi is None else b_hi
-    return _area(steps, by, *_axis(pl.col("x"), b_lo, hi, scale_eval_log))
+    auc = _area(steps, by, *_axis(pl.col("x"), b_lo, hi, scale_eval_log))
+    return _with_counts(auc, counts, by)
 
 
 def _value_increments(  # pylint: disable=R0913,R0914
@@ -424,10 +449,7 @@ def _value_increments(  # pylint: disable=R0913,R0914
     if restart:
         runs = run_sets(data, sets, eval_var, level.max())
         pieces = split(runs, pieces)
-        used = runs_of(data, sets, eval_var).join(largest, on=PAIR)
-        counts = used.group_by(by).agg(
-            n_restarted=(pl.col("evals_used") < pl.col("last")).sum()
-        )
+        counts = _stopped_before(data, by, eval_var, pl.col("last"), largest)
         lists = pieces.select("run_set", *PAIR).unique()
         lists = lists.join(budgets.group_by(PAIR).agg("budget"), on=PAIR)
         budget = {r: np.array(b) for r, b in lists.select("run_set", "budget").rows()}
@@ -455,8 +477,11 @@ def _with_counts(result: pl.DataFrame, counts: pl.DataFrame | None, by: list[str
     if counts is None:
         return result
     if by == [ALL]:
-        return result.with_columns(n_restarted=counts["n_restarted"].item())
-    return result.join(counts, on=by, how="left", maintain_order="left")
+        n = counts["n_restarted"]
+        return result.with_columns(n_restarted=pl.lit(n.item(), dtype=n.dtype))
+    return result.join(
+        counts, on=by, how="left", maintain_order="left", nulls_equal=True
+    )
 
 
 @upgrade_hints
