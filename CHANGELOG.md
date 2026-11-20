@@ -21,9 +21,13 @@
 
 - Shapley values of algorithm portfolios (`docs/definitions/portfolio.md`):
   `metrics.get_shapley_values(data, targets, by)` gives each group's share of the
-  area under the virtual-best ECDF, exact up to 15 groups and seeded sampling
-  above, with a standard error. `metrics.shapley_values(n, value, marginal=...)`
-  is the generic routine for other portfolio values or marginal contributions;
+  area under the virtual-best ECDF, exact for any number of groups: the value is
+  a sum of maximum games, whose Shapley values have a closed form (Q-SH-2).
+  `metrics.shapley_values(n, value, marginal=...)` is the generic routine for
+  other portfolio values or marginal contributions, exact up to `exact_limit`
+  (15) players and seeded sampling above, with a standard error. Both take
+  `method`: `"auto"` (default), `"closed"`, `"exact"` (enumeration) or
+  `"sampled"`, to choose the computation, for example to check the closed form;
   `metrics.get_portfolio_ecdf` and `metrics.envelope_value` give it the ECDF
   data and the default value.
 - Cumulative difference plot (`docs/definitions/cdp.md`):

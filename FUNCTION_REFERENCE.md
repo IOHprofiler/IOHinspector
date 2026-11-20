@@ -298,13 +298,13 @@ Replaces each function value of an infeasible row by its penalised value: `relat
 
 Definitions: `docs/definitions/portfolio.md` (SH-1 to SH-4).
 
-#### `get_shapley_values(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, marginal=None, exact_limit=15, samples=5, seed=None, **options)`
-The Shapley value of each group of `by` in the portfolio of all groups. A portfolio's value is the area under its virtual-best ECDF: per (function, dimension) pair and target, the largest single-target ECDF of a member, integrated over [b_lo, b_hi] as in `get_ecdf_auc` (with simulated restarts by default) and summed. Values are divided by the value of all groups, so they sum to 1; exact up to `exact_limit` groups, sampled with `seed` above. `options` as in `get_ecdf`.
+#### `get_shapley_values(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, marginal=None, method="auto", exact_limit=15, samples=5, seed=None, **options)`
+The Shapley value of each group of `by` in the portfolio of all groups. A portfolio's value is the area under its virtual-best ECDF: per (function, dimension) pair and target, the largest single-target ECDF of a member, integrated over [b_lo, b_hi] as in `get_ecdf_auc` (with simulated restarts by default) and summed. Values are divided by the value of all groups, so they sum to 1, and are exact for any number of groups (closed form). `method` as in `shapley_values`; with a custom `marginal` they are exact up to `exact_limit` groups and sampled with `samples` and `seed` above. `options` as in `get_ecdf`.
 
 **Returns:** `pl.DataFrame` with `by`, `shapley` and `se` (0 when exact).
 
-#### `shapley_values(n_players, value, *, marginal=None, exact_limit=15, samples=5, seed=None)`
-Shapley values of any game. `value` maps a boolean matrix of coalitions (one row each) to their values; `marginal(v, S, a)` defaults to v(S ∪ {a}) − v(S).
+#### `shapley_values(n_players, value, *, marginal=None, method="auto", exact_limit=15, samples=5, seed=None)`
+Shapley values of any game. `value` maps a boolean matrix of coalitions (one row each) to their values; `marginal(v, S, a)` defaults to v(S ∪ {a}) − v(S). `method` chooses the computation: `"closed"` (only `envelope_value` with the default marginal; exact for any number of players), `"exact"` (enumeration; raises above `exact_limit` players), `"sampled"` (with `samples` and `seed`), or `"auto"` (default): closed where it applies, else exact up to `exact_limit` players and sampled above.
 
 **Returns:** `(phi, se)`, numpy arrays divided by v(N).
 
@@ -314,7 +314,7 @@ The ECDF data of the `get_shapley_values` game, to define another portfolio valu
 **Returns:** `(players, ecdf, width)`: the groups of `by`, the ECDF of each group on each step (groups × steps) and the step widths on the budget axis, divided by its length.
 
 #### `envelope_value(ecdf, width)`
-The default portfolio value on these data, v(S) = Σ width · max over S of ecdf, as a `value` for `shapley_values`.
+The default portfolio value on these data, v(S) = Σ width · max over S of ecdf, as a `value` for `shapley_values`, which computes its Shapley values in closed form.
 
 ---
 
