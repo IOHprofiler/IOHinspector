@@ -1,13 +1,15 @@
-"""Benchmark of exact against sampled Shapley values (SH-2, review of I16).
+"""Benchmark of the Shapley computations (SH-2, Q-SH-2, review of I16).
 
     python scripts/bench_shapley.py [--groups 5 10 15] [--samples 5] [--rows 40]
 
 Writes the synthetic full-bbob set of ``bench_ert.py`` (24 functions, 6 dimensions,
 15 runs per algorithm and pair) for the largest number of groups. For each number
-of groups n, times ``get_shapley_values`` on the first n algorithms with its default
-targets on a log budget axis, exact and sampled (``samples``, seed 1), and prints a
-Markdown table with the largest difference between the two and the largest
-standard error of the sampled values.
+of groups n, builds the game of ``get_shapley_values`` on the first n algorithms
+(``get_portfolio_ecdf``, default targets, log budget axis) and times the default
+value with each ``method``: ``closed`` (the default), ``exact`` (enumeration) and
+``sampled`` (``samples``, seed 1). Prints a Markdown table with the largest
+difference of each to the closed form and the largest standard error of the
+sampled values.
 """
 
 from __future__ import annotations
@@ -20,12 +22,12 @@ from pathlib import Path
 import polars as pl
 from bench_ert import write
 
-from iohinspector.metrics import get_shapley_values
+from iohinspector.metrics import envelope_value, get_portfolio_ecdf, shapley_values
 
 
-def timed(data: pl.DataFrame, **kw) -> tuple[pl.DataFrame, float]:
+def timed(f, *args, **kw):
     start = time.perf_counter()
-    result = get_shapley_values(data, scale_eval_log=True, **kw)
+    result = f(*args, **kw)
     return result, time.perf_counter() - start
 
 
@@ -41,17 +43,27 @@ def main() -> None:
         data = pl.read_parquet(Path(tmp) / "trace.parquet").join(runs, on="run_id")
     data = data.with_columns(pl.col("algorithm_name").cast(pl.String))
     print(f"{pl.thread_pool_size()} threads, samples={args.samples}\n")
-    print("| groups | exact (s) | sampled (s) | exact / sampled | max diff | max se |")
-    print("|---:|---:|---:|---:|---:|---:|")
+    print(
+        "| groups | steps | ECDF data (s) | closed form (s) | enumeration (s) "
+        "| sampled (s) | enumeration diff | sampled diff | max se |"
+    )
+    print("|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for n in args.groups:
         names = [f"alg{i:03d}" for i in range(n)]
         part = data.filter(pl.col("algorithm_name").is_in(names))
-        exact, t_exact = timed(part, exact_limit=n)
-        sampled, t_sampled = timed(part, exact_limit=0, samples=args.samples, seed=1)
-        diff = (sampled["shapley"] - exact["shapley"]).abs().max()
+        (_, ecdf, width), t_ecdf = timed(get_portfolio_ecdf, part, scale_eval_log=True)
+        value = envelope_value(ecdf, width)
+        (closed, _), t_closed = timed(shapley_values, n, value, method="closed")
+        (exact, _), t_exact = timed(
+            shapley_values, n, value, method="exact", exact_limit=n
+        )
+        (sampled, se), t_sampled = timed(
+            shapley_values, n, value, method="sampled", samples=args.samples, seed=1
+        )
         print(
-            f"| {n} | {t_exact:.2f} | {t_sampled:.2f} | {t_exact / t_sampled:.1f} "
-            f"| {diff:.1e} | {sampled['se'].max():.1e} |"
+            f"| {n} | {ecdf.shape[1]} | {t_ecdf:.2f} | {t_closed:.3f} "
+            f"| {t_exact:.2f} | {t_sampled:.2f} | {abs(exact - closed).max():.1e} "
+            f"| {abs(sampled - closed).max():.1e} | {se.max():.1e} |"
         )
 
 
