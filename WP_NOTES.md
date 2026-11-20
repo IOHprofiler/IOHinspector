@@ -10,13 +10,22 @@ Status: in progress
   budget, chains trimmed by length): identical rows to main on synthetic and
   COCO f24 d2 / f1 d20, 0.98 s to 0.13 s on synthetic. Committed by the
   controller after the 20 Nov crash (the worker had verified it, not committed).
+- step 2b: the restarts' renewal pass in windows of CHUNK evaluations (memory
+  no longer grows with the horizon), and get_ecdf with x_values sums the
+  restarts' increments at the samples instead of building the step function.
+  Same rows as main on COCO f24 d2 (scratch/I22/scripts/dump.py, six cases:
+  sampled, sampled/dim, exact, auc, continuous, fixed budget): no unmatched
+  rows, max abs diff 1.4e-13. Full horizon (2e7) on f24 d2, slice.py:
+  sampled 2.6 s / 0.7 GB, continuous 4.5 s / 0.8 GB (main: both killed above
+  8 GB); fixed-budget ECDF 7.4 s / 0.8 GB (main 9.8 s / 3.6 GB).
 
 ## Next step
-Step 2b is in the WIP commit after a6781f1 (ECDF step function and more of
-restarts.py; tests/test_metrics pass, not yet compared with main). Compare it
-with main on COCO f24 d2 (baseline: /Users/jacob/code/ioh-work/scratch/I22/base,
-data in scratch/I22/coco-ds), then commit it as step 2b. Then DataManager
-pushdown and the manifest validation cache, then docs/performance.md.
+Step 2c: get_ecdf_auc over the full horizon still materialises the restarted step
+function (f24 d2 with the default b_hi = 2e7 is killed above 8 GB, on main too).
+The area is a weighted sum of the increments (inc * (hi - max(x, lo)), or on
+log10), so continued() can sum the weights in its chunks as it does for
+``at``. Then DataManager pushdown and the manifest validation cache, then
+docs/performance.md.
 
 ## Decisions
 - bench_ert.py became bench.py (one harness); bench_shapley imports synthetic().
