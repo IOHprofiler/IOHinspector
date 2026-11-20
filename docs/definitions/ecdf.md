@@ -4,7 +4,8 @@ Status: **proposed**, for sign-off at checkpoint H1; the open questions were
 answered by the D6 review (dvermetten, 2026-11-06).
 Parity-matrix rows: "ECDF and AUC as in IOHanalyzer", "Multi-function
 aggregation and ranks"; AOCC from the "New" row.
-Implemented in: I12; the fixed-budget ECDF and its AUC in I28.
+Implemented in: I12; the fixed-budget ECDF and its AUC in I28; simulated
+restarts in every ECDF in I33.
 Sources: [IOHanalyzer], [cocopp], [iohinspector]; see [references](references.md).
 
 ## Notation
@@ -82,7 +83,67 @@ EAF [LopezIbanez2025]). The bounds must be fixed per pair before alignment;
 the equivalence does not hold when they are taken from the aligned data.
 mean_i q_i(b) is also the area under the EAF of the runs over q in [0, 1], so
 AOCC_S is the volume under the EAF; across several pairs this holds for the
-EAF that weighs each pair equally ([eaf](eaf.md), EA-6).
+EAF that weighs each pair equally ([eaf](eaf.md), EA-6), and only with the
+same `stopped` on both sides: the AOCC restarts by default (EC-7), the EAF
+carries forward by default.
+
+### Simulated restarts
+
+A run that stops (after its B_i evaluations) without reaching a target t is by
+default continued by **simulated restarts** (EC-7): runs drawn uniformly with
+replacement from its run set (the runs of its group of `by` on its pair), each
+for its own B_j evaluations, until one of them reaches t. Its runtime to t is
+then the sum of the drawn failed runs' B_j and the hitting time T_j(t) of the
+run that succeeds. This is COCO's procedure (`toolsstats.drawSP` as
+`pprldmany` calls it, see below) and the principle behind the ERT (RT-1): an
+algorithm that stopped could have been restarted independently. A run that
+reaches t needs no restart for t, since a restart cannot change whether or
+when it reached t. A target that no run of the set reaches stays unreached.
+B_i is the run's `evals_used`, or else its last logged evaluation, as for the
+ERT ([runtime](runtime.md)).
+
+The ECDF with restarts is the expected value over these draws. It is computed
+from the runs' runtimes, not by simulating restarts. For a run set of n runs
+and a target t, let F be the runs that do not reach t. A restarted run whose
+first run is drawn uniformly reaches t within b with probability
+
+    E_t(b) = (1/n) Σ_{i ∉ F} 1[T_i(t) ≤ b]  +  (1/n) Σ_{j ∈ F} E_t(b − B_j),
+
+with E_t(b) = 0 for b < 0. The first term is the run set's single-target ECDF
+without restarts. The second continues each failed run's share 1/n after its
+B_j evaluations. The same holds when every run is the first run once, as in
+cocopp's derandomised first draw and FB-6's one chain per run, because the
+mean over the first runs is the uniform draw. With restarts, the target ECDF
+averages E_t(b) over the targets and runs in place of the indicator
+1[T_i(t) ≤ b] averaged over them. The rest (EC-2 to EC-4) is unchanged. It is
+the limit of cocopp's estimate as cocopp's sample size grows, and it needs no
+seed.
+
+*Computation.* Over the integer evaluations, the increments r of E_t solve
+r = h + (1/n) Σ_{j ∈ F} r(· − B_j), with h the increments without restarts
+(1/n at each T_i(t)). One pass computes it in blocks of the smallest B_j,
+since r looks back by at least that much. The recursion is linear, so the
+targets that share F are continued together. F only changes at the runs'
+final values (a run fails t exactly when its best value is worse than t), so
+a run set has at most n different F. The pass stops at the horizon below, or
+earlier where the chance that a chain has not yet succeeded, at most
+(|F|/n)^k after k restarts, is below 10⁻¹⁷. Beyond that point E_t equals its
+limit up to rounding.
+
+*Horizon.* With restarts, the ECDF keeps rising beyond the largest evaluation
+of the runs. The target ECDF is computed up to the largest budget asked for:
+the largest of `x_values`, `b_hi` for the AUC, or else the largest evaluation
+in the selection (the default b_hi). Its exact steps (EC-3) are those up to
+that budget.
+
+*Continuum ECDF and AOCC.* The same holds per target of the continuum. As F
+changes at the runs' final values, a run's increment of normalised quality
+q_i is split at the final qualities of the other runs of its set, and each
+piece is continued with its own F.
+
+`stopped = "carry_forward"` gives the ECDFs without restarts: a run that
+stopped keeps its final value, which assumes that it would not have
+improved. That is IOHanalyzer's rule.
 
 ### Fixed-budget ECDF
 
@@ -98,12 +159,25 @@ in which the run's best-so-far value at the budget is at least as good as v.
 Because V_i(b) ≤ v exactly when T_i(v) ≤ b, it is also the fraction of (run,
 budget) pairs in which the run reached v within the budget. Both comparisons
 are inclusive, as in EC-1. A run has no value at a budget before its first
-logged row (AL-5), and there it counts as not reached; a run that stopped
-before b keeps its final value (FB-1).
+logged row (AL-5), and there it counts as not reached.
 
-ECDF^B_S is a step function of v. It changes only at the values V_i(b_k), so
-it is computed exactly there. It grows with v under minimisation and falls
-with v under maximisation. Aggregation over pairs is as for the target ECDF
+A run that stopped before b (B_i < b) is by default continued by **simulated
+restarts** (EC-7), as above: V_i(b) is then the best value of the run and its
+restarts up to b, which is FB-6's procedure ([fixed-budget](fixed-budget.md)).
+By the duality, the run reaches v within b exactly when its runtime to v is
+at most b, so with restarts
+
+    ECDF^B_S(v) = (1 / m) Σ_k E_v(b_k),
+
+E_v being the probability above for the target v: cocopp's runtime ECDF with
+restarts, read along the other axis. The option `stopped = "carry_forward"`
+keeps the run's final value instead (IOHanalyzer's rule).
+
+ECDF^B_S is a step function of v. Without restarts it changes only at the
+values V_i(b_k). With restarts it changes at every value at which a run
+improves within the largest budget, and at the runs' final values, where F
+changes; it is computed exactly at those values. It grows with v under
+minimisation and falls with v under maximisation. Aggregation over pairs is as for the target ECDF
 (EC-2), on one value axis. That is only meaningful when the pairs' values have
 a common scale, such as BBOB precisions; IOHanalyzer pools them the same way.
 
@@ -184,6 +258,15 @@ longer, restarted runtimes instead of counting as "not reached". Each
 the dimension. The "x" markers show a budget estimate per function, not a
 data point. Simulated restarts are not part of IOHanalyzer or of the parity
 list.
+
+`drawSP` draws the first run of each sample from a permutation of the runs
+(derandomised) and each restart uniformly at random. A sample is the sum of
+the drawn unsuccessful runs' `maxevals` and the successful run's runtime; a
+target that no run reaches is never reached. The sample size per (function,
+target) is n · max(2, ⌊(100 + 1000 / (1 + h)) / n⌋) for the largest run count
+n, and at least 30 + ⌊970 / (1 + 10h)⌋, with h = `in_a_hurry` (1000 by
+default, so 100 samples for n = 5; 1100 with h = 0; `pprldmany.py:765–777`).
+cocopp has no fixed-budget ECDF.
 
 ## How iohinspector 0.0.8 implements it
 
@@ -287,7 +370,8 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 | AUC | trapezoid, divided by x | – | – | exact, divided by b_hi − b_lo |
 | AOCC bounds | – | – | from aligned data | fixed per pair |
 | Ranks | `frank`, average ties, NA last | – | – | same |
-| Fixed-budget ECDF | strict T < b, 50-point value grid | – | – | inclusive, exact (EC-9) |
+| Stopped runs | carried forward | simulated restarts, sampled (`drawSP`) | carried forward | simulated restarts by default, their expected value computed exactly (EC-7) |
+| Fixed-budget ECDF | strict T < b, 50-point value grid; stopped runs carried forward | – (runtime ECDF with restarts) | – | inclusive, exact (EC-9); simulated restarts by default (EC-7) |
 | Fixed-budget AUC | trapezoid over the value grid in its order, divided by x | – | – | exact, divided by v_hi − v_lo (EC-10) |
 
 ## Decisions
@@ -313,7 +397,29 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
   equivalence numerically.
 - **EC-6.** The current `get_data_ecdf` stays available under a clear name
   (for example `ecdf_continuous`), with EC-5's fixed bounds.
-- **EC-7.** No simulated restarts.
+- **EC-7.** Every ECDF continues a run that stopped without reaching a
+  target by simulated restarts by default (`stopped = "restart"`), with COCO's
+  procedure ("Simulated restarts" above): the target ECDF and its AUC, the
+  continuum ECDF and the AOCC, the ECDFs of the portfolio game (SH-1,
+  [portfolio](portfolio.md)), and the fixed-budget ECDF and its AUC. The
+  ECDF is the expected value over the restarts, computed from the runs'
+  runtimes (E_t), so it needs no seed and every call gives the same result.
+  A run that reached a target is not restarted for it. `stopped =
+  "carry_forward"` gives the ECDF without restarts. The default differs from
+  IOHanalyzer, which carries forward, and from FB-6's default for the
+  fixed-budget summary: carrying forward assumes that a run that stopped
+  would not have improved, while an algorithm that stops early can usually be
+  restarted, as the ERT and cocopp assume. The fixed-budget summary simulates
+  its restarts (FB-6), since its statistics need one value per run. With
+  restarts, every ECDF result reports `n_restarted` per group: the runs of
+  the group that stopped before the largest budget of their pair (the
+  horizon of the target ECDF, the largest budget of the fixed-budget ECDF);
+  the user, 2026-11-20. The EAF keeps carrying forward by default and
+  restarts on request (EA-6, [eaf](eaf.md)), so the defaults of the AOCC and
+  of the EAF differ. The deprecated `get_aocc` and `get_data_ecdf` keep no
+  restarts (the user, 2026-11-20). Decided by the D6 reviews of #42
+  (fixed-budget ECDF) and #48 (the target ECDFs, Q-EC-4, and computing rather
+  than simulating), dvermetten, 2026-11-19.
 - **EC-8.** Rank tables rank per pair with average ties and missing values
   last.
 - **EC-9.** The fixed-budget ECDF counts (run, budget) pairs with
@@ -321,7 +427,8 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
   budgets per pair (default 10, log-spaced, TG-5), exact at its steps (EC-3)
   and averaged over pairs as EC-2. IOHanalyzer's strict T < b is not ported;
   for integer evaluations it is T ≤ b − 1, which the golden tests use.
-  Decided by the user on 2026-11-12 (Q-EC-3).
+  Stopped runs are restarted (EC-7). Decided by the user on 2026-11-12
+  (Q-EC-3).
 - **EC-10.** The fixed-budget AUC is the exact normalised integral over
   [v_lo, v_hi] on a linear or log10 value axis, with the defaults above.
   IOHanalyzer's trapezoid over its value grid is reproduced only in the golden
@@ -342,6 +449,12 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 - Q-EC-2 (algorithms with different pairs): use only the common pairs, with a
   clear warning, and a parameter that averages everything but still warns. See
   EC-2.
+- Q-EC-4 (simulated restarts in the target ECDF): yes, in every target-based
+  ECDF, matching COCO's procedure, with the same option and default as the
+  fixed-budget ECDF; a run that reached a target needs no restart for it, and
+  the ECDF calculation is adapted directly where that gives the same result
+  instead of simulating restarts (dvermetten, review of #48, 2026-11-19). See
+  EC-7.
 
 Remaining points for H1: none. EC-5's bounds follow the EAF answer (Q-EA-1);
 that is a consequence of AOCC and the continuum ECDF being equal, not a
@@ -379,7 +492,9 @@ example above gives 0.70, 0.733 and 0.75.
 ECDF values are ratios of counts and must match exactly (as rationals; float
 comparison to 1e-12). AUC and AOCC must agree to a relative error of 1e-12.
 Comparisons with IOHanalyzer's sampled ECDF and trapezoid AUC are made on
-IOHanalyzer's 50-point grid.
+IOHanalyzer's 50-point grid. With simulated restarts the comparison with
+cocopp's sampled ECDF is statistical, within 5 of cocopp's standard errors
+(Implementation (I33)).
 
 ## Implementation (I28)
 
@@ -399,3 +514,66 @@ default target ECDF, the continuum ECDF and the AOCC use them. Its `lower` and
 
 The golden tests compare with IOHanalyzer's `ECDF_by_FV` exactly, with each
 budget b replaced by b − 1, and reproduce `AUC_by_FV` from the same values.
+
+## Implementation (I33)
+
+`metrics/restarts.py` holds the one computation of EC-7 (E_t), used by
+every ECDF: `get_ecdf` and `get_ecdf_auc` (targets and continuum, so the
+AOCC), `get_portfolio_ecdf` and `get_shapley_values`, and
+`get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc`. They all take
+`stopped = "restart"` (default) or `"carry_forward"`; none takes a seed. With
+restarts, the results of `get_ecdf`, `get_ecdf_auc` and the fixed-budget
+functions have `n_restarted`, the runs of the group that stopped before the
+largest budget of their pair: the horizon (in evaluations) for the target
+ECDF, the pair's largest budget for the fixed-budget ECDF. The deprecated
+`get_data_ecdf` and `get_aocc` pass `"carry_forward"`. The discretised EAF
+uses the same computation on request (EA-6). The golden tests against
+IOHanalyzer use `"carry_forward"`.
+
+`aggregate_convergence(stopped="restart")` (FB-6) keeps its simulated chains,
+seeded with 0 by default. A run whose final value is the best of its run set
+is not restarted, and a chain stops drawing once it has drawn such a run: no
+later restart can improve its value.
+
+The fixed-budget ECDF is computed from pieces of the runs' traces: each row
+at which a run improves gives the levels it reaches at its evaluation T, cut
+at the final levels of its run set, so that F is fixed on a piece. On the
+values of a piece the run adds (1/m) Σ_k E(b_k − T), the renewal function
+of F at b_k − T, which is the number of budgets b_k ≥ T without restarts. One
+path serves both options; the golden tests against IOHanalyzer's
+`ECDF_by_FV` check it with `"carry_forward"`. The target ECDF continues the
+hits of each run set and F (the continuum: its pieces of normalised quality)
+by the recursion for r, up to the horizon. The fixed-budget ECDF looks the
+renewal function up at its budgets.
+
+Tests: E_t computed from its definition, by recursion, matches the target
+ECDF, the fixed-budget ECDF and the portfolio game to 1e-12 on small data
+with runs of different lengths, minimising and maximising. The AUC over m
+targets is within 1/m of the AOCC and the fixed-budget AUC is the mean
+continuum ECDF over its budgets, with restarts. The summary's simulated
+chains (FB-6) average to E_t: on 30000 chains within 5 standard errors.
+
+Validation against cocopp 2.9.1 (`tests/golden/cocopp/coco_old/`,
+`ecdf_restarts_2D.parquet` and `_3D`, written by `generate.py`). The fixture
+is `coco_old`: DIRECT on f6, 2-D and 3-D, five runs each with B_i between
+3·10⁴ and 10⁵, most of them unsuccessful for the small targets. cocopp's
+`drawSP`, called as `pprldmany` calls it but with 20000 samples (seeded),
+gives for each of the 51 targets 10^(2 − k/5) and each of 10 budgets
+round(10^(1 + 5k/9)), 10 to 10⁶, the fraction of simulated restart runtimes
+at most the budget: 510 cells per dimension. The test
+(`test_restarts_match_cocopp`) computes each cell twice: with `get_ecdf` for
+that one target, sampled at the budgets, and with `get_fixed_budget_ecdf`
+with that one budget, at v = the target (cocopp's grid level of it, as in
+`tests/io/test_coco_cocopp.py`). The two agree to 1e-12. Ours is the
+expected value, cocopp's a sample of 20000, so every cell must lie within 5
+of cocopp's binomial standard errors. Measured: the largest cell difference
+is 0.0054 in 2-D and 0.0056 in 3-D, at most 2.6 and 1.6 standard errors over
+the 148 and 106 cells where cocopp's sample varies, and the mean absolute
+difference is 0.00010 and 0.00007; 445 and 466 cells agree exactly (targets
+that no run or every run reaches within the budget, and budgets before any
+restart can end, where cocopp's derandomised first draw is exact). The
+fixed-budget ECDF over all ten budgets differs from the mean of cocopp's
+cells by at most 0.0005 (2-D) and 0.0006 (3-D), the test bound being 0.005;
+carrying forward instead differs by up to 0.071 and 0.099.
+
+Cost: `docs/notes/simulated-restarts.md`.

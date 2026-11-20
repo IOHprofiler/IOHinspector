@@ -12,6 +12,7 @@ asserts the agreed value and names the difference (see tests/golden/README.md).
 from __future__ import annotations
 
 import json
+import math
 import warnings
 from functools import cache
 from pathlib import Path
@@ -93,6 +94,14 @@ def logged(fixture: str) -> pl.DataFrame:
         manager.add_folder(fixture_path(fixture))
     columns = ["function_id", "dimension", "algorithm_name", "source_run_index"]
     return manager.load(monotonic=False, include_columns=columns)
+
+
+def cocopp_level(target: float) -> float:
+    """The grid level cocopp's ``detEvals`` uses for ``target``: the closest level
+    10^(i/5) not larger than it, as cocopp computes the level."""
+    i = round(5 * math.log10(target))
+    level = 10 ** (i / 5)
+    return level if level <= target else 10 ** ((i - 1) / 5)
 
 
 def golden_cocopp(name: str, fixture: str = "coco") -> pl.DataFrame:

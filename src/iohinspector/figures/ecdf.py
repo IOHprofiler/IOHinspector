@@ -1,5 +1,6 @@
 """The BBOB-style ECDF (``docs/definitions/ecdf.md``): one step line per group of
-``by``, from the first logged evaluation to the group's largest budget."""
+``by``, from the first logged evaluation to the largest budget of all groups; past
+a group's own budget its runs are restarted (EC-7), as in cocopp."""
 
 import numpy as np
 import polars as pl
@@ -26,14 +27,11 @@ def ecdf_plot(spec: FigureSpec, data: pl.DataFrame) -> Plot:
         maximization=d.maximization,
         divide_by_dimension=d.per_dimension,
     ).with_columns(group_label(d.by, d.label))
-    ends = data.group_by(group_label(d.by, d.label)).agg(end=x.max())
-    ends = ends.join(ecdf.select("label").unique(), on="label")  # pairs="common"
-    start = data.select(x.filter(x > 0).min()).item()
+    start, end = data.select(x.filter(x > 0).min().alias("start"), x.max()).row(0)
     curves = [
         _curve(label, ecdf.filter(pl.col("label") == label), start, end)
-        for label, end in sorted(ends.rows())
+        for label in sorted(ecdf["label"].unique())  # pairs="common"
     ]
-    end = ends["end"].max()
     unit = "# f-evals / dimension" if d.per_dimension else "# f-evals"
     return Plot(
         curves,
@@ -45,7 +43,7 @@ def ecdf_plot(spec: FigureSpec, data: pl.DataFrame) -> Plot:
 
 def _curve(label: str, ecdf: pl.DataFrame, start: float, end: float) -> Curve:
     """The steps of one group from ``start``, where it has the value it reached
-    by then, to its largest budget ``end``, where it keeps its final value."""
+    by then, to ``end``, where it keeps its final value."""
     x, y = ecdf["evaluations"].to_numpy(), ecdf["ecdf"].to_numpy()
     i = np.searchsorted(x, start, side="right") - 1
     after = slice(i + 1, None)  # the steps after start

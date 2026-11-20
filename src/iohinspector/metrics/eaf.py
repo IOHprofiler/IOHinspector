@@ -14,7 +14,8 @@ from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import PAIR, get_ecdf_targets, seq_fv, seq_rt, spaced
 from .ecdf import ALL, _one_group, _quality
-from .utils import transform_fval
+from .restarts import failed, gained, restarts, run_sets
+from .utils import runs_of, transform_fval
 
 #: IOHanalyzer's 11 attainment levels, in percent (EA-1).
 PERCENTILES = tuple(range(0, 101, 10))
@@ -29,6 +30,7 @@ OPTIONS = (
     "targets",
     "maximization",
     "weighting",
+    "stopped",
     "fval_var",
     "eval_var",
 )
@@ -366,13 +368,58 @@ def _grid(  # pylint: disable=R0913
     return _each(data, scope, grid)
 
 
+def _gain(  # pylint: disable=R0913,R0914,R0917
+    data, runs, grid, by, scope, value, larger, eval_var
+) -> pl.DataFrame:
+    """What simulated restarts add to alpha(b, y) (EA-6, EC-7): per run that
+    attains y at T, the renewal function of the runs of its group and pair that
+    never attain y, at b - T, less 1[b >= T] (``restarts.gained``), weighted as
+    the run. ``keys``, ``eval_var``, ``value`` and ``gain``, before division by
+    the group's weight."""
+    sets = list(dict.fromkeys([*by, *PAIR]))
+    keys = list(dict.fromkeys([*by, *scope]))
+    sign = 1.0 if larger else -1.0
+    used = runs_of(data, sets, eval_var).select("run_id", "evals_used")
+    traces = runs.join(used, on="run_id")
+    level = pl.col(value).cast(pl.Float64) * sign
+    finals = run_sets(traces, sets, eval_var, level.max())
+    values = grid.select(*scope, pl.col(value).alias("_y")).unique()
+    hits = (
+        _join(traces, values, scope)
+        .filter(level >= pl.col("_y") * sign)
+        .group_by("run_id", *sets, "_y")
+        .agg(pl.col(eval_var).min(), pl.col("weight").first())
+        .with_columns(level=pl.col("_y") * sign)
+    )
+    hits = failed(finals, hits, "level")
+    budgets = _join(
+        hits.select("run_set", *scope).unique(),
+        grid.select(*scope, eval_var).unique().sort(eval_var),
+        scope,
+    )
+    budget = {
+        r: np.array(b) for r, b in budgets.group_by("run_set").agg(eval_var).rows()
+    }
+    gain = gained(hits, finals, budget, eval_var)
+    width = np.array([len(budget[r]) for r in hits["run_set"]])
+    row, column = np.nonzero(np.arange(gain.shape[1]) < width[:, None])
+    at = np.array([budget[r][c] for r, c in zip(hits["run_set"][row], column)])
+    cells = hits[row].select(*keys, pl.col("_y").alias(value), "weight")
+    cells = cells.with_columns(
+        pl.Series(eval_var, at).cast(grid.schema[eval_var]),
+        gain=pl.Series(gain[row, column]) * pl.col("weight"),
+    )
+    return cells.group_by(*keys, eval_var, value).agg(pl.col("gain").sum())
+
+
 def _attainment(  # pylint: disable=R0913,R0914,R0917
-    runs, grid, by, scope, value, larger, eval_var
+    runs, grid, by, scope, value, larger, eval_var, restart=None
 ) -> pl.DataFrame:
     """alpha(b, y) of each group of ``by`` on the ``grid`` of its scope: the
     fraction of its runs, by ``weight``, whose best-so-far value at budget b is y
     or better; before its first row a run has attained nothing (AL-5). With the
-    scope columns."""
+    scope columns. ``restart`` (the runs' logged rows) adds simulated restarts
+    (``_gain``)."""
     keys = list(dict.fromkeys([*by, *scope]))
     budgets = grid.select(*scope, eval_var).unique()
     at = _join(runs.select("run_id", "weight", *keys).unique("run_id"), budgets, scope)
@@ -388,9 +435,16 @@ def _attainment(  # pylint: disable=R0913,R0914,R0917
     cells = _join(at, grid, [*scope, eval_var])
     w = pl.col("weight")
     alpha = cells.group_by([*keys, eval_var, value]).agg(
-        eaf=(hit.fill_null(False) * w).sum() / w.sum()
+        eaf=(hit.fill_null(False) * w).sum() / w.sum(), weight=w.sum()
     )
-    return alpha.sort([*keys, eval_var, value], nulls_last=True)
+    if restart is not None:
+        gain = _gain(restart, runs, grid, by, scope, value, larger, eval_var)
+        alpha = alpha.join(
+            gain, on=[*keys, eval_var, value], how="left", nulls_equal=True
+        ).with_columns(pl.col("eaf") + pl.col("gain").fill_null(0) / pl.col("weight"))
+    return alpha.drop("weight", "gain", strict=False).sort(
+        [*keys, eval_var, value], nulls_last=True
+    )
 
 
 def _weigh(runs: pl.DataFrame, by: list[str], weighting: str, mode: str):
@@ -449,21 +503,28 @@ def _prepare(data: pl.DataFrame, by: Sequence[str], mode: str, options: dict):
     traces of ``_traces`` weighted by ``_weigh``, and the options of ``_grid``."""
     if mode not in ("precise", "discretised"):
         raise ValueError(f"mode {mode!r}: precise or discretised")
+    restart = restarts(options.get("stopped", "carry_forward"))
+    if restart and mode == "precise":
+        raise ValueError(
+            "stopped='restart' needs mode='discretised': the precise attainment "
+            "surfaces are those of the runs themselves; or use "
+            "stopped='carry_forward'"
+        )
     unknown = set(options) - set(OPTIONS)
     if unknown:
         raise TypeError(f"unknown options {sorted(unknown)}; the options are {OPTIONS}")
     data = data.with_columns(pl.lit(0).alias(c) for c in PAIR if c not in data.columns)
     data, by = _one_group(data, by)
-    grid = ("eval_values", "f_values", "scale_eval_log", "weighting")
+    grid = ("eval_values", "f_values", "scale_eval_log", "weighting", "stopped")
     trace_options = {k: v for k, v in options.items() if k not in grid}
     runs, value, larger, scope = _traces(data, by, **trace_options)
     runs = _weigh(runs, by, options.get("weighting", "pairs"), mode)
     grid_options = {
         k: v
         for k, v in options.items()
-        if k not in ("targets", "maximization", "weighting")
+        if k not in ("targets", "maximization", "weighting", "stopped")
     }
-    return data, by, (runs, value, larger, scope), grid_options
+    return data, by, (runs, value, larger, scope), grid_options, restart
 
 
 def _finish(result: pl.DataFrame, data: pl.DataFrame, eval_var: str) -> pl.DataFrame:
@@ -520,6 +581,13 @@ def get_eaf(
               continuum ECDF, and its volume the AOCC (EA-6). ``"runs"``: each
               run is one attainment set, so a pair weighs by its number of runs.
               Both warn when the pairs of a group have different numbers of runs.
+            - ``stopped`` (``"carry_forward"``): a run that stopped keeps its
+              final value. ``"restart"``, in the discretised mode only: it is
+              continued by simulated restarts from the runs of its group in its
+              pair, and alpha is their expected value, computed as for the ECDFs
+              (EA-6, EC-7). The defaults differ: the AOCC
+              (``get_ecdf_auc(continuous=True)``) restarts by default, so its
+              volume identity needs the same ``stopped`` on both sides.
             - ``fval_var`` (``"raw_y"``), ``eval_var`` (``"evaluations"``).
 
     Returns:
@@ -527,7 +595,7 @@ def get_eaf(
             ``quality``) and ``percentile``, the points of each surface;
             discretised: ``by``, ``eval_var``, the value and ``eaf`` (alpha).
     """
-    data, by, (runs, value, larger, scope), grid_options = _prepare(
+    data, by, (runs, value, larger, scope), grid_options, restart = _prepare(
         data, by, mode, options
     )
     eval_var = options.get("eval_var", "evaluations")
@@ -538,7 +606,9 @@ def get_eaf(
         )
     else:
         grid = _grid(data, scope, value, **grid_options)
-        result = _attainment(runs, grid, by, scope, value, larger, eval_var)
+        result = _attainment(
+            runs, grid, by, scope, value, larger, eval_var, data if restart else None
+        )
         result = result.select(*by, eval_var, value, "eaf")
     return _finish(result, data, eval_var)
 
@@ -546,7 +616,7 @@ def get_eaf(
 def _groups(prepared, two: bool) -> None:
     """Check the number of groups of ``by`` in each scope: exactly two for a
     difference, at least two for a margin (EA-2)."""
-    _, by, (runs, _, _, scope), _ = prepared
+    _, by, (runs, _, _, scope), _, _ = prepared
     n = pl.struct(by).n_unique()
     n = runs.select(n.over(scope) if scope else n).to_series()
     if two and not (n == 2).all():
@@ -572,9 +642,11 @@ def _minus_best_other(cell: list[str]) -> pl.Expr:
 def _margin(prepared, eval_var: str, column: str) -> pl.DataFrame:
     """alpha of each group of ``by`` minus the largest alpha of the other groups,
     on the grid of ``get_eaf(mode="discretised")``, in ``column`` (EA-2)."""
-    data, by, (runs, value, larger, scope), grid_options = prepared
+    data, by, (runs, value, larger, scope), grid_options, restart = prepared
     grid = _grid(data, scope, value, **grid_options)
-    alpha = _attainment(runs, grid, by, scope, value, larger, eval_var)
+    alpha = _attainment(
+        runs, grid, by, scope, value, larger, eval_var, data if restart else None
+    )
     cell = [*scope, eval_var, value]
     result = alpha.select(*by, eval_var, value, _minus_best_other(cell).alias(column))
     return _finish(result, data, eval_var)
@@ -600,7 +672,8 @@ def get_eaf_difference(
             (``moocore.eafdiff``, IOHanalyzer's ``EAF_Difference``).
             ``"discretised"``: the difference on the grid of budgets x values of
             ``get_eaf`` (IOHanalyzer's ``EAF_diff_Approximate``).
-        **options: the options of ``get_eaf``.
+        **options: the options of ``get_eaf``; ``stopped="restart"`` needs
+            ``mode="discretised"``.
 
     Returns:
         pl.DataFrame: precise: ``by``, ``x_min``, ``y_min``, ``x_max``, ``y_max``
@@ -612,7 +685,7 @@ def get_eaf_difference(
     eval_var = options.get("eval_var", "evaluations")
     if mode == "discretised":
         return _margin(prepared, eval_var, "eaf_diff")
-    _, by, (runs, value, larger, scope), _ = prepared
+    _, by, (runs, value, larger, scope), _, _ = prepared
     result = _each(runs, scope, lambda s: _rectangles(s, by, value, larger, eval_var))
     return result.select(*by, *RECTANGLE).drop(ALL, strict=False)
 
@@ -635,7 +708,8 @@ def get_eaf_margin(
     Args:
         data, by: as in ``get_eaf``; the groups are compared within each
             (function, dimension) pair, or on q when a group spans several.
-        **options: the options of ``get_eaf`` (its discretised grid).
+        **options: the options of ``get_eaf`` (its discretised grid), with
+            ``stopped`` (``"carry_forward"`` by default, or ``"restart"``).
 
     Returns:
         pl.DataFrame: ``by``, ``eval_var``, the value (``fval_var`` or ``quality``)

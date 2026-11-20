@@ -50,6 +50,23 @@
   pair default to 10 log-spaced ones (`targets.get_ecdf_budgets`).
   `metrics.get_fixed_budget_ecdf_auc` is the exact normalised area over a value
   range, on log10 by default.
+- Simulated restarts in every ECDF (`docs/definitions/ecdf.md`, EC-7): a run that
+  stops without reaching a target is continued by runs drawn from its group and
+  pair, as in COCO, by default (`stopped="restart"`) in `get_ecdf`,
+  `get_ecdf_auc` (continuum and AOCC included), `get_shapley_values`,
+  `get_portfolio_ecdf`, `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc`.
+  The ECDF is the expected value over the restarts, computed exactly from the
+  runs' runtimes (no seed); the fixed-budget results report `n_restarted`.
+  `stopped="carry_forward"` gives the ECDF without restarts, as IOHanalyzer.
+  With restarts, `get_ecdf` and `get_ecdf_auc` also report `n_restarted` per
+  group (the runs that stopped before the largest budget computed). The
+  deprecated `get_data_ecdf` and `get_aocc` keep no restarts. The BBOB-style
+  figure draws every curve to the largest budget of all groups.
+- `get_eaf`, `get_eaf_difference` and `get_eaf_margin` take `stopped`:
+  `"carry_forward"` (default, results unchanged) or `"restart"`, the simulated
+  restarts of the ECDFs, in the discretised mode only (the precise mode raises
+  `ValueError`). The defaults differ: the AOCC restarts, the EAF carries forward
+  (`docs/definitions/eaf.md`, EA-6).
 - Default bounds by suite (`docs/definitions/targets.md`, TG-8): a pair whose runs
   are all BBOB or SBOX (the suites the IOHexperimenter suite registry gives both
   bounds for; COCO's `bbob` included) gets targets from 1e-8 to 1e2 instead of
@@ -81,6 +98,17 @@
   `get_dsc_posthoc` (every algorithm as control, Holm and Hochberg; `metrics.hochberg` is
   Hochberg's correction, next to `holm`). They
   reproduce the published DSCTool example. scipy is now a direct dependency.
+
+### Changed
+
+- The default of `get_ecdf`, `get_ecdf_auc` (targets, continuum ECDF and AOCC),
+  `get_portfolio_ecdf` and `get_shapley_values` is now `stopped="restart"`: a run
+  that stopped before a budget is continued by simulated restarts (EC-7), as in
+  COCO. Results differ from 0.2.x wherever a run stopped before the largest
+  budget; `stopped="carry_forward"` gives the 0.2.x results.
+- `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc` no longer take `seed`:
+  the restarts are computed exactly. `aggregate_convergence(stopped="restart")`
+  uses `seed=0` by default.
 
 ### Fixed
 
@@ -157,7 +185,7 @@ whole before the release (I29). The COCO reader also reads the `bbob-new` format
     type 7 quantiles `q2` ... `q98`, `best`, `worst`, `geometric_mean` (only
     when every value is > 0), `n_runs`, `n_defined`, and with `evals_used`
     `n_active`. New keywords `budgets`, and `stopped="restart"` with `seed`
-    for simulated restarts of runs that stopped before a budget.
+    (0 by default) for simulated restarts of runs that stopped before a budget.
   - `get_overview(data, by, *, eval_var, fval_var, maximization)`: per run set
     `n_runs`, `budget`, the best, worst, mean and
     median final values, `n_best`, `worst_recorded`, `min_runtime` and
