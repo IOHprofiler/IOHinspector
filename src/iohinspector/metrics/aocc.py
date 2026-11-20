@@ -26,6 +26,7 @@ def get_aocc(
     starts at evaluation 1 (not 0) and is divided by ``eval_max - 1``; it is of the
     best-so-far quality, clipped to [0, 1]; a run has 0 before its first logged
     evaluation (not its smallest value); and an empty range raises ``ValueError``.
+    As in 0.0.8 there are no simulated restarts (EC-7: ``stopped="carry_forward"``).
     """
     warnings.warn(
         "get_aocc is deprecated since 0.2.0; use get_ecdf_auc(data, continuous=True)",
@@ -44,6 +45,7 @@ def get_aocc(
         continuous=True,
         scale_f_log=False,
         maximization=True,
+        stopped="carry_forward",
         fval_var=fval_var,
     )
     return auc.rename({"auc": "AOCC"})

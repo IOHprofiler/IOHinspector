@@ -14,6 +14,7 @@ from iohinspector.metrics import (
 from iohinspector.metrics.distributions import get_runtime_sample
 from iohinspector.targets import seq_rt
 from tests.golden.load import golden, logged
+from tests.test_metrics.test_ecdf import _restarted
 
 TOL = 1e-12  # portfolio.md, "Test tolerance"
 
@@ -141,9 +142,9 @@ def test_zero_portfolio_value_is_nan():
 
 
 def _runs(algorithm, curves, function_id=1, dimension=2):
-    """One run per list of (evaluations, value) rows."""
+    """One run per list of (evaluations, value) rows; ids unique over pairs."""
     rows = [
-        (f"{algorithm}{i}", algorithm, function_id, dimension, e, y)
+        (f"{algorithm}{function_id}{i}", algorithm, function_id, dimension, e, y)
         for i, curve in enumerate(curves)
         for e, y in curve
     ]
@@ -172,28 +173,44 @@ TARGETS = pl.DataFrame(
 ).cast({"function_id": pl.Int32, "dimension": pl.Int32})
 
 
-def _direct_value(data, targets, coalition, lo, hi, log=False, maximization=False):
+def _direct_value(  # pylint: disable=too-many-arguments
+    data, targets, coalition, lo, hi, log=False, maximization=False, restart=True
+):
     """v(S) by integrating max_{a ∈ S} ECDF_a over [lo, hi] on a fine grid of the
-    step function's own breakpoints, pair by pair and target by target."""
+    step function's own breakpoints (with restarts, every evaluation), pair by pair
+    and target by target; with restarts ECDF_a is E_t (EC-7)."""
     axis = math.log10 if log else (lambda b: b)
     total = 0.0
+    used = {
+        r: e for r, e in data.group_by("run_id").agg(pl.col("evaluations").max()).rows()
+    }
     for f, d, t in targets.rows():
         runs = data.filter(
             (pl.col("function_id") == f) & (pl.col("dimension") == d)
         ).partition_by("run_id")
-        hit = {}
+        hit, budget = {}, {}
         for run in runs:
             reached = run.filter(
                 (pl.col("raw_y") >= t) if maximization else (pl.col("raw_y") <= t)
             )
             first = reached["evaluations"].min() if reached.height else math.inf
             hit.setdefault(run["algorithm_name"][0], []).append(first)
+            budget.setdefault(run["algorithm_name"][0], []).append(
+                used[run["run_id"][0]]
+            )
+        steps = range(math.ceil(lo), math.floor(hi) + 1) if restart else ()
         points = sorted(
-            {lo, hi, *(min(max(b, lo), hi) for h in hit.values() for b in h)}
+            {lo, hi, *steps, *(min(max(b, lo), hi) for h in hit.values() for b in h)}
         )
         for left, right in itertools.pairwise(points):
             best = max(
-                (np.mean(np.array(hit[a]) <= left) for a in coalition if a in hit),
+                (
+                    _restarted(hit[a], budget[a], left)
+                    if restart
+                    else np.mean(np.array(hit[a]) <= left)
+                    for a in coalition
+                    if a in hit
+                ),
                 default=0.0,
             )
             total += best * (axis(right) - axis(left)) / (axis(hi) - axis(lo))
@@ -222,11 +239,15 @@ def _direct_shapley(data, targets, lo, hi, **kw):
 @pytest.mark.parametrize(
     "lo,hi,log", [(1, 10, False), (1, 10, True), (2, 6, False), (1, 30, True)]
 )
-def test_portfolio_value_is_the_area_of_the_virtual_best_ecdf(lo, hi, log):
-    result = get_shapley_values(DATA, TARGETS, b_lo=lo, b_hi=hi, scale_eval_log=log)
+@pytest.mark.parametrize("stopped", ["restart", "carry_forward"])
+def test_portfolio_value_is_the_area_of_the_virtual_best_ecdf(lo, hi, log, stopped):
+    result = get_shapley_values(
+        DATA, TARGETS, b_lo=lo, b_hi=hi, scale_eval_log=log, stopped=stopped
+    )
     assert result.columns == ["algorithm_name", "shapley", "se"]
     assert result["algorithm_name"].to_list() == ["A", "B", "C"]
-    expected = _direct_shapley(DATA, TARGETS, lo, hi, log=log)
+    restart = stopped == "restart"
+    expected = _direct_shapley(DATA, TARGETS, lo, hi, log=log, restart=restart)
     np.testing.assert_allclose(result["shapley"], expected, rtol=TOL)
     assert abs(result["shapley"].sum() - 1) < TOL
 
