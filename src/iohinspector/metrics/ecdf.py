@@ -142,6 +142,7 @@ def _restarted(  # pylint: disable=R0913
     key: list[str],
     horizon: float,
     *,
+    samples: list[float] | None = None,
     continuous: bool,
     maximization: bool,
     divide_by_dimension: bool,
@@ -152,7 +153,9 @@ def _restarted(  # pylint: disable=R0913
     ``key`` up to the budget ``horizon``: ``key``, ``eval_var`` and ``inc``. The
     restarts of a run draw from its group of ``by`` in its pair. ``steps`` are the
     hits of targets (``fval_var`` the target, ``inc`` the weighted increment) or,
-    ``continuous``, the rows of ``_quality`` with ``inc``."""
+    ``continuous``, the rows of ``_quality`` with ``inc``. With ``samples`` (x
+    values) only what the ECDF needs to be read at them: the increments summed at
+    the last evaluation at or before each."""
     sets = list(dict.fromkeys([*by, *PAIR]))
     if continuous:  # each increment of q cut where the set's runs end
         runs = run_sets(steps, sets, eval_var, pl.col("q").max())
@@ -166,7 +169,25 @@ def _restarted(  # pylint: disable=R0913
         runs = run_sets(data, sets, eval_var, level.max())
         steps = failed(runs, steps.with_columns(level=level), "level")
     steps = steps.with_columns(horizon=_evaluations(horizon, divide_by_dimension))
-    return continued(steps, runs, key, eval_var)
+    at = None
+    if samples is not None:
+        x = pl.DataFrame({"_x": samples}, schema={"_x": pl.Float64})
+        at = steps.select(key).unique().join(x, how="cross")
+        at = at.select(*key, _last_at(divide_by_dimension).alias(eval_var))
+        at = at.filter(pl.col(eval_var) >= 0)
+    return continued(steps, runs, key, eval_var, at)
+
+
+def _last_at(divide_by_dimension: bool) -> pl.Expr:
+    """The last evaluation e with x(e) <= ``_x``, x being the evaluations, divided
+    by the row's dimension if ``divide_by_dimension`` (as ``_increments``)."""
+    x = pl.col("_x")
+    if not divide_by_dimension:
+        return x.floor().cast(pl.Int64)
+    d = pl.col("dimension").cast(pl.Float64)
+    e = (x * d).floor()  # then the rounding of x * d undone, as e / d is compared
+    e = pl.when((e + 1) / d <= x).then(e + 1).otherwise(e)
+    return pl.when(e / d > x).then(e - 1).otherwise(e).cast(pl.Int64)
 
 
 def _evaluations(budget: float, divide_by_dimension: bool) -> pl.Expr:
@@ -198,13 +219,15 @@ def _increments(  # pylint: disable=R0913,R0914
     divide_by_dimension: bool = False,
     stopped: str = "restart",
     horizon: float | None = None,
+    samples: list[float] | None = None,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
 ) -> tuple[pl.DataFrame, float, pl.DataFrame | None]:
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), with simulated restarts up to ``horizon`` (by default the
     largest budget in the selection), that largest budget, and with restarts
-    ``n_restarted`` per group of ``by``."""
+    ``n_restarted`` per group of ``by``. With ``samples``, the restarts' increments
+    are only right at those x values (``_restarted``)."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
     restart = restarts(stopped)
     data, targets = _prepare(
@@ -232,6 +255,7 @@ def _increments(  # pylint: disable=R0913,R0914
             by,
             keep[:-2],
             until,
+            samples=samples,
             continuous=continuous,
             maximization=maximization,
             divide_by_dimension=divide_by_dimension,
@@ -361,7 +385,13 @@ def get_ecdf(
     x_values = None if x_values is None else list(x_values)
     horizon = max(x_values) if x_values else None
     steps, _, counts = _increments(
-        data, targets, by, eval_var=eval_var, horizon=horizon, **options
+        data,
+        targets,
+        by,
+        eval_var=eval_var,
+        horizon=horizon,
+        samples=x_values,
+        **options,
     )
     ecdf = _step_function(steps, by, x_values).rename({"x": eval_var})
     return _with_counts(ecdf, counts, by)

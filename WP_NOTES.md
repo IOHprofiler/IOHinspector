@@ -12,9 +12,11 @@ Status: in progress
   controller after the 20 Nov crash (the worker had verified it, not committed).
 
 ## Next step
-Step 2b: the ECDF step function (sort, cum_sum over the group, last per x);
-then DataManager pushdown and manifest validation cache. Rebuild the COCO data
-in /Users/jacob/code/ioh-work/scratch/I22 first (the /tmp copy was lost).
+Step 2b is in the WIP commit after a6781f1 (ECDF step function and more of
+restarts.py; tests/test_metrics pass, not yet compared with main). Compare it
+with main on COCO f24 d2 (baseline: /Users/jacob/code/ioh-work/scratch/I22/base,
+data in scratch/I22/coco-ds), then commit it as step 2b. Then DataManager
+pushdown and the manifest validation cache, then docs/performance.md.
 
 ## Decisions
 - bench_ert.py became bench.py (one harness); bench_shapley imports synthetic().
