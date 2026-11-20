@@ -37,12 +37,13 @@ Status: in progress
   was already 0.08 s. POLARS_MAX_THREADS is honoured (pl.thread_pool_size()
   after import); iohinspector starts no thread pools of its own.
 
+- step 4: docs/performance.md: how to run scripts/bench.py, results on
+  synthetic (20 and 80 algorithms, before/after) and COCO f24 d2, what changed,
+  and the limits (restarts over long horizons, Shapley, per-curve loop).
+
 ## Next step
-Step 4: docs/performance.md. Run scripts/bench.py (through memguard, one at a
-time) on synthetic data (start with --algorithms 20, then larger only if
-memory allows) and on scratch/I22/coco-ds --pair 24 2, with
-POLARS_MAX_THREADS=16 and default; record the tables, the before/after numbers
-of steps 2a-3, and how to rerun. Then step 5: final checks, PR body, D6 review.
+Step 5: full test suite through memguard, PR body from these notes, delete
+WP_NOTES.md, CI, D6 review request (dvermetten).
 
 ## Decisions
 - bench_ert.py became bench.py (one harness); bench_shapley imports synthetic().
@@ -54,4 +55,7 @@ of steps 2a-3, and how to rerun. Then step 5: final checks, PR body, D6 review.
   the laptop. The step-function dump of f24 d2 alone was 1 GB of parquet. Baseline = src of main via PYTHONPATH.
 
 ## Open questions / Blocked
-- none
+- The exact restarts cost time linear in the horizon: all COCO d20 pairs up to
+  2e8 take 160 s, and every COCO pair at once up to 4e8 exceeds 8 GB (numpy
+  holds only ~300 MB of it; the rest is not yet explained). A faster renewal or
+  a capped horizon for such views needs a decision (EC-7 is exact by design).
