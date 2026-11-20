@@ -16,6 +16,7 @@ from iohinspector.figures import (
     Legend,
     Panel,
     Series,
+    add_panels,
     elements,
     panel_frames,
     render,
@@ -106,6 +107,18 @@ def test_panels_share_looks_and_take_their_own_data(data):
     assert render(spec, frames=[frames[0], None, frames[2]], data=data)
     with pytest.raises(ValueError, match="one per panel, 3; got 2"):
         render(spec, frames=frames[:2])
+
+
+def test_a_panel_from_another_spec(data):
+    a = FigureSpec(panels=[F1], series={"DE": Series(color="red")})
+    b = FigureSpec(
+        panels=[F2], series={"DE": Series(color="blue"), "GA": Series(order=1)}
+    )
+    both = add_panels(a, b)
+    assert both.panels == [F1, F2] and both.venue == a.venue
+    assert both.series == {"DE": Series(color="red"), "GA": Series(order=1)}
+    frames = [*panel_frames(a, data), *panel_frames(b, data)]
+    assert render(both, frames=frames) == render(both, data)
 
 
 def test_annotations(data):

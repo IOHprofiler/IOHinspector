@@ -26,6 +26,7 @@ from .spec import (
     Panel,
     Series,
     Text,
+    add_panels,
     apply_style,
 )
 from .tex import pgfplots
@@ -45,6 +46,7 @@ __all__ = [
     "Series",
     "Text",
     "Venue",
+    "add_panels",
     "apply_style",
     "elements",
     "figure_size",

@@ -61,7 +61,8 @@
   band and its opacity, a second colour, highlighted yours or other), the
   `highlight` and `family` palettes, and a legend order, an "n others" entry
   and a shared legend. `FigureSpec.from_dict` upgrades version 1 specs.
-  `STYLES` are named looks as spec fragments, applied with `apply_style`. Each
+  `STYLES` are named looks as spec fragments, applied with `apply_style`;
+  `add_panels` adds the panels of other specs. Each
   figure kind computes a frame from the runs and draws only from it:
   `panel_frames(spec, data)`, and `render(spec, frames=...)` draws exactly the
   numbers it is given (the ECDF frame is `get_ecdf`'s result). Every element

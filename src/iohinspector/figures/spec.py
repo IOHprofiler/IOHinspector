@@ -397,6 +397,18 @@ def apply_style(spec: FigureSpec, style: str | dict[str, Any]) -> FigureSpec:
     return FigureSpec.from_dict(merged)
 
 
+def add_panels(spec: FigureSpec, *others: FigureSpec) -> FigureSpec:
+    """``spec`` with the panels of ``others`` after its own (Studio's *Add a
+    panel*), and their series overrides for the labels ``spec`` has none for.
+    Their frames go after ``spec``'s in the same order."""
+    series = {k: v for other in reversed(others) for k, v in other.series.items()}
+    return dataclasses.replace(
+        spec,
+        panels=[*spec.panels, *(p for other in others for p in other.panels)],
+        series=series | spec.series,
+    )
+
+
 def _merge(base: dict, fragment: dict) -> dict:
     out = dict(base)
     for key, value in fragment.items():

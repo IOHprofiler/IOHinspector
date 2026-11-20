@@ -1,6 +1,6 @@
 # WP I35: Figures: the Studio element model
 Branch: wp/I35-figure-elements
-Status: in progress
+Status: ready for review
 
 ## Done
 - step 1: spec v2 + v1 upgrade, kinds as frame/plot, ids on every element, `elements()` (commit 39dc710)
@@ -8,8 +8,10 @@ Status: in progress
 - step 3: `to_python` (figures/python.py), test_python.py runs the code (50d06ac)
 - step 4: gallery `ecdf-panels-highlight`, `ecdf-slides-dark`; CHANGELOG. Full suite polars 2.1.0: 1305 passed, 9 skipped; figures on polars 1.44.2: 118 passed, 6 skipped (TeX).
 
+- step 5: `add_panels` (a panel from another spec); this file removed
+
 ## Next step
-Step 5: review the diff for leanness, then delete this file in the final commit.
+None: review and merge.
 
 ## Plan
 1. Spec v2 and the v1 upgrade; render and tex on panels.
