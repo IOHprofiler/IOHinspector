@@ -89,6 +89,29 @@ under the pair-weighted EAF. Both are computed from the same normalised
 quality with the same bounds, so they cannot disagree. When every pair has
 the same number of runs the two weightings are the same EAF.
 
+### Simulated restarts
+
+The EAF carries a run that stopped forward by default: after its B_i
+evaluations it keeps its final value, as in IOHanalyzer and `moocore`. With
+`stopped = "restart"` the discretised EAF instead continues it by COCO's
+simulated restarts, exactly as the ECDFs do (EC-7, [ecdf](ecdf.md)): α(b, y)
+is the expected weighted fraction of runs that attain y within b when every
+run that never attains y is followed by runs drawn uniformly from its group
+in its pair. Within a pair the runs weigh equally, so with W_p the weight of
+pair p's runs,
+
+    α(b, y) = Σ_p W_p E_{p,y}(b) / Σ_p W_p,
+
+with E_{p,y}(b) the probability of EC-7 for the level y, computed from the
+runs' attainment times as for the ECDF. A run that attains y is not
+restarted for it. The identity with the AOCC above holds with restarts too,
+since the restarted continuum ECDF is ∫ E_{p,q}(b) dq per pair; it needs the
+same `stopped` on both sides, and the defaults differ: the AOCC restarts, the
+EAF carries forward. The precise mode has no restarts. Its attainment
+surfaces are those of the runs as sets of points, while restarts give a
+distribution over infinitely many chains, so `"restart"` there raises an
+error that suggests the discretised mode or `"carry_forward"`.
+
 ## How IOHanalyzer implements it
 
 - `generate_data.EAF` (`R/DataSetList.R` 2020–2086): values from
@@ -159,7 +182,12 @@ the same number of runs the two weightings are the same EAF.
   its volume is the AOCC, and each run equally on request (pooled runs). A
   clear warning is given when the pairs of a group do not all have the same
   number of runs. The option was asked for by the review of #45 (dvermetten,
-  2026-11-19); the user made pairs the default (2026-11-19).
+  2026-11-19); the user made pairs the default (2026-11-19). Every EAF
+  function carries a run that stopped forward by default and, in the
+  discretised mode, continues it by simulated restarts with
+  `stopped = "restart"` (EC-7); then the volume under the pair-weighted EAF is
+  the AOCC with restarts. The defaults differ from the AOCC, which restarts.
+  The user, 2026-11-20 (review round of #48).
 
 ## Questions answered by the D6 review
 
@@ -220,6 +248,14 @@ IOHexperimenter suite registry). The same bounds apply to AOCC through EC-5 (see
   The AOCC uses only the pairs every group has by default (`pairs="common"`,
   EC-2), the EAF each group's own pairs; they are the same when the groups
   share their pairs.
+- Simulated restarts (EA-6, EC-7): `get_eaf`, `get_eaf_difference` and
+  `get_eaf_margin` take `stopped = "carry_forward"` (default, the results as
+  before) or `"restart"`, the latter in the discretised mode only (the precise
+  mode raises `ValueError`). α with restarts is the α without them plus, for
+  each run that attains y at T, what restarts add: E's renewal function at
+  b − T less 1 (`restarts.gained`, the computation of the fixed-budget ECDF),
+  weighted as the run. A test checks that the pair-weighted volume is the AOCC
+  with both values of `stopped`, on runs that stop early.
 - The EA-4 bug cannot occur: there is no separate budget bound for the
   multi-function EAF.
 

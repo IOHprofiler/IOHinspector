@@ -93,25 +93,25 @@ Generate attractor network analysis from optimization algorithm trajectory data.
 
 Definitions: `docs/definitions/ecdf.md` (EC-1 to EC-10).
 
-#### `get_ecdf(data, targets=None, by=["algorithm_name"], *, x_values=None, continuous=False, scale_f_log=True, maximization=False, pairs="common", divide_by_dimension=False, fval_var="raw_y", eval_var="evaluations")`
-The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive) within x evaluations, averaged over the (function, dimension) pairs of each group with equal weight. Exact: one row per step, or sampled at `x_values`. `targets` per pair comes from `targets.get_ecdf_targets` (default 10 log-linear per pair over its observed range, or over 1e-8 to 1e2 for BBOB and SBOX data with a `suite` column). `continuous=True` gives the continuum ECDF (normalised quality between each pair's smallest and largest target). `pairs="common"` keeps the pairs every group has, `"all"` each group's own pairs; both warn when they differ.
+#### `get_ecdf(data, targets=None, by=["algorithm_name"], *, x_values=None, continuous=False, scale_f_log=True, maximization=False, pairs="common", divide_by_dimension=False, stopped="restart", fval_var="raw_y", eval_var="evaluations")`
+The target ECDF: the fraction of (run, target) pairs reached (f <= t, inclusive) within x evaluations, averaged over the (function, dimension) pairs of each group with equal weight. Exact: one row per step, or sampled at `x_values`. `targets` per pair comes from `targets.get_ecdf_targets` (default 10 log-linear per pair over its observed range, or over 1e-8 to 1e2 for BBOB and SBOX data with a `suite` column). `continuous=True` gives the continuum ECDF (normalised quality between each pair's smallest and largest target). `pairs="common"` keeps the pairs every group has, `"all"` each group's own pairs; both warn when they differ. A run that stops without reaching a target is continued by simulated restarts from the runs of its group and pair, as in COCO (`stopped="restart"`, default); the ECDF is their expected value, computed exactly up to the largest of `x_values` or else the largest evaluation, with no seed. `stopped="carry_forward"` has no restarts (IOHanalyzer's rule).
 
-**Returns:** `pl.DataFrame` with `by`, `eval_var` and `ecdf`.
+**Returns:** `pl.DataFrame` with `by`, `eval_var` and `ecdf`; with restarts also `n_restarted`, the runs of the group that stopped before the largest budget computed.
 
 #### `get_ecdf_auc(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, **options)`
-The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the largest budget), on a linear or log10 axis; `options` as in `get_ecdf`. With `continuous=True` it is the AOCC, the limit of the target AUC as the number of targets grows.
+The exact normalised area under the ECDF over [b_lo, b_hi] (default up to the largest budget), on a linear or log10 axis; `options` as in `get_ecdf`, with restarts up to b_hi. With `continuous=True` it is the AOCC, the limit of the target AUC as the number of targets grows.
 
-**Returns:** `pl.DataFrame` with `by` and `auc`.
+**Returns:** `pl.DataFrame` with `by` and `auc`; with restarts also `n_restarted`.
 
-#### `get_fixed_budget_ecdf(data, budgets=None, by=["algorithm_name"], *, x_values=None, fval_var="raw_y", maximization=False, pairs="common", eval_var="evaluations")`
-The fixed-budget ECDF: at a value v, the fraction of (run, budget) pairs whose best-so-far value at the budget is v or better (inclusive), averaged over pairs as `get_ecdf`. Exact: one row per step, or sampled at `x_values`. `budgets` per pair (`function_id`, `dimension`, `budget`) comes from `targets.get_ecdf_budgets` (default 10 log-spaced per pair).
+#### `get_fixed_budget_ecdf(data, budgets=None, by=["algorithm_name"], *, x_values=None, fval_var="raw_y", maximization=False, pairs="common", stopped="restart", eval_var="evaluations")`
+The fixed-budget ECDF: at a value v, the fraction of (run, budget) pairs whose best-so-far value at the budget is v or better (inclusive), averaged over pairs as `get_ecdf`. Exact: one row per step, or sampled at `x_values`. `budgets` per pair (`function_id`, `dimension`, `budget`) comes from `targets.get_ecdf_budgets` (default 10 log-spaced per pair). A run that stopped before a budget (its `evals_used`, or else its last logged evaluation) is continued by simulated restarts from the runs of its group and pair, as in `get_ecdf`: the ECDF is their expected value up to the pair's largest budget, with no seed; `stopped="carry_forward"` keeps its final value instead (IOHanalyzer's rule).
 
-**Returns:** `pl.DataFrame` with `by`, `fval_var` and `ecdf`.
+**Returns:** `pl.DataFrame` with `by`, `fval_var` and `ecdf`; with restarts also `n_restarted`, the runs of the group that stopped before their pair's largest budget.
 
 #### `get_fixed_budget_ecdf_auc(data, budgets=None, by=["algorithm_name"], *, f_lo=None, f_hi=None, scale_f_log=True, fval_var="raw_y", **options)`
-The exact normalised area under the fixed-budget ECDF over the values [f_lo, f_hi], on log10 (default) or a linear axis; larger is better in both directions. The default range spans the pairs' default target bounds (the suite's, or the observed range). It equals the mean over the budgets of the continuum ECDF with these bounds.
+The exact normalised area under the fixed-budget ECDF over the values [f_lo, f_hi], on log10 (default) or a linear axis; larger is better in both directions. The default range spans the pairs' default target bounds (the suite's, or the observed range). It equals the mean over the budgets of the continuum ECDF with these bounds. Simulated restarts by default, as `get_fixed_budget_ecdf`.
 
-**Returns:** `pl.DataFrame` with `by` and `auc`.
+**Returns:** `pl.DataFrame` with `by` and `auc`; with restarts also `n_restarted`.
 
 #### `get_rank_table(summary, value="ERT", *, higher_is_better=False)`
 Adds the `rank` of `value` within each pair: average ranks for ties, `inf` at the bottom, missing values last.
@@ -142,8 +142,8 @@ Deprecated in 0.2.0: use `get_ecdf(data, continuous=True, x_values=...)`. The co
 
 The EAF and EAF differences of `docs/definitions/eaf.md` (EA-1 to EA-5).
 
-#### `get_eaf(data, by=["algorithm_name"], *, mode="precise", percentiles=(0, 10, ..., 100), eval_values=50, f_values=50, scale_eval_log=True, scale_f_log=True, targets=None, maximization=False, weighting="pairs", fval_var="raw_y", eval_var="evaluations")`
-The single-objective EAF of each group of `by`, on the runs' best-so-far traces. `mode="precise"`: the attainment surfaces at `percentiles` (`moocore.eaf`; levels as IOHanalyzer's `eaf::eafs`), columns `by`, `eval_var`, the value and `percentile`. `mode="discretised"`: the fraction of runs that reached each value within each budget, on 50 x 50 log-spaced budgets and values per pair by default, columns `by`, `eval_var`, the value and `eaf`. The value is `fval_var`, or the normalised quality `quality` (larger is better) when a group spans several (function, dimension) pairs. Then each pair weighs equally (`weighting="pairs"`, the default), as in the AOCC: the volume under the EAF is `get_ecdf_auc(continuous=True)`; or each run (`weighting="runs"`). Both warn when the pairs have different numbers of runs.
+#### `get_eaf(data, by=["algorithm_name"], *, mode="precise", percentiles=(0, 10, ..., 100), eval_values=50, f_values=50, scale_eval_log=True, scale_f_log=True, targets=None, maximization=False, weighting="pairs", stopped="carry_forward", fval_var="raw_y", eval_var="evaluations")`
+The single-objective EAF of each group of `by`, on the runs' best-so-far traces. `mode="precise"`: the attainment surfaces at `percentiles` (`moocore.eaf`; levels as IOHanalyzer's `eaf::eafs`), columns `by`, `eval_var`, the value and `percentile`. `mode="discretised"`: the fraction of runs that reached each value within each budget, on 50 x 50 log-spaced budgets and values per pair by default, columns `by`, `eval_var`, the value and `eaf`. The value is `fval_var`, or the normalised quality `quality` (larger is better) when a group spans several (function, dimension) pairs. Then each pair weighs equally (`weighting="pairs"`, the default), as in the AOCC: the volume under the EAF is `get_ecdf_auc(continuous=True)`; or each run (`weighting="runs"`). Both warn when the pairs have different numbers of runs. `stopped="restart"` (discretised only; the default is `"carry_forward"`) continues runs that stopped by the simulated restarts of the ECDFs; the AOCC restarts by default, so the volume identity needs the same `stopped` on both sides.
 
 #### `get_eaf_difference(data, by=["algorithm_name"], *, mode="precise", **options)`
 The difference of the EAFs of exactly two groups, A minus B for A and B minus A for B (`options` as in `get_eaf`). `mode="precise"`: the rectangles where it is constant (`moocore.eafdiff`), columns `by`, `x_min`, `y_min`, `x_max`, `y_max`, `eaf_diff`. `mode="discretised"`: on the grid of `get_eaf`, columns `by`, `eval_var`, the value and `eaf_diff`.
@@ -299,7 +299,7 @@ Replaces each function value of an infeasible row by its penalised value: `relat
 Definitions: `docs/definitions/portfolio.md` (SH-1 to SH-4).
 
 #### `get_shapley_values(data, targets=None, by=["algorithm_name"], *, b_lo=1, b_hi=None, scale_eval_log=False, marginal=None, exact_limit=15, samples=5, seed=None, **options)`
-The Shapley value of each group of `by` in the portfolio of all groups. A portfolio's value is the area under its virtual-best ECDF: per (function, dimension) pair and target, the largest single-target ECDF of a member, integrated over [b_lo, b_hi] as in `get_ecdf_auc` and summed. Values are divided by the value of all groups, so they sum to 1; exact up to `exact_limit` groups, sampled with `seed` above. `options` as in `get_ecdf`.
+The Shapley value of each group of `by` in the portfolio of all groups. A portfolio's value is the area under its virtual-best ECDF: per (function, dimension) pair and target, the largest single-target ECDF of a member, integrated over [b_lo, b_hi] as in `get_ecdf_auc` (with simulated restarts by default) and summed. Values are divided by the value of all groups, so they sum to 1; exact up to `exact_limit` groups, sampled with `seed` above. `options` as in `get_ecdf`.
 
 **Returns:** `pl.DataFrame` with `by`, `shapley` and `se` (0 when exact).
 

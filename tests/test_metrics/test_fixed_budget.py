@@ -128,6 +128,14 @@ def test_restart_continues_stopped_runs():
     assert first.equals(again)
 
 
+def test_restarts_are_seeded_by_default():
+    # the review of #48: a fixed default seed, so the default summary is reproducible
+    options = {"budgets": [3, 4, 6], "stopped": "restart"}
+    first = aggregate_convergence(STOPPED, **options)
+    assert first.equals(aggregate_convergence(STOPPED, **options))
+    assert first.equals(aggregate_convergence(STOPPED, seed=0, **options))
+
+
 def test_maximisation_mirrors_minimisation():
     # the same runs with -f under maximisation: every value statistic negated,
     # restarts included (the draws depend on the seed only)

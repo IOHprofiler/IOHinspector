@@ -8,7 +8,9 @@ writes Parquet files with
   * aRT per target (``detERT``), success counts, mean and median evaluations of successes,
   * aRT for the targets of interest of cocopp's ERT tables (10, 1, 0.1, 1e-3, 1e-5, 1e-7),
   * ECDF values: the fraction of (target, run) pairs whose runtime is <= a budget, the quantity
-    cocopp plots in its runtime-distribution figures, without simulated restarts.
+    cocopp plots in its runtime-distribution figures, without simulated restarts,
+  * for ``coco_old``, the same per target with simulated restarts, as ``pprldmany``
+    draws them (``toolsstats.drawSP``), at 10 log-spaced budgets from 10 to 1e6 (WP I33).
 plus versions.json. Output is deterministic. A fixture with one data set
 (``coco``) gets the file names above; a fixture with several (``coco_old``: f6
 in 2-D and 3-D) gets one set of files per data set, with the suffix ``_<dim>D``.
@@ -26,10 +28,16 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import scipy
-from cocopp import pproc
+from cocopp import pproc, toolsstats
 
 TARGETS_51 = 10 ** (2 - np.arange(51) / 5)
 TARGETS_TABLE = np.array([10.0, 1.0, 0.1, 1e-3, 1e-5, 1e-7])
+#: budgets and sample size of the simulated restarts; cocopp's own sample size is 100
+#: (in a hurry, its default) or 1100 for five runs, the larger one makes the
+#: statistical comparison of tests/test_metrics/test_ecdf.py tighter
+RESTART_BUDGETS = np.round(10 ** np.linspace(1, 6, 10))
+RESTART_SAMPLES = 20000
+SEED = 20240423
 
 
 def write(path: str, columns: dict) -> None:
@@ -50,6 +58,7 @@ def main(fix_dir: str, out_dir: str, fixture: str = "coco") -> None:
         return
     for ds in dsl:
         write_references(ds, out_dir, f"_{int(ds.dim)}D")
+        write_restarts(ds, out_dir, f"_{int(ds.dim)}D")
     write_versions_many(dsl, out_dir)
 
 
@@ -93,6 +102,25 @@ def write_references(ds, out_dir: str, suffix: str) -> None:
           {"budget": [float(b) for b in budgets],
            "budget_over_dim": [float(b / dim) for b in budgets],
            "ecdf": ecdf})
+
+
+def write_restarts(ds, out_dir: str, suffix: str) -> None:
+    """Simulated restarts per target, as pprldmany.py:800-817 (divisor 1, uniform
+    instances); for ``coco_old``, whose runs are partly unsuccessful."""
+    np.random.seed(SEED)
+    rows = {"target": [], "budget": [], "ecdf": []}
+    for t, arr in zip(TARGETS_51, ds.detEvals(TARGETS_51)):
+        arr = np.asarray(arr, dtype=float)
+        succ, unsucc = arr[~np.isnan(arr)], ds.maxevals[np.isnan(arr)]
+        x = np.full(RESTART_SAMPLES, np.inf)
+        if succ.size:
+            x = np.asarray(toolsstats.drawSP(succ, unsucc, percentiles=[50],
+                                             samplesize=RESTART_SAMPLES)[1])
+        for b in RESTART_BUDGETS:
+            rows["target"].append(float(t))
+            rows["budget"].append(float(b))
+            rows["ecdf"].append(float(np.mean(x <= b)))
+    write(os.path.join(out_dir, f"ecdf_restarts{suffix}.parquet"), rows)
 
 
 def write_versions(ds, out_dir: str) -> None:
@@ -149,6 +177,10 @@ def write_versions_many(dsl, out_dir: str) -> None:
             "(cocopp compares with its own 1e-9 relative tolerance)"
         ),
         "files": "as for the coco fixture, one set per data set with its suffix",
+        "ecdf_restarts": (
+            "per target and budget, the fraction of simulated restart runtimes <= budget: "
+            f"toolsstats.drawSP as pprldmany calls it, {RESTART_SAMPLES} samples, "
+            f"np.random.seed({SEED}) per data set, budgets round(10^(1 + 5k/9)), k = 0..9"),
     }
     with open(os.path.join(out_dir, "versions.json"), "w") as fh:
         json.dump(meta, fh, indent=2, sort_keys=True)

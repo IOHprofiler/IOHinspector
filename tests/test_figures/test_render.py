@@ -97,7 +97,8 @@ def test_lines_follow_the_ecdf(data):
         assert np.all(np.diff(curve.x) >= 0) and np.all(np.diff(curve.y) >= 0)
         assert curve.x[0] == pytest.approx(1 / 20)  # first evaluation, d = 20
     pso = plot.curves[sorted(ALGORITHMS).index("PSO")]
-    assert pso.x[-1] == 100  # its budget per dimension
+    assert pso.x[-1] == 300  # past its budget per dimension (100), restarted
+    assert pso.y[-1] > pso.y[pso.x <= 100][-1]
     assert plot.x["lim"] == [pytest.approx(1 / 20), 300]
 
 
