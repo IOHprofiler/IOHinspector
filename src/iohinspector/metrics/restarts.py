@@ -93,17 +93,20 @@ def split(runs: pl.DataFrame, rows: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _renew(h: np.ndarray, budgets: np.ndarray, n: int) -> np.ndarray:
-    """r = h + 1/n sum_j r(. - B_j) over the evaluations 0, 1, ..., in blocks of
-    the smallest B_j, as r looks back by at least that much."""
-    r = h.copy()
-    values, counts = np.unique(budgets, return_counts=True)
+def _renew(r: np.ndarray, values, counts, n: int, first: int = 0) -> np.ndarray:
+    """r = h + 1/n sum_j r(. - B_j) over the evaluations 0, 1, ..., in place of h
+    (``r``), with the B_j as their distinct ``values`` in ascending order and their
+    ``counts``. In blocks of the smallest B_j, as r looks back by at least that
+    much. h is zero before ``first``, and so is r: the terms that would add 0 are
+    skipped."""
     step = int(values[0])
-    for start in range(step, r.size, step):
+    pairs = list(zip(values.tolist(), counts.tolist()))
+    for start in range(step * max(1, (first + step) // step), r.size, step):
         end = min(start + step, r.size)
-        for b, c in zip(values[values < end].tolist(), counts.tolist()):
-            lo = max(start, b)
-            r[lo:end] += c / n * r[lo - b : end - b]
+        for b, c in pairs:
+            lo = max(start, b + first)
+            if lo < end:
+                r[lo:end] += c / n * r[lo - b : end - b]
     return r
 
 
@@ -123,30 +126,98 @@ def _sets(runs: pl.DataFrame):
     }
 
 
+def _failures(runs: pl.DataFrame, run_set: np.ndarray, k: np.ndarray):
+    """Per pair of ``run_set`` and ``k`` (arrays): the size n of the run set and the
+    B_i of its k runs with the lowest final levels, as their distinct ``values`` in
+    ascending order and their ``counts``, one row per pair (padded with count 0).
+    ``runs`` is sorted by run set and final level (``run_sets``)."""
+    sets, used = runs["run_set"].to_numpy(), runs["evals_used"].to_numpy()
+    first = np.searchsorted(sets, run_set, "left")
+    n = np.searchsorted(sets, run_set, "right") - first
+    column = np.arange(int(k.max()))
+    taken = column < k[:, None]
+    budgets = used[np.minimum(first[:, None] + column, used.size - 1)]
+    budgets = np.sort(np.where(taken, budgets, np.iinfo(np.int64).max), axis=1)
+    new = np.ones(budgets.shape, bool)
+    new[:, 1:] = budgets[:, 1:] != budgets[:, :-1]
+    rows = np.broadcast_to(np.arange(k.size)[:, None], budgets.shape)[taken]
+    cell = rows * column.size + (np.cumsum(new, axis=1) - 1)[taken]
+    values = np.zeros(budgets.size, np.int64)
+    values[cell] = budgets[taken]
+    counts = np.bincount(cell, minlength=budgets.size).reshape(budgets.shape)
+    return n, values.reshape(budgets.shape), counts
+
+
+def _lengths(n, values, counts, start, horizon) -> np.ndarray:
+    """``_length`` per row of ``_failures``, from evaluation ``start`` (arrays)."""
+    k = counts.sum(axis=1)
+    pairs, index = np.unique(np.stack([k, n], axis=1), axis=0, return_inverse=True)
+    restarts = [
+        math.ceil(math.log(EPSILON) / math.log(a / b)) for a, b in pairs.tolist()
+    ]
+    largest = values[np.arange(k.size), (counts > 0).sum(axis=1) - 1]
+    return np.minimum(horizon, start + np.array(restarts)[index.ravel()] * largest) + 1
+
+
+def _batches(size: np.ndarray, limit: int = 1 << 24):
+    """Consecutive slices of ``size`` with at most ``limit`` in total, or one."""
+    ends, first = np.cumsum(size), 0
+    while first < size.size:
+        start = ends[first] - size[first]
+        last = max(first + 1, int(np.searchsorted(ends, start + limit, "right")))
+        yield slice(first, last)
+        first = last
+
+
 def continued(
     hits: pl.DataFrame, runs: pl.DataFrame, key: list[str], eval_var: str
 ) -> pl.DataFrame:
     """The increments that restarts add to ``hits`` (``key``, ``run_set``, ``k``,
     ``eval_var`` the hitting time, ``inc`` and ``horizon``, in evaluations): per
-    curve of ``key`` (within one run set) and k, r - h up to the horizon."""
-    sets, parts = _sets(runs), []
-    for part in hits.filter(pl.col("k") > 0).partition_by([*key, "k"]):
-        n, used = sets[part["run_set"][0]]
-        budgets, time = used[: part["k"][0]], part[eval_var].to_numpy().astype(int)
-        horizon = int(part["horizon"][0])
-        if budgets.min() + time.min() > horizon:  # no restart within the horizon
-            continue
-        size = _length(budgets, n, int(time.max()), horizon)
-        h = np.bincount(time[time < size], part["inc"].to_numpy()[time < size], size)
-        extra = _renew(h, budgets, n) - h
-        at = np.flatnonzero(extra)
-        parts.append(
-            part.head(1)
-            .select(key)
-            .join(pl.DataFrame({eval_var: at, "inc": extra[at]}), how="cross")
-        )
+    curve of ``key`` (within one run set) and k, r - h up to the horizon. Rows per
+    curve and k in the order of their first hit, each in the order of evaluations."""
+    hits = hits.filter(pl.col("k") > 0).with_row_index("_row")
+    first = pl.col("_row").min().over([*key, "k"]).rank("dense").cast(pl.Int64) - 1
+    hits = hits.with_columns(_curve=first)
     schema = {**hits.select(key).schema, eval_var: pl.Int64, "inc": pl.Float64}
-    return pl.concat(parts) if parts else pl.DataFrame(schema=schema)
+    if hits.is_empty():
+        return pl.DataFrame(schema=schema)
+    curves = hits.group_by("_curve").agg(pl.all().first()).sort("_curve")
+    time, curve = hits[eval_var].to_numpy().astype(int), hits["_curve"].to_numpy()
+    lowest = np.full(curves.height, time.max())
+    latest = np.zeros(curves.height, time.dtype)
+    np.minimum.at(lowest, curve, time)
+    np.maximum.at(latest, curve, time)
+    horizon = curves["horizon"].to_numpy().astype(int)
+    n, values, counts = _failures(
+        runs, curves["run_set"].to_numpy(), curves["k"].to_numpy()
+    )
+    keep = values[:, 0] + lowest <= horizon  # else no restart within the horizon
+    size = np.where(keep, _lengths(n, values, counts, latest, horizon), 0)
+    parts = []
+    for part in _batches(size):
+        if not size[part].any():
+            continue
+        offset = np.cumsum(size[part]) - size[part]
+        rows = (curve >= part.start) & (curve < part.stop)
+        rows &= time < size[curve]
+        at = offset[curve[rows] - part.start] + time[rows]
+        h = np.bincount(at, hits["inc"].to_numpy()[rows], int(size[part].sum()))
+        r = h.copy()
+        for g in np.flatnonzero(size[part]):
+            c = part.start + g
+            d = np.count_nonzero(counts[c])
+            sequence = r[offset[g] : offset[g] + size[c]]
+            _renew(sequence, values[c, :d], counts[c, :d], int(n[c]), int(lowest[c]))
+        extra = r - h
+        at = np.flatnonzero(extra)
+        which = np.searchsorted(offset, at, "right") - 1
+        parts.append(
+            curves.select(key)[which + part.start].with_columns(
+                pl.Series(eval_var, at - offset[which]), pl.Series("inc", extra[at])
+            )
+        )
+    return pl.concat([pl.DataFrame(schema=schema), *parts])
 
 
 def gained(
@@ -167,7 +238,7 @@ def gained(
             continue
         delta = np.zeros(_length(used[:k], n, 0, int(wait.max())))
         delta[0] = 1.0
-        renewal = np.cumsum(_renew(delta, used[:k], n))
+        renewal = np.cumsum(_renew(delta, *np.unique(used[:k], return_counts=True), n))
         more = renewal[np.clip(wait, 0, renewal.size - 1)] - 1
         gain[part["_row"].to_numpy(), : wait.shape[1]] = np.where(wait >= 0, more, 0.0)
     return gain
