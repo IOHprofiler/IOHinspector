@@ -124,7 +124,7 @@ golden tests name the decision there.
 | EC-4 | AUC as exact normalised integral | yes |
 | EC-5 | AOCC on best-so-far with fixed bounds per pair (BBOB: 1e2, 1e-8); equals the continuum-ECDF AUC | – (new) |
 | EC-6 | Current `get_data_ecdf` kept under a clear name, with EC-5 bounds | – |
-| EC-7 | Every ECDF (target, continuum, AUC, AOCC, portfolio, fixed-budget): COCO's simulated restarts by default, their expected value computed from the runs' runtimes (no seed); a run that reached a target is not restarted; carry forward as an option | yes (IOHanalyzer carries forward; cocopp samples its restarts) |
+| EC-7 | Every ECDF (target, continuum, AUC, AOCC, portfolio, fixed-budget): COCO's simulated restarts by default, their expected value computed from the runs' runtimes (no seed), `n_restarted` reported; a run that reached a target is not restarted; carry forward as an option; the EAF carries forward by default (EA-6) | yes (IOHanalyzer carries forward; cocopp samples its restarts) |
 | EC-8 | Rank tables per pair, average ties, missing last | no |
 | EC-9 | Fixed-budget ECDF, inclusive (V(b) ≤ v), budgets per pair, exact; stopped runs restarted (EC-7) | yes |
 | EC-10 | Fixed-budget AUC as exact normalised integral over [v_lo, v_hi] | yes |
@@ -181,6 +181,7 @@ golden tests name the decision there.
 | EA-3 | Multi-function EAF on normalised quality; BBOB bounds 1e2 and 1e-8 | yes |
 | EA-4 | `xmax = Min` bug not ported | yes |
 | EA-5 | Precise (moocore) and discretised (matrix) modes, for the EAF and the difference | yes |
+| EA-6 | Multi-function EAF weighs each pair equally (volume = AOCC), or each run; carry forward by default, simulated restarts (EC-7) in the discretised mode on request | no |
 | DS-1 | Local DSC, no network | – |
 | DS-2 | Inputs as IOHanalyzer's client, budgets from run metadata, B1 not ported; no NA sent; only problems every algorithm has, matched by name | yes |
 | DS-3 | NA options PAR-k (the RT-3 definition, k user-set, default 10), ERT, Remove-na; ERT fallback is the sum of budgets | yes, JSON data |

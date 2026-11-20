@@ -83,7 +83,9 @@ EAF [LopezIbanez2025]). The bounds must be fixed per pair before alignment;
 the equivalence does not hold when they are taken from the aligned data.
 mean_i q_i(b) is also the area under the EAF of the runs over q in [0, 1], so
 AOCC_S is the volume under the EAF; across several pairs this holds for the
-EAF that weighs each pair equally ([eaf](eaf.md), EA-6).
+EAF that weighs each pair equally ([eaf](eaf.md), EA-6), and only with the
+same `stopped` on both sides: the AOCC restarts by default (EC-7), the EAF
+carries forward by default.
 
 ### Simulated restarts
 
@@ -408,9 +410,16 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
   fixed-budget summary: carrying forward assumes that a run that stopped
   would not have improved, while an algorithm that stops early can usually be
   restarted, as the ERT and cocopp assume. The fixed-budget summary simulates
-  its restarts (FB-6), since its statistics need one value per run. Decided
-  by the D6 reviews of #42 (fixed-budget ECDF) and #48 (the target ECDFs,
-  Q-EC-4, and computing rather than simulating), dvermetten, 2026-11-19.
+  its restarts (FB-6), since its statistics need one value per run. With
+  restarts, every ECDF result reports `n_restarted` per group: the runs of
+  the group that stopped before the largest budget of their pair (the
+  horizon of the target ECDF, the largest budget of the fixed-budget ECDF);
+  the user, 2026-11-20. The EAF keeps carrying forward by default and
+  restarts on request (EA-6, [eaf](eaf.md)), so the defaults of the AOCC and
+  of the EAF differ. The deprecated `get_aocc` and `get_data_ecdf` keep no
+  restarts (the user, 2026-11-20). Decided by the D6 reviews of #42
+  (fixed-budget ECDF) and #48 (the target ECDFs, Q-EC-4, and computing rather
+  than simulating), dvermetten, 2026-11-19.
 - **EC-8.** Rank tables rank per pair with average ties and missing values
   last.
 - **EC-9.** The fixed-budget ECDF counts (run, budget) pairs with
@@ -509,13 +518,17 @@ budget b replaced by b − 1, and reproduce `AUC_by_FV` from the same values.
 ## Implementation (I33)
 
 `metrics/restarts.py` holds the one computation of EC-7 (E_t), used by
-every ECDF: `get_ecdf` and `get_ecdf_auc` (targets and continuum, so also the
-deprecated `get_data_ecdf` and `get_aocc`), `get_portfolio_ecdf` and
-`get_shapley_values`, and `get_fixed_budget_ecdf` and
-`get_fixed_budget_ecdf_auc`. They all take `stopped = "restart"` (default) or
-`"carry_forward"`; none takes a seed. The fixed-budget results also have
-`n_restarted`, the runs of the group that stopped before their pair's largest
-budget. The golden tests against IOHanalyzer use `"carry_forward"`.
+every ECDF: `get_ecdf` and `get_ecdf_auc` (targets and continuum, so the
+AOCC), `get_portfolio_ecdf` and `get_shapley_values`, and
+`get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc`. They all take
+`stopped = "restart"` (default) or `"carry_forward"`; none takes a seed. With
+restarts, the results of `get_ecdf`, `get_ecdf_auc` and the fixed-budget
+functions have `n_restarted`, the runs of the group that stopped before the
+largest budget of their pair: the horizon (in evaluations) for the target
+ECDF, the pair's largest budget for the fixed-budget ECDF. The deprecated
+`get_data_ecdf` and `get_aocc` pass `"carry_forward"`. The discretised EAF
+uses the same computation on request (EA-6). The golden tests against
+IOHanalyzer use `"carry_forward"`.
 
 `aggregate_convergence(stopped="restart")` (FB-6) keeps its simulated chains,
 seeded with 0 by default. A run whose final value is the best of its run set
