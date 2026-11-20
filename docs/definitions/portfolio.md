@@ -239,8 +239,8 @@ The ECDF data use simulated restarts (EC-7, the `get_ecdf_auc` default), which
 about doubles the steps. The differences are the largest absolute difference
 of a normalised value. Enumeration grows as 2^n · n per step, sampling as n^3
 and the closed form as n log n, so `get_shapley_values` now spends its time on
-the ECDF data: 3.5 s at 15 algorithms, against 228 s with enumeration (69 s on
-#44, before simulated restarts). Custom values and marginals still pay the
+the ECDF data: 3.5 s at 15 algorithms, against 228 s with enumeration (69 s
+on #44, before simulated restarts). Custom values and marginals still pay the
 enumeration column up to `exact_limit` with `method="auto"`.
 
 Golden tests: IOHanalyzer's value (R's `ecdf` of the successful runtimes,
