@@ -12,6 +12,7 @@ and ``to_python`` the matplotlib code of a figure. For LaTeX, ``render`` writes
 document's own font.
 """
 
+from .atlas import atlas
 from .elements import elements
 from .python import to_python
 from .render import figure_size, panel_frames, render, series_styles
@@ -48,6 +49,7 @@ __all__ = [
     "Venue",
     "add_panels",
     "apply_style",
+    "atlas",
     "elements",
     "figure_size",
     "panel_frames",

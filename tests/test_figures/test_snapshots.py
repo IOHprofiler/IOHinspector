@@ -16,14 +16,9 @@ from PIL import Image
 
 from iohinspector.figures import render
 
-from .sample import GALLERY, gallery_specs, sample_data
+from .sample import GALLERY, gallery_runs, gallery_specs
 
 TOLERANCE = 2  # RMS over 0-255 pixel values; allows small rendering changes
-
-
-@pytest.fixture(scope="module")
-def data():
-    return sample_data()
 
 
 def minor(version: str) -> str:
@@ -31,11 +26,11 @@ def minor(version: str) -> str:
 
 
 @pytest.mark.parametrize("name, spec", gallery_specs().items())
-def test_snapshot(data, tmp_path, name, spec):
+def test_snapshot(tmp_path, name, spec):
     with Image.open(GALLERY / f"{name}.png") as baseline:
         written_by = minor(baseline.text["Software"])  # type: ignore[attr-defined]
     if written_by != minor(matplotlib.__version__):
         pytest.skip(f"baseline from matplotlib {written_by}; regenerate it")
     actual = tmp_path / f"{name}.png"
-    actual.write_bytes(render(spec, data))
+    actual.write_bytes(render(spec, gallery_runs(spec)))
     assert compare_images(GALLERY / f"{name}.png", actual, tol=TOLERANCE) is None
