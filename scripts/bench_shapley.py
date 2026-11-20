@@ -6,10 +6,10 @@ Writes the synthetic full-bbob set of ``bench_ert.py`` (24 functions, 6 dimensio
 15 runs per algorithm and pair) for the largest number of groups. For each number
 of groups n, builds the game of ``get_shapley_values`` on the first n algorithms
 (``get_portfolio_ecdf``, default targets, log budget axis) and times the default
-value three ways: the closed form (what ``get_shapley_values`` uses), enumeration
-and sampling (``samples``, seed 1), the last two as for a custom value. Prints a
-Markdown table with the largest difference of each to the closed form and the
-largest standard error of the sampled values.
+value with each ``method``: ``closed`` (the default), ``exact`` (enumeration) and
+``sampled`` (``samples``, seed 1). Prints a Markdown table with the largest
+difference of each to the closed form and the largest standard error of the
+sampled values.
 """
 
 from __future__ import annotations
@@ -53,14 +53,12 @@ def main() -> None:
         part = data.filter(pl.col("algorithm_name").is_in(names))
         (_, ecdf, width), t_ecdf = timed(get_portfolio_ecdf, part, scale_eval_log=True)
         value = envelope_value(ecdf, width)
-
-        def custom(coalitions, value=value):  # not the closed form
-            return value(coalitions)
-
-        (closed, _), t_closed = timed(shapley_values, n, value)
-        (exact, _), t_exact = timed(shapley_values, n, custom, exact_limit=n)
+        (closed, _), t_closed = timed(shapley_values, n, value, method="closed")
+        (exact, _), t_exact = timed(
+            shapley_values, n, value, method="exact", exact_limit=n
+        )
         (sampled, se), t_sampled = timed(
-            shapley_values, n, custom, exact_limit=0, samples=args.samples, seed=1
+            shapley_values, n, value, method="sampled", samples=args.samples, seed=1
         )
         print(
             f"| {n} | {ecdf.shape[1]} | {t_ecdf:.2f} | {t_closed:.3f} "

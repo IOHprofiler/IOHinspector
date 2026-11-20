@@ -59,6 +59,10 @@ enumeration, the sampling, the normalisation or the caching of v(S).
   j = 1..|N|, g random permutations with a placed at position j; φ_a is the
   mean of the marginal contributions over positions. The caller gives g and a
   seed.
+- The caller can choose the computation (`method`): the closed form,
+  enumeration or sampling. Enumeration and sampling work for every value,
+  the default one included, so the closed form can be checked against them.
+  `auto`, the default, picks as above.
 
 ## How IOHanalyzer implements it
 
@@ -129,17 +133,26 @@ Remaining points for H1: none.
 
 `iohinspector.metrics`, in `metrics/portfolio.py`:
 
-- `shapley_values(n_players, value, *, marginal=None, exact_limit=15, samples=5,
-  seed=None)`: the generic routine (SH-4). `value` takes a boolean matrix, one
-  row per coalition and one column per player, and returns v of each row;
-  `marginal(v, S, a)` gets the cached value function and the coalitions S
-  without a, and defaults to v(S ∪ {a}) − v(S). For `envelope_value` with the
-  default marginal it uses the closed form (Q-SH-2), whatever `exact_limit`.
-  Otherwise, exact (SH-2): v is called once on all 2^n coalitions. Sampled: for each player and position j, `samples` random
-  coalitions of j − 1 other players (the predecessors of a in a random
-  permutation that puts a at position j), and v is called once per distinct
-  coalition. Returns the values divided by v(N) (SH-3) and a standard error per
-  value (0 when exact); NaN when v(N) = 0.
+- `shapley_values(n_players, value, *, marginal=None, method="auto",
+  exact_limit=15, samples=5, seed=None)`: the generic routine (SH-4). `value`
+  takes a boolean matrix, one row per coalition and one column per player,
+  and returns v of each row; `marginal(v, S, a)` gets the cached value
+  function and the coalitions S without a, and defaults to v(S ∪ {a}) − v(S).
+  `method` chooses the computation:
+  - `"closed"`: the closed form (Q-SH-2). Only for `envelope_value` with the
+    default marginal; anything else raises a `ValueError`.
+  - `"exact"`: enumeration (SH-2), v called once on all 2^n coalitions. More
+    than `exact_limit` players raises a `ValueError`; raise `exact_limit` to
+    enumerate more.
+  - `"sampled"`: for each player and position j, `samples` random coalitions
+    of j − 1 other players (the predecessors of a in a random permutation that
+    puts a at position j), seeded by `seed`; v is called once per distinct
+    coalition.
+  - `"auto"` (default): `"closed"` where it applies, else `"exact"` up to
+    `exact_limit` players and `"sampled"` above.
+
+  Returns the values divided by v(N) (SH-3) and a standard error per value (0
+  unless sampled); NaN when v(N) = 0.
 - `get_portfolio_ecdf(data, targets, by, *, b_lo, b_hi, scale_eval_log, ...)`:
   the ECDF data of the game. The players are the groups of `by` (D17). With the
   targets, the pair selection (`pairs`, EC-2), the hit rule (EC-1) and the
@@ -149,9 +162,9 @@ Remaining points for H1: none.
   on the budget axis, divided by its length. Identical steps are merged and
   their widths summed, so a step no longer knows its pair, target or budget.
 - `envelope_value(ecdf, width)`: SH-1 on these data,
-  v(S) = Σ width · max_{a ∈ S} ecdf[a]. It also carries the closed form, so
-  `shapley_values` recognises it. Any other function, even one that only calls
-  it, is a custom value and is enumerated or sampled.
+  v(S) = Σ width · max_{a ∈ S} ecdf[a]. It also carries the closed form, which
+  `shapley_values` uses for it. Any other function, even one that only calls
+  it, is a custom value.
 - `get_shapley_values(data, targets, by, *, b_lo, b_hi, scale_eval_log, ...)`:
   `shapley_values` of `envelope_value` on `get_portfolio_ecdf`. Returns `by`,
   `shapley`, `se`.
@@ -194,7 +207,8 @@ Rules for a definition:
   without a) and the player a, and returns one number per row. It may use v,
   or data of its own such as `ecdf`, or both.
 - A custom value or marginal is enumerated up to `exact_limit` players and
-  sampled above; the closed form is for the default value only.
+  sampled above (`method="auto"`), or as `method="exact"` or `"sampled"` says;
+  `method="closed"` is for the default value only.
 - The values are always divided by v(N). They sum to 1 only with the default
   marginal; with a marginal that does not use v, v only sets that scale.
 - The merged steps of `get_portfolio_ecdf` suit definitions that add up over
@@ -209,23 +223,25 @@ exact and sampled, against a direct computation over all orders.
 `scripts/bench_shapley.py` builds the game of `get_shapley_values` on a
 synthetic full-bbob set (24 functions, 6 dimensions, 15 runs per algorithm and
 pair, the default targets, a log budget axis) and times the default value
-three ways: the closed form, which `get_shapley_values` uses, and enumeration
-and sampling (5 coalitions per player and position, the default), as for a
-custom value. On a 10-core laptop:
+with each `method`: `"closed"`, which `get_shapley_values` uses by default,
+`"exact"` (enumeration) and `"sampled"` (5 coalitions per player and position,
+the default). On a 10-core laptop:
 
 | algorithms | steps | ECDF data (s) | closed form (s) | enumeration (s) | sampled (s) | enumeration − closed | sampled − closed | max se |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 5 | 27 102 | 0.34 | 0.002 | 0.00 | 0.00 | 6·10⁻¹⁷ | 4·10⁻⁴ | 3·10⁻⁴ |
-| 10 | 95 986 | 0.55 | 0.017 | 0.81 | 0.36 | 1·10⁻¹⁶ | 4·10⁻⁴ | 2·10⁻⁴ |
-| 12 | 114 890 | 0.64 | 0.022 | 4.61 | 1.03 | 2·10⁻¹⁶ | 4·10⁻⁴ | 2·10⁻⁴ |
-| 14 | 133 143 | 0.74 | 0.029 | 26.5 | 2.16 | 3·10⁻¹⁶ | 2·10⁻⁴ | 2·10⁻⁴ |
-| 15 | 142 091 | 0.78 | 0.036 | 65.9 | 3.25 | 3·10⁻¹⁶ | 3·10⁻⁴ | 2·10⁻⁴ |
+| 5 | 78 374 | 1.18 | 0.007 | 0.01 | 0.01 | 1·10⁻¹⁶ | 4·10⁻⁴ | 3·10⁻⁴ |
+| 10 | 198 404 | 2.36 | 0.028 | 1.93 | 0.91 | 6·10⁻¹⁶ | 4·10⁻⁴ | 2·10⁻⁴ |
+| 12 | 235 350 | 2.71 | 0.041 | 13.6 | 2.80 | 6·10⁻¹⁶ | 4·10⁻⁴ | 2·10⁻⁴ |
+| 14 | 271 367 | 3.06 | 0.057 | 85.7 | 7.00 | 4·10⁻¹⁶ | 2·10⁻⁴ | 2·10⁻⁴ |
+| 15 | 288 802 | 3.39 | 0.072 | 224 | 11.4 | 4·10⁻¹⁶ | 3·10⁻⁴ | 2·10⁻⁴ |
 
-The differences are the largest absolute difference of a normalised value.
-Enumeration grows as 2^n · n per step, sampling as n^3 and the closed form as
-n log n, so `get_shapley_values` now spends its time on the ECDF data: 0.8 s
-at 15 algorithms, against 69 s with enumeration before Q-SH-2. Custom values
-and marginals still pay the enumeration column up to `exact_limit`.
+The ECDF data use simulated restarts (EC-7, the `get_ecdf_auc` default), which
+about doubles the steps. The differences are the largest absolute difference
+of a normalised value. Enumeration grows as 2^n · n per step, sampling as n^3
+and the closed form as n log n, so `get_shapley_values` now spends its time on
+the ECDF data: 3.5 s at 15 algorithms, against 228 s with enumeration (69 s on
+#44, before simulated restarts). Custom values and marginals still pay the
+enumeration column up to `exact_limit` with `method="auto"`.
 
 Golden tests: IOHanalyzer's value (R's `ecdf` of the successful runtimes,
 summed over its 50-point grid) is a custom value function for

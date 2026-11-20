@@ -12,7 +12,6 @@ from iohinspector.metrics import (
     shapley_values,
 )
 from iohinspector.metrics.distributions import get_runtime_sample
-from iohinspector.metrics.portfolio import _added
 from iohinspector.targets import seq_rt
 from tests.golden.load import golden, logged
 from tests.test_metrics.test_ecdf import _restarted
@@ -46,12 +45,6 @@ def _by_permutations(table, n):
     return _by_orders(n, lambda s, a: table[s | 1 << a] - table[s]) / table[-1]
 
 
-def _plain(value):
-    """``value`` as a custom value function: enumerated or sampled, never the
-    closed form."""
-    return lambda coalitions: value(coalitions)
-
-
 @pytest.mark.parametrize("n", [1, 2, 4, 6])
 def test_exact_is_the_mean_over_all_orders(n):
     rng = np.random.default_rng(n)
@@ -68,10 +61,12 @@ def test_closed_form_equals_enumeration(n):
     ecdf, width = rng.random((n, 30)).round(1), rng.random(30)  # with ties
     ecdf[:, :3] = 0  # steps no player reaches
     value = envelope_value(ecdf, width)
-    phi, se = shapley_values(n, value)
-    enumerated, _ = shapley_values(n, _plain(value))
+    phi, se = shapley_values(n, value)  # auto: the closed form
+    closed, _ = shapley_values(n, value, method="closed")
+    np.testing.assert_array_equal(phi, closed)
+    enumerated, se_exact = shapley_values(n, value, method="exact")
     np.testing.assert_allclose(phi, enumerated, rtol=TOL)
-    assert abs(phi.sum() - 1) < TOL and not se.any()
+    assert abs(phi.sum() - 1) < TOL and not se.any() and not se_exact.any()
 
 
 def test_closed_form_for_any_number_of_players():
@@ -80,23 +75,38 @@ def test_closed_form_for_any_number_of_players():
     ecdf, width = rng.random((n, 200)) ** 3, rng.random(200)
     ecdf[1] = ecdf[0]  # equal players, equal values
     value = envelope_value(ecdf, width)
-    phi, se = shapley_values(n, value, exact_limit=0, samples=2, seed=0)
+    phi, se = shapley_values(n, value, exact_limit=0)  # auto: closed whatever
     assert not se.any() and phi[0] == pytest.approx(phi[1], rel=TOL)
     assert abs(phi.sum() - 1) < TOL
-    sampled, se = shapley_values(n, _plain(value), samples=10, seed=1)
+    sampled, se = shapley_values(n, value, method="sampled", samples=10, seed=1)
     assert (np.abs(sampled - phi) < 4 * se).all()  # 40 players: 4, not 3
     with pytest.raises(ValueError, match="n_players"):
         shapley_values(n - 1, value)
 
 
+def test_method_option():
+    rng = np.random.default_rng(1)
+    value = envelope_value(rng.random((16, 5)), rng.random(5))
+    with pytest.raises(ValueError, match="exact_limit"):
+        shapley_values(16, value, method="exact")
+    enumerated, _ = shapley_values(16, value, method="exact", exact_limit=16)
+    np.testing.assert_allclose(enumerated, shapley_values(16, value)[0], rtol=TOL)
+    with pytest.raises(ValueError, match="envelope_value"):
+        shapley_values(16, lambda s: value(s), method="closed")
+    with pytest.raises(ValueError, match="envelope_value"):
+        shapley_values(16, value, marginal=lambda v, s, a: v(s), method="closed")
+    with pytest.raises(ValueError, match="method must be"):
+        shapley_values(16, value, method="enumerate")  # pyright: ignore
+
+
 def test_sampled_values_are_within_three_standard_errors():
     rng = np.random.default_rng(6)
-    value = _plain(envelope_value(rng.random((6, 50)), rng.random(50)))
+    value = envelope_value(rng.random((6, 50)), rng.random(50))
     exact, _ = shapley_values(6, value)
-    sampled, se = shapley_values(6, value, exact_limit=5, samples=20, seed=1)
+    sampled, se = shapley_values(6, value, method="sampled", samples=20, seed=1)
     assert (se > 0).all()
     assert (np.abs(sampled - exact) < 3 * se).all()
-    again, _ = shapley_values(6, value, exact_limit=5, samples=20, seed=1)
+    again, _ = shapley_values(6, value, method="sampled", samples=20, seed=1)
     np.testing.assert_array_equal(sampled, again)  # seeded
 
 
@@ -282,15 +292,10 @@ def test_portfolio_by_other_columns_and_sampling():
     assert exact.columns == ["algorithm_name", "seed", "shapley", "se"]
     assert exact.height == 5  # (C, 1) has no runs
     assert (exact["se"] == 0).all()
-    sampled = get_shapley_values(  # the default marginal, given: sampled
-        data,
-        TARGETS,
-        by=by,
-        pairs="all",
-        marginal=_added,
-        exact_limit=2,
-        samples=50,
-        seed=4,
+    enumerated = get_shapley_values(data, TARGETS, by=by, pairs="all", method="exact")
+    np.testing.assert_allclose(enumerated["shapley"], exact["shapley"], rtol=TOL)
+    sampled = get_shapley_values(
+        data, TARGETS, by=by, pairs="all", method="sampled", samples=50, seed=4
     )
     assert (sampled["se"] > 0).all()
     assert (np.abs(sampled["shapley"] - exact["shapley"]) <= 3 * sampled["se"]).all()

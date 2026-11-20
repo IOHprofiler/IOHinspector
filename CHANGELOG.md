@@ -25,7 +25,9 @@
   a sum of maximum games, whose Shapley values have a closed form (Q-SH-2).
   `metrics.shapley_values(n, value, marginal=...)` is the generic routine for
   other portfolio values or marginal contributions, exact up to `exact_limit`
-  (15) players and seeded sampling above, with a standard error;
+  (15) players and seeded sampling above, with a standard error. Both take
+  `method`: `"auto"` (default), `"closed"`, `"exact"` (enumeration) or
+  `"sampled"`, to choose the computation, for example to check the closed form;
   `metrics.get_portfolio_ecdf` and `metrics.envelope_value` give it the ECDF
   data and the default value.
 - Cumulative difference plot (`docs/definitions/cdp.md`):
