@@ -5,10 +5,11 @@ Status: in progress
 ## Done
 - step 1: spec v2 + v1 upgrade, kinds as frame/plot, ids on every element, `elements()` (commit 39dc710)
 - step 2: tests of the model (test_model.py), shared-axis labels, styles on shipped fonts (b3731b2)
-- step 3: `to_python` (figures/python.py), test_python.py runs the code
+- step 3: `to_python` (figures/python.py), test_python.py runs the code (50d06ac)
+- step 4: gallery `ecdf-panels-highlight`, `ecdf-slides-dark`; CHANGELOG. Full suite polars 2.1.0: 1305 passed, 9 skipped; figures on polars 1.44.2: 118 passed, 6 skipped (TeX).
 
 ## Next step
-Step 4: gallery entries for panels / highlight / dark slide in tests/test_figures/sample.py (regenerate docs/figures), CHANGELOG, full suite on polars 2, figures on polars 1.
+Step 5: review the diff for leanness, then delete this file in the final commit.
 
 ## Plan
 1. Spec v2 and the v1 upgrade; render and tex on panels.

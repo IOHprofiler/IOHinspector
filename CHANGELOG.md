@@ -52,6 +52,22 @@
   sizes and direct labels. `pgf` needs a TeX installation (it measures text); the
   pgfplots export does not. An optional workflow (`tex.yml`) compiles both in a
   pinned TeX Live container.
+- The figure element model for Studio (D11, I35): `FigureSpec` version 2 has
+  `panels` (each with its kind, data, title, axes and annotations: text, arrow,
+  reference line, shaded region), a `layout` (columns, gap, panel labels,
+  shared axes), sizes in cm, in or pt, a white, transparent or dark-slide
+  background, the frame (box, spines, none), tick count and the 1e3 tick format,
+  more per-series fields (marker size, a marker every n points, drawing order,
+  band and its opacity, a second colour, highlighted yours or other), the
+  `highlight` and `family` palettes, and a legend order, an "n others" entry
+  and a shared legend. `FigureSpec.from_dict` upgrades version 1 specs.
+  `STYLES` are named looks as spec fragments, applied with `apply_style`. Each
+  figure kind computes a frame from the runs and draws only from it:
+  `panel_frames(spec, data)`, and `render(spec, frames=...)` draws exactly the
+  numbers it is given (the ECDF frame is `get_ecdf`'s result). Every element
+  has a stable id in the SVG, and `elements(spec, data)` gives their tree with
+  boxes in points. `to_python(spec, data)` writes the figure as matplotlib code
+  with `rcParams` and a `STYLE` table.
 - The fixed-budget ECDF and its AUC (`docs/definitions/ecdf.md`, EC-9 and EC-10):
   `metrics.get_fixed_budget_ecdf` gives, at each value v, the fraction of (run,
   budget) pairs whose best-so-far value at the budget is v or better (inclusive;
