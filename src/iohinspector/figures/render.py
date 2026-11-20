@@ -1,8 +1,12 @@
 """``render(spec, data) -> bytes``: one publication figure, the same bytes for the
-same spec, data and matplotlib version on every machine."""
+same spec, data and matplotlib version on every machine (``pgf``: and TeX
+installation, which measures the text)."""
 
+import contextlib
+import dataclasses
 import io
 import math
+import re
 
 import matplotlib as mpl
 import numpy as np
@@ -11,6 +15,7 @@ from matplotlib import ticker
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.style import context as style_context
+from matplotlib.text import Text
 
 from .base import Curve, Plot
 from .ecdf import ecdf_plot
@@ -20,7 +25,11 @@ from .venues import LINESTYLES, MARKERS, PALETTES, VENUES
 
 KINDS = {"ecdf": ecdf_plot}
 CM = 1 / 2.54
-METADATA = {"pdf": {"CreationDate": None}, "svg": {"Date": None}, "png": {}}
+METADATA = {  # without dates; the PGF backend takes none
+    "pdf": {"metadata": {"CreationDate": None}},
+    "svg": {"metadata": {"Date": None}},
+    "png": {"metadata": {}},
+}
 TICK_FORMATS = {
     "exponent": lambda v, _: f"${round(math.log10(v), 6):g}$",
     "power": lambda v, _: f"$10^{{{round(math.log10(v), 6):g}}}$",
@@ -28,17 +37,51 @@ TICK_FORMATS = {
 }
 
 
+TEX_SPECIAL = {
+    "#": r"\#",
+    "%": r"\%",
+    "&": r"\&",
+    "_": r"\_",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def tex_escape(text: str) -> str:
+    """``text`` for LaTeX: its special characters made literal, except in
+    ``$...$`` math, which stays as it is."""
+    plain = re.compile("|".join(map(re.escape, TEX_SPECIAL)))
+    parts = text.split("$")
+    parts[::2] = [plain.sub(lambda m: TEX_SPECIAL[m[0]], t) for t in parts[::2]]
+    return "$".join(parts)
+
+
 def render(spec: FigureSpec, data: pl.DataFrame, *, fmt: str | None = None) -> bytes:
     """The figure ``spec`` describes, drawn from ``data`` (the runs' logged rows,
     ``DataManager.load``), as ``fmt`` (``spec.formats[0]`` by default): PDF, SVG
-    or PNG at ``spec.dpi``. matplotlib's own settings do not leak in."""
+    or PNG at ``spec.dpi``, or ``pgf``: a PGF picture for ``\\input`` in a LaTeX
+    document, set in that document's own font (it needs a TeX installation to
+    measure text; ``pgfplots.export`` does not). matplotlib's own settings do
+    not leak in."""
     fmt = fmt or spec.formats[0]
     _one_of("format", fmt, FORMATS)
     buffer = io.BytesIO()
+    with style(spec):
+        fig = _figure(spec, *_prepare(spec, data))
+        if fmt == "pgf":  # TeX reads the text
+            for text in fig.findobj(Text):
+                text.set_text(tex_escape(text.get_text()))
+        fig.savefig(buffer, format=fmt, dpi=spec.dpi, **METADATA.get(fmt, {}))
+    out = buffer.getvalue()
+    # the tick labels use matplotlib's \mathdefault, which the document lacks
+    return b"\\providecommand{\\mathdefault}[1]{#1}\n" + out if fmt == "pgf" else out
+
+
+@contextlib.contextmanager
+def style(spec: FigureSpec):
+    """matplotlib's settings for ``spec``, and nothing of the user's."""
     with style_context("default"), mpl.rc_context(_rc(spec)):
-        fig = _figure(spec, _select(spec, data))
-        fig.savefig(buffer, format=fmt, dpi=spec.dpi, metadata=METADATA[fmt])
-    return buffer.getvalue()
+        yield
 
 
 def figure_size(spec: FigureSpec) -> tuple[float, float]:
@@ -95,6 +138,9 @@ def _rc(spec: FigureSpec) -> dict:
         "legend.fancybox": False,
         "legend.edgecolor": "#808080",
         "pdf.fonttype": 42,
+        "pgf.rcfonts": False,  # the document's font, not font.family
+        "pgf.texsystem": "pdflatex",
+        "pgf.preamble": "",
         "svg.hashsalt": "iohinspector",
     }
 
@@ -107,40 +153,57 @@ def _select(spec: FigureSpec, data: pl.DataFrame) -> pl.DataFrame:
     return data
 
 
-def _figure(spec: FigureSpec, data: pl.DataFrame) -> Figure:
-    plot: Plot = KINDS[spec.kind](spec, data)
+def _prepare(spec: FigureSpec, data: pl.DataFrame) -> tuple[Plot, dict]:
+    """The visible curves of the selected ``data`` and the style of each label."""
+    plot: Plot = KINDS[spec.kind](spec, _select(spec, data))
     styles = series_styles(spec, [c.label for c in plot.curves])
     shown = [c for c in plot.curves if styles[c.label]["visible"]]
+    return dataclasses.replace(plot, curves=shown), styles
+
+
+def _figure(spec: FigureSpec, plot: Plot, styles: dict) -> Figure:
     fig = Figure(figsize=figure_size(spec), layout="constrained")
     ax = fig.add_subplot()
-    for curve in shown:
+    for curve in plot.curves:
         _draw(ax, curve, styles[curve.label], plot.step)
     _axis(ax, "x", spec.x, plot.x)  # after the curves, for automatic limits
     _axis(ax, "y", spec.y, plot.y)
     if spec.title:
         ax.set_title(spec.title)
-    for i, curve in enumerate(shown if spec.markers else []):  # on final limits
-        x = _marker_x(ax, spec.markers, phase=(i + 1) / (len(shown) + 1))
-        _sparse_markers(ax, curve, styles[curve.label], x=x, step=plot.step)
-    _legend(fig, ax, spec, shown, styles)
+    for curve, x, y in marker_points(ax, spec.markers, plot):  # on final limits
+        ax.plot(
+            x,
+            y,
+            marker=styles[curve.label]["marker"],
+            linestyle="none",
+            color=styles[curve.label]["color"],
+        )
+    _legend(fig, ax, spec, plot.curves, styles)
     return fig
 
 
-def _axis(ax, which: str, own: Axis, defaults: dict) -> None:
+def axis_settings(own: Axis, defaults: dict) -> dict:
+    """The label, scale, limits and tick format of an axis: the spec's, else the
+    figure kind's."""
     scale = own.scale or defaults.get("scale", "linear")
     ticks = defaults.get("ticks", "auto") if own.ticks == "auto" else own.ticks
     label = defaults.get("label", "") if own.label is None else own.label
     if own.label is None and label and scale == "log" and ticks == "exponent":
         label = f"$\\log_{{10}}$({label})"
-    getattr(ax, f"set_{which}scale")(scale)
-    getattr(ax, f"set_{which}label")(label)
     lim = own.lim or defaults.get("lim")
-    if lim:
-        getattr(ax, f"set_{which}lim")(*lim)
+    return {"label": label, "scale": scale, "lim": lim, "ticks": ticks}
+
+
+def _axis(ax, which: str, own: Axis, defaults: dict) -> None:
+    a = axis_settings(own, defaults)
+    getattr(ax, f"set_{which}scale")(a["scale"])
+    getattr(ax, f"set_{which}label")(a["label"])
+    if a["lim"]:
+        getattr(ax, f"set_{which}lim")(*a["lim"])
     axis = getattr(ax, f"{which}axis")
-    if scale == "log" and ticks != "auto":
+    if a["scale"] == "log" and a["ticks"] != "auto":
         axis.set_major_locator(ticker.LogLocator(10))
-        axis.set_major_formatter(ticker.FuncFormatter(TICK_FORMATS[ticks]))
+        axis.set_major_formatter(ticker.FuncFormatter(TICK_FORMATS[a["ticks"]]))
         axis.set_minor_formatter(ticker.NullFormatter())
     if own.grid != "none":
         ax.grid(True, which=own.grid, axis=which)
@@ -159,25 +222,22 @@ def _draw(ax, curve: Curve, look: dict, step: bool) -> None:
     )
 
 
-def _marker_x(ax, n: int, *, phase: float) -> np.ndarray:
-    """``n`` x positions spread evenly over the x axis (on its scale), shifted by
-    ``phase`` of the spacing, so that curves with different phases do not share
-    them."""
+def marker_points(ax, n: int, plot: Plot):
+    """The sparse markers: for each curve, ``n`` points on it spread evenly over
+    the x axis (on its scale), each curve shifted by its own fraction of the
+    spacing so that curves do not share positions. Yields ``(curve, x, y)``."""
     log = ax.get_xscale() == "log"
-    scale = np.log10 if log else (lambda v: np.asarray(v, dtype=float))
-    lo, hi = scale(ax.get_xlim())
-    t = lo + (np.arange(n) + phase) * (hi - lo) / n
-    return 10**t if log else t
-
-
-def _sparse_markers(ax, curve: Curve, look: dict, *, x: np.ndarray, step: bool):
-    """Markers on ``curve`` at the positions ``x`` within its range."""
-    x = x[(x >= curve.x[0]) & (x < curve.x[-1])]
-    if step:
-        y = curve.y[np.searchsorted(curve.x, x, side="right") - 1]
-    else:
-        y = np.interp(x, curve.x, curve.y)
-    ax.plot(x, y, marker=look["marker"], color=look["color"], linestyle="none")
+    lo, hi = (np.log10 if log else np.asarray)(ax.get_xlim())
+    for i, curve in enumerate(plot.curves if n else []):
+        phase = (i + 1) / (len(plot.curves) + 1)
+        t = lo + (np.arange(n) + phase) * (hi - lo) / n
+        x = 10**t if log else t
+        x = x[(x >= curve.x[0]) & (x < curve.x[-1])]  # within the curve's range
+        if plot.step:
+            y = curve.y[np.searchsorted(curve.x, x, side="right") - 1]
+        else:
+            y = np.interp(x, curve.x, curve.y)
+        yield curve, x, y
 
 
 def _legend(fig, ax, spec: FigureSpec, curves: list[Curve], styles) -> None:

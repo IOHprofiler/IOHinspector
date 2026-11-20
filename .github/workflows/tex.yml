@@ -1,0 +1,37 @@
+# Optional: compiles the PGF and pgfplots exports of iohinspector.figures in a
+# TeX Live container (the tests that need pdflatex are skipped elsewhere). Not a
+# required check, and a failure here does not fail the pull request.
+name: test-tex
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/iohinspector/figures/**"
+      - "tests/test_figures/**"
+      - ".github/workflows/tex.yml"
+  pull_request:
+    paths:
+      - "src/iohinspector/figures/**"
+      - "tests/test_figures/**"
+      - ".github/workflows/tex.yml"
+
+jobs:
+  tex:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    container: texlive/texlive:TL2024-historic@sha256:1457d4e2926de8c20974be313b774f8680e1d1b49c027365c2486a738de59bd8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create environment
+        run: |
+          curl -LsSf https://astral.sh/uv/0.9.5/install.sh | sh
+          . "$HOME/.local/bin/env"
+          uv venv --python /usr/bin/python3
+          uv pip install -e ".[dev]"
+      - name: Test the figures, compiling the TeX
+        run: |
+          . "$HOME/.local/bin/env"
+          pdflatex --version | head -1
+          uv run --no-sync pytest -q -rs tests/test_figures

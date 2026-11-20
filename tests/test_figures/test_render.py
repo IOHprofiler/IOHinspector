@@ -16,7 +16,7 @@ from iohinspector.figures import (
     render,
     series_styles,
 )
-from iohinspector.figures.render import _figure, _rc, _select
+from iohinspector.figures.render import _figure, _prepare, style
 from iohinspector.figures.venues import TEX_PT_PER_INCH
 
 from .sample import ALGORITHMS, sample_data
@@ -29,8 +29,8 @@ def data():
 
 def draw(spec, data):
     """The figure ``render`` would save, with its axes."""
-    with mpl.style.context("default"), mpl.rc_context(_rc(spec)):
-        fig = _figure(spec, _select(spec, data))
+    with style(spec):
+        fig = _figure(spec, *_prepare(spec, data))
         fig.draw_without_rendering()
     return fig, fig.axes[0]
 
