@@ -211,6 +211,7 @@ def continued(  # pylint: disable=R0914
     key: list[str],
     eval_var: str,
     at: pl.DataFrame | None = None,
+    weighted: pl.Expr | None = None,
 ) -> pl.DataFrame:
     """The increments that restarts add to ``hits`` (``key``, ``run_set``, ``k``,
     ``eval_var`` the hitting time, ``inc`` and ``horizon``, in evaluations): per
@@ -218,7 +219,9 @@ def continued(  # pylint: disable=R0914
     curve and k in the order of their first hit, each in the order of evaluations.
     With ``at`` (``key`` and ``eval_var``), only their sums up to the evaluations in
     ``at`` of each curve's ``key``: each increment is added at the first of them at
-    or after it, and those after the last are left out.
+    or after it, and those after the last are left out. Or with ``weighted`` (an
+    expression of ``key`` and ``eval_var``), only each curve's sum of the
+    increments times it, at evaluation 0 (in rows of a chunk each).
 
     Curves of up to ``CHUNK`` evaluations are computed together in arrays of about
     that size, longer ones one at a time in windows (``_windows``)."""
@@ -252,6 +255,19 @@ def continued(  # pylint: disable=R0914
         return list(zip(values[c, :d].tolist(), (counts[c, :d] / n[c]).tolist()))
 
     parts = []
+
+    def add(which, evaluation, inc):
+        if weighted is not None:  # summed per chunk, so memory stays bounded
+            rows = curves.select(key)[which].with_columns(
+                pl.Series("_c", which),
+                pl.Series(eval_var, evaluation, pl.Int64),
+                pl.Series("inc", inc),
+            )
+            rows = rows.group_by("_c").agg((pl.col("inc") * weighted).sum())
+            which, inc = rows["_c"].to_numpy(), rows["inc"].to_numpy()
+            evaluation = np.zeros(which.size, np.int64)
+        parts.append((which, evaluation, inc))
+
     small = np.where(size <= CHUNK, size, 0)
     for part in _batches(small, CHUNK):
         live = np.flatnonzero(small[part])
@@ -269,7 +285,7 @@ def continued(  # pylint: disable=R0914
         if at is None:
             place = np.flatnonzero(extra)
             g = np.searchsorted(offset, place, "right") - 1
-            parts.append((part.start + g, place - offset[g], extra[place]))
+            add(part.start + g, place - offset[g], extra[place])
             continue
         starts = [_bins(cuts[c], size[c]) for c in part.start + live]
         width = [x.size for x in starts]
@@ -286,7 +302,7 @@ def continued(  # pylint: disable=R0914
         if at is None:
             for start, extra in chunks:
                 place = np.flatnonzero(extra)
-                parts.append((np.full(place.size, c), start + place, extra[place]))
+                add(np.full(place.size, c), start + place, extra[place])
         else:
             sums = _binned(chunks, _bins(cuts[c], size[c]))
             parts.append((np.full(sums.size, c), cuts[c][: sums.size], sums))

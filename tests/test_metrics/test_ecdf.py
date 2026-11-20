@@ -712,6 +712,41 @@ def test_restarts_in_chunks_and_sampled_are_the_exact_steps(monkeypatch, divide)
         assert value == pytest.approx(last, rel=1e-12)
 
 
+@pytest.mark.parametrize("chunk", [None, 7])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"scale_eval_log": True, "b_lo": 2},
+        {"divide_by_dimension": True, "b_lo": 0.5},
+        {"continuous": True, "scale_eval_log": True},
+    ],
+)
+def test_restarted_auc_is_the_area_under_the_steps(monkeypatch, options, chunk):
+    # the AUC sums the restarts' weighted increments per chunk instead of building
+    # the step function: the same as the exact area under get_ecdf's steps
+    b = _ragged(12).with_columns(
+        algorithm_name=pl.lit("B"), run_id=pl.col("run_id") + 9
+    )
+    df = pl.concat([_ragged(11), b]).with_columns(dimension=3)
+    if chunk:
+        monkeypatch.setattr(restarts, "CHUNK", chunk)
+    auc = get_ecdf_auc(df, **options).sort("algorithm_name")
+    lo, log = options.get("b_lo", 1.0), options.get("scale_eval_log", False)
+    keep = ("divide_by_dimension", "continuous")
+    steps = get_ecdf(df, **{k: v for k, v in options.items() if k in keep})
+    for (name,), curve in steps.sort("algorithm_name").group_by(
+        "algorithm_name", maintain_order=True
+    ):
+        x, ecdf = curve["evaluations"].to_numpy(), curve["ecdf"].to_numpy()
+        hi = x.max()
+        axis = np.log10 if log else (lambda v: v)
+        ends = axis(np.clip(np.r_[x[1:], hi], lo, hi))
+        area = np.sum(ecdf * (ends - axis(np.clip(x, lo, hi))))
+        value = auc.filter(pl.col("algorithm_name") == name)["auc"].item()
+        assert value == pytest.approx(area / (axis(hi) - axis(lo)), rel=1e-12)
+
+
 def test_runs_that_reach_a_target_are_not_restarted():
     # every run reaches 1e4 at evaluation 1: restarts change nothing; no run reaches
     # 1e-5: it stays unreached; for 1e0 two runs stop (at 100) without reaching it

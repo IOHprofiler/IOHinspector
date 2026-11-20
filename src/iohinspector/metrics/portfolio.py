@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 
 from ..targets import PAIR
-from .ecdf import _hits, _prepare, _restarted
+from .ecdf import _hits, _prepare, _restarted, _x
 from .restarts import restarts
 
 __all__ = [
@@ -259,9 +259,7 @@ def _portfolio(  # pylint: disable=R0913,R0914
     data = data.with_columns(
         inc=1 / pl.col("run_id").n_unique().over(curve[:-1])  # EC-1: all runs
     )
-    x = pl.col(eval_var).cast(pl.Float64)
-    if divide_by_dimension:
-        x = x / pl.col("dimension")
+    x = _x(eval_var, divide_by_dimension)
     lo = float(b_lo)
     hi = float(data.select(x.max()).item() if b_hi is None else b_hi)
     if lo >= hi or (scale_eval_log and lo <= 0):

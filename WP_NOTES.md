@@ -19,13 +19,19 @@ Status: in progress
   sampled 2.6 s / 0.7 GB, continuous 4.5 s / 0.8 GB (main: both killed above
   8 GB); fixed-budget ECDF 7.4 s / 0.8 GB (main 9.8 s / 3.6 GB).
 
+- step 2c: get_ecdf_auc with restarts sums each chunk's restart increments
+  times the part of [b_lo, b_hi] they cover (continued(weighted=...)), placed
+  at x = 0, instead of building the step function. Same as main on COCO f24
+  d2 (auc, log axis, divided by dimension, AOCC): max abs diff 1.4e-14. Full
+  horizon (2e7) f24 d2 AUC: 5.6 s / 0.9 GB (main killed above 8 GB). Shapley
+  (portfolio.py) still builds the full restarted steps: it needs the max over
+  players at each x.
+
 ## Next step
-Step 2c: get_ecdf_auc over the full horizon still materialises the restarted step
-function (f24 d2 with the default b_hi = 2e7 is killed above 8 GB, on main too).
-The area is a weighted sum of the increments (inc * (hi - max(x, lo)), or on
-log10), so continued() can sum the weights in its chunks as it does for
-``at``. Then DataManager pushdown and the manifest validation cache, then
-docs/performance.md.
+Step 3: DataManager predicate pushdown (check that select() filters reach the
+parquet scan, and POLARS_MAX_THREADS is honoured) and a cache of the manifest
+validation; then step 4, docs/performance.md from scripts/bench.py runs on
+synthetic data and scratch/I22/coco-ds (results above, under step 2b and 2c).
 
 ## Decisions
 - bench_ert.py became bench.py (one harness); bench_shapley imports synthetic().
