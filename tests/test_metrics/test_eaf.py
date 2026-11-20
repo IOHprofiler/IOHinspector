@@ -5,7 +5,7 @@ from polars.testing import assert_frame_equal
 
 from iohinspector.align import align_data
 from iohinspector.metrics import eaf as eaf_module
-from iohinspector.metrics import get_ecdf_auc
+from iohinspector.metrics import get_ecdf, get_ecdf_auc
 from iohinspector.metrics.eaf import (
     RECTANGLE,
     get_discritized_eaf_single_objective,
@@ -466,12 +466,13 @@ def test_equal_eafs_have_no_difference():
     assert get_eaf_diff_data(same, same, "x", "y").height == 0
 
 
-def _uneven(seed=2):
+def _uneven(seed=2, stop=False):
     """Two algorithms on two pairs, f integer in [0, 10] at evaluations 1..10;
-    A has 2 runs on function 1 and 1 on function 2, B 1 and 3."""
+    A has 2 runs on function 1 and 1 on function 2, B 1 and 3. With ``stop``, run
+    i stops after 3 + (2 i mod 8) evaluations, most of them early."""
     rng = np.random.default_rng(seed)
     runs = [("A", 1)] * 2 + [("A", 2)] + [("B", 1)] + [("B", 2)] * 3
-    return pl.DataFrame(
+    data = pl.DataFrame(
         {
             "run_id": np.repeat(np.arange(len(runs)), 10),
             "algorithm_name": np.repeat([a for a, _ in runs], 10),
@@ -481,16 +482,24 @@ def _uneven(seed=2):
             "raw_y": rng.integers(0, 11, 10 * len(runs)).astype(float),
         }
     )
+    if stop:
+        data = data.filter(pl.col("evaluations") <= 3 + 2 * pl.col("run_id") % 8)
+    return data
 
 
-def test_area_under_the_eaf_is_the_aocc():
+@pytest.mark.parametrize(
+    "stop, stopped",
+    [(False, "carry_forward"), (True, "carry_forward"), (True, "restart")],
+)
+def test_area_under_the_eaf_is_the_aocc(stop, stopped):
     # q = (10 - f) / 10 is a multiple of 0.1 and alpha(b, .) is constant on
-    # (q_(j-1), q_j], and on [b, b + 1) in b: the sums below are exact integrals
-    data = _uneven()
+    # (q_(j-1), q_j], and on [b, b + 1) in b: the sums below are exact integrals.
+    # With runs that stop early, the same stopped on both sides (EA-6, EC-7)
+    data = _uneven(stop=stop)
     bounds = pl.DataFrame({"function_id": [1, 2], "dimension": 5}).join(
         pl.DataFrame({"target": [0.0, 10.0]}), how="cross"
     )
-    common = {"targets": bounds, "scale_f_log": False}
+    common = {"targets": bounds, "scale_f_log": False, "stopped": stopped}
     aocc = get_ecdf_auc(data, b_hi=10, continuous=True, **common)
     grid = {"eval_values": range(1, 10), "f_values": [k / 10 for k in range(1, 11)]}
 
@@ -507,6 +516,42 @@ def test_area_under_the_eaf_is_the_aocc():
     with pytest.warns(UserWarning, match="A: \\[1, 2\\]; B: \\[1, 3\\]"):
         runs = area("runs")
     assert not np.allclose(runs["auc"], pairs["auc"])
+    if stopped == "restart":  # the restarts change it, and only improve on it
+        common["stopped"] = "carry_forward"
+        with pytest.warns(UserWarning):
+            carried = area("pairs")
+        assert (pairs["auc"] > carried["auc"] + 1e-3).all()
+
+
+def test_eaf_restarts_are_discretised_and_shared():
+    data = _uneven(stop=True).filter(pl.col("function_id") == 1)
+    with pytest.raises(ValueError, match="mode='discretised'.*carry_forward"):
+        get_eaf(data, stopped="restart")
+    with pytest.raises(ValueError, match="carry_forward"):
+        get_eaf(data, mode="discretised", stopped="exclude")
+    grid = {"eval_values": range(1, 10), "f_values": range(11)}
+    options = {"mode": "discretised", "stopped": "restart", **grid}
+    eaf = get_eaf(data, **options)
+    carried = get_eaf(data, mode="discretised", **grid)
+    assert (eaf["eaf"] >= carried["eaf"] - 1e-12).all()
+    assert (eaf["eaf"] > carried["eaf"] + 1e-12).any()
+    # alpha at y is the restarted single-target ECDF of y (EC-7), per group
+    for (algorithm,), group in eaf.partition_by("algorithm_name", as_dict=True).items():
+        runs = data.filter(pl.col("algorithm_name") == algorithm)
+        for y in (0.0, 4.0, 7.0):
+            target = pl.DataFrame({"function_id": [1], "dimension": [5], "target": [y]})
+            ecdf = get_ecdf(runs, target, x_values=range(1, 10))
+            at = group.filter(pl.col("raw_y") == y).sort("evaluations")["eaf"]
+            np.testing.assert_allclose(at, ecdf["ecdf"], rtol=1e-12, atol=1e-15)
+    # the difference and the margin of two groups are differences of these EAFs
+    difference = get_eaf_difference(data, **options)
+    margin = get_eaf_margin(data, **{k: v for k, v in options.items() if k != "mode"})
+    a = eaf.filter(pl.col("algorithm_name") == "A")["eaf"]
+    b = eaf.filter(pl.col("algorithm_name") == "B")["eaf"]
+    a_diff = difference.filter(pl.col("algorithm_name") == "A")["eaf_diff"]
+    np.testing.assert_allclose(a_diff, a - b, atol=1e-12)
+    a_margin = margin.filter(pl.col("algorithm_name") == "A")["eaf_margin"]
+    np.testing.assert_allclose(a_margin, a - b, atol=1e-12)
 
 
 def test_precise_eaf_weighs_pairs_by_repeating_runs():

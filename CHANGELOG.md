@@ -56,8 +56,15 @@
   The ECDF is the expected value over the restarts, computed exactly from the
   runs' runtimes (no seed); the fixed-budget results report `n_restarted`.
   `stopped="carry_forward"` gives the ECDF without restarts, as IOHanalyzer.
-  The deprecated `get_data_ecdf` and `get_aocc` keep no restarts. The BBOB-style
+  With restarts, `get_ecdf` and `get_ecdf_auc` also report `n_restarted` per
+  group (the runs that stopped before the largest budget computed). The
+  deprecated `get_data_ecdf` and `get_aocc` keep no restarts. The BBOB-style
   figure draws every curve to the largest budget of all groups.
+- `get_eaf`, `get_eaf_difference` and `get_eaf_margin` take `stopped`:
+  `"carry_forward"` (default, results unchanged) or `"restart"`, the simulated
+  restarts of the ECDFs, in the discretised mode only (the precise mode raises
+  `ValueError`). The defaults differ: the AOCC restarts, the EAF carries forward
+  (`docs/definitions/eaf.md`, EA-6).
 - Default bounds by suite (`docs/definitions/targets.md`, TG-8): a pair whose runs
   are all BBOB or SBOX (the suites the IOHexperimenter suite registry gives both
   bounds for; COCO's `bbob` included) gets targets from 1e-8 to 1e2 instead of

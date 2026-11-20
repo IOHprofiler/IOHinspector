@@ -152,21 +152,22 @@ def continued(
 def gained(
     pieces: pl.DataFrame, runs: pl.DataFrame, budgets: dict, eval_var: str
 ) -> np.ndarray:
-    """Per piece (``run_set``, ``k``, ``eval_var`` its hitting time T): what
-    restarts add to the number of its pair's budgets b >= T, as the sum over b of
-    E's renewal function at b - T, less 1[b >= T]. ``budgets`` maps each run set
-    to its pair's budgets."""
-    sets, gain = _sets(runs), np.zeros(pieces.height)
+    """Per piece (``run_set``, ``k``, ``eval_var`` its hitting time T) and budget b
+    of its run set (``budgets`` maps each run set to its budgets): what restarts
+    add to 1[b >= T], E's renewal function at b - T less 1[b >= T]. One row per
+    piece, one column per budget (zero beyond a run set's budgets)."""
+    width = max((len(b) for b in budgets.values()), default=0)
+    sets, gain = _sets(runs), np.zeros((pieces.height, width))
     rows = pieces.with_row_index("_row").filter(pl.col("k") > 0)
     for (s, k), part in rows.partition_by(["run_set", "k"], as_dict=True).items():
         n, used = sets[s]
         time = part[eval_var].to_numpy().astype(int)
-        wait = budgets[s][None, :] - time[:, None]
+        wait = np.asarray(budgets[s])[None, :] - time[:, None]
         if used[:k].min() > wait.max():  # no restart before the largest budget
             continue
         delta = np.zeros(_length(used[:k], n, 0, int(wait.max())))
         delta[0] = 1.0
         renewal = np.cumsum(_renew(delta, used[:k], n))
         more = renewal[np.clip(wait, 0, renewal.size - 1)] - 1
-        gain[part["_row"].to_numpy()] = np.where(wait >= 0, more, 0.0).sum(axis=1)
+        gain[part["_row"].to_numpy(), : wait.shape[1]] = np.where(wait >= 0, more, 0.0)
     return gain

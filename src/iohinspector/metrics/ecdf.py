@@ -222,16 +222,16 @@ def _increments(  # pylint: disable=R0913,R0914
     keep = [*dict.fromkeys([*by, *PAIR]), eval_var, "inc"]
     counts = None
     if restart:
-        horizon = x_max if horizon is None else horizon
+        until = float(x_max if horizon is None else horizon)
         counts = _stopped_before(
-            data, by, eval_var, _evaluations(horizon, divide_by_dimension)
+            data, by, eval_var, _evaluations(until, divide_by_dimension)
         )
         extra = _restarted(
             data,
             steps,
             by,
             keep[:-2],
-            horizon,
+            until,
             continuous=continuous,
             maximization=maximization,
             divide_by_dimension=divide_by_dimension,
@@ -348,6 +348,8 @@ def get_ecdf(
             - ``divide_by_dimension`` (False): x is evaluations / dimension.
             - ``stopped`` (``"restart"``): simulated restarts (EC-7), or
               ``"carry_forward"``: none, a run keeps its final value (IOHanalyzer).
+              The EAF (``get_eaf``) carries forward by default, so the AOCC is
+              the volume under it only with the same ``stopped`` on both sides.
             - ``fval_var`` (``"raw_y"``).
 
     Returns:
@@ -453,7 +455,7 @@ def _value_increments(  # pylint: disable=R0913,R0914
         lists = pieces.select("run_set", *PAIR).unique()
         lists = lists.join(budgets.group_by(PAIR).agg("budget"), on=PAIR)
         budget = {r: np.array(b) for r, b in lists.select("run_set", "budget").rows()}
-        gain = pl.Series(gained(pieces, runs, budget, eval_var))
+        gain = pl.Series(gained(pieces, runs, budget, eval_var).sum(axis=1))
     pieces = pieces.with_columns(gain=gain).with_row_index("_piece")
     reached = (
         pieces.select("_piece", *PAIR, eval_var)
