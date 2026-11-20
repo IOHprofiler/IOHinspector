@@ -107,7 +107,8 @@ def violin_plot(panel, frame: pl.DataFrame) -> Plot:
         y={
             "label": _label(panel),
             "scale": log_if_positive(
-                frame["x"].explode(), maximization=panel.data.maximization
+                np.concatenate(frame["x"].to_list()),
+                maximization=panel.data.maximization,
             ),
         },
         mark="violin",
