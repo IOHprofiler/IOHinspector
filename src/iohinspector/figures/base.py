@@ -44,11 +44,15 @@ class Plot:
 class Kind:
     """A figure kind: ``frame(panel, runs)`` computes its frame from the runs
     (``panel.data.where`` already applied) and ``plot(panel, frame)`` draws one;
-    ``columns`` are the frame columns ``plot`` needs besides the groups."""
+    ``columns`` are the frame columns ``plot`` needs besides the groups, x and y
+    first. For ``to_python``: ``code(panel)`` is the Python that sets ``frame``
+    from ``runs``, with ``label`` per row, using ``imports``."""
 
     frame: Callable[..., pl.DataFrame]
     plot: Callable[..., Plot]
     columns: tuple[str, ...]
+    code: Callable[..., str]
+    imports: str
 
 
 def with_labels(panel, frame: pl.DataFrame) -> pl.DataFrame:

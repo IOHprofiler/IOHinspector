@@ -13,6 +13,7 @@ document's own font.
 """
 
 from .elements import elements
+from .python import to_python
 from .render import figure_size, panel_frames, render, series_styles
 from .spec import (
     STYLES,
@@ -51,4 +52,5 @@ __all__ = [
     "pgfplots",
     "render",
     "series_styles",
+    "to_python",
 ]

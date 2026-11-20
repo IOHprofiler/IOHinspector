@@ -4,10 +4,11 @@ Status: in progress
 
 ## Done
 - step 1: spec v2 + v1 upgrade, kinds as frame/plot, ids on every element, `elements()` (commit 39dc710)
-- step 2: tests of the model (test_model.py), shared-axis labels, styles on shipped fonts
+- step 2: tests of the model (test_model.py), shared-axis labels, styles on shipped fonts (b3731b2)
+- step 3: `to_python` (figures/python.py), test_python.py runs the code
 
 ## Next step
-Step 3: `to_python(spec, data=None, frames=None)` in `figures/python.py`, with a test that runs the code.
+Step 4: gallery entries for panels / highlight / dark slide in tests/test_figures/sample.py (regenerate docs/figures), CHANGELOG, full suite on polars 2, figures on polars 1.
 
 ## Plan
 1. Spec v2 and the v1 upgrade; render and tex on panels.
@@ -22,6 +23,7 @@ Step 3: `to_python(spec, data=None, frames=None)` in `figures/python.py`, with a
 - ECDF frame = `get_ecdf` output (`by` columns or `label`, `evaluations`, `ecdf`, optional `lo`/`hi`); `ecdf_frame` adds one row per group at the largest budget. Raw rendering = plot(frame(runs)), so both paths give the same bytes.
 - Ids: `figure`, `title`, `legend`, `p<i>`, `p<i>-plot|frame|grid|title|xaxis|xlabel|xticks|...`, series `p<i>-s-<slug>` with `-line|-band|-end|-markers|-label`, annotations `p<i>-a<j>`. Several artists of one element get `<id>-<k>`. No hit area in the SVG: Studio widens the line path itself.
 - Styles use fonts that ship with matplotlib (STIX for Source Serif 4, DejaVu Sans for Geist), so renders stay identical everywhere and matplotlib does not log missing fonts.
+- `to_python` emits the frame code per kind (`Kind.code`), rcParams, `STYLE`, a `draw` helper and the layout-derived numbers (limits, direct-label heights). Annotations go through the same `_annotate` with a call recorder, so they match `render`. Sparse markers become `markevery=1/markers` (matplotlib's display-space spacing), not the exact BBOB positions.
 - pgfplots stays one panel, without annotations and bands (raises for more panels).
 
 ## Open questions / Blocked

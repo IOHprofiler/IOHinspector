@@ -86,4 +86,21 @@ def _curve(label: str, rows: pl.DataFrame, start, end) -> Curve:
     )
 
 
-ECDF = Kind(ecdf_frame, ecdf_plot, ("evaluations", "ecdf"))
+def ecdf_code(panel) -> str:
+    d = panel.data
+    return (
+        f"frame = get_ecdf(\n    runs,\n    get_ecdf_targets(runs, {d.targets!r}),\n"
+        f"    {d.by!r},\n    maximization={d.maximization},\n"
+        f"    divide_by_dimension={d.per_dimension},\n"
+        f").with_columns(group_label({d.by!r}, {d.label!r}))"
+    )
+
+
+ECDF = Kind(
+    ecdf_frame,
+    ecdf_plot,
+    ("evaluations", "ecdf"),
+    ecdf_code,
+    "from iohinspector import get_ecdf, group_label\n"
+    "from iohinspector.targets import get_ecdf_targets",
+)

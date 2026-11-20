@@ -33,12 +33,15 @@ METADATA = {  # without dates; the PGF backend takes none
     "svg": {"metadata": {"Date": None}},
     "png": {"metadata": {}},
 }
-TICK_FORMATS = {
-    "exponent": lambda v, _: f"${round(math.log10(v), 6):g}$",
-    "power": lambda v, _: f"$10^{{{round(math.log10(v), 6):g}}}$",
-    "sci": lambda v, _: f"{v:.0e}".replace("e+0", "e").replace("e-0", "e-"),
-    "plain": lambda v, _: f"${v:.12g}$",
+# Tick labels of a log axis (its major ticks are powers of 10), as code for
+# ``to_python`` too.
+TICK_CODE = {
+    "exponent": 'lambda v, _: f"${round(math.log10(v), 6):g}$"',
+    "power": 'lambda v, _: f"$10^{{{round(math.log10(v), 6):g}}}$"',
+    "sci": 'lambda v, _: f"1e{round(math.log10(v), 6):g}"',
+    "plain": 'lambda v, _: f"${v:.12g}$"',
 }
+TICK_FORMATS = {k: eval(v, {"math": math}) for k, v in TICK_CODE.items()}
 DARK = {  # a dark slide: Graphite dark's well, text and edges
     "figure.facecolor": "#121316",
     "axes.facecolor": "#121316",
@@ -152,8 +155,8 @@ def series_styles(
             color = palette[family_index[family] % len(palette)]
             dash = in_family[family]
             in_family[family] += 1
-        elif role:
-            color, dash = roles[role], index
+        elif role:  # solid: the colour and width tell them apart
+            color, dash = roles[role], 0
         else:
             color, dash = palette[index % len(palette)], index
             index += 1
@@ -162,6 +165,7 @@ def series_styles(
             slug += "_"
         ids.add(slug)
         styles[label] = {
+            "label": label,
             "id": slug,
             "name": own.name or label,
             "color": own.color or color,
