@@ -380,6 +380,12 @@ def _panel(ax, i: int, spec, panel: Panel, plot: Plot, styles, add: Add) -> None
         )
     _axis(ax, "x", panel.x, plot.x)  # after the curves, for automatic limits
     _axis(ax, "y", panel.y, plot.y)
+    n = len(spec.panels)
+    columns = min(spec.layout.columns, n)
+    if spec.layout.share_y and i % columns:  # the outer panels name shared axes
+        ax.set_ylabel("")
+    if spec.layout.share_x and i + columns < n:
+        ax.set_xlabel("")
     for side, spine in ax.spines.items():
         shown = {"box": True, "spines": side in ("left", "bottom")}
         spine.set_visible(shown.get(spec.frame, False))

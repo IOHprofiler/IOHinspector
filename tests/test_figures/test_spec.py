@@ -64,7 +64,7 @@ def full_spec() -> FigureSpec:
         height=2.5,
         background="dark",
         title="ECDF",
-        text=Text(family=["Source Serif 4", "DejaVu Serif"], size=8, annotation_size=6),
+        text=Text(family="DejaVu Serif", size=8, annotation_size=6),
         frame="spines",
         palette="highlight",
         series={

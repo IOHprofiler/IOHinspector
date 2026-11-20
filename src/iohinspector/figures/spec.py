@@ -84,11 +84,12 @@ class Data:
 
 @dataclass
 class Text:
-    """Font family (a name, or a list tried in order) and sizes in points.
-    ``None`` takes the venue's: its font and its figure caption size (the title
-    at its body size); ``annotation_size`` defaults to ``size``."""
+    """Font family and sizes in points. ``None`` takes the venue's: its font and
+    its figure caption size (the title at its body size); ``annotation_size``
+    defaults to ``size``. A family other than matplotlib's own fonts must be
+    installed where the figure is rendered."""
 
-    family: str | list[str] | None = None
+    family: str | None = None
     size: float | None = None
     title_size: float | None = None
     tick_size: float | None = None
@@ -344,11 +345,13 @@ def upgrade(value: dict[str, Any]) -> dict[str, Any]:
 
 
 # Named looks, as spec fragments (``apply_style``). The key ``panel`` applies to
-# every panel. A style without a size keeps the figure's.
+# every panel. A style without a size keeps the figure's. The fonts ship with
+# matplotlib, so a style renders the same everywhere: STIX (a Times design)
+# stands in for the design's Source Serif 4, DejaVu Sans for Geist.
 STYLES: dict[str, dict[str, Any]] = {
     "paper": {
         "text": {
-            "family": ["Source Serif 4", "STIXGeneral"],
+            "family": "STIXGeneral",
             "title_size": 9,
             "size": 8,
             "tick_size": 7,
@@ -373,7 +376,7 @@ STYLES: dict[str, dict[str, Any]] = {
         "background": "dark",
         "palette": "highlight",
         "text": {
-            "family": ["Geist", "DejaVu Sans"],
+            "family": "DejaVu Sans",
             "title_size": 20,
             "size": 16,
             "tick_size": 14,
