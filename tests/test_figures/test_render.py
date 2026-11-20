@@ -11,6 +11,7 @@ from iohinspector.figures import (
     Data,
     FigureSpec,
     Legend,
+    Panel,
     Series,
     figure_size,
     render,
@@ -27,11 +28,10 @@ def data():
     return sample_data()
 
 
-def draw(spec, data):
-    """The figure ``render`` would save, with its axes."""
+def draw(spec, data=None, frames=None):
+    """The figure ``render`` would save, with its first axes."""
     with style(spec):
-        fig = _figure(spec, *_prepare(spec, data))
-        fig.draw_without_rendering()
+        fig = _figure(spec, *_prepare(spec, data, frames))
     return fig, fig.axes[0]
 
 
@@ -47,8 +47,10 @@ def test_figure_size():
     assert figure_size(FigureSpec(venue="ieee")) == pytest.approx(
         (252 / TEX_PT_PER_INCH, 0.75 * 252 / TEX_PT_PER_INCH)
     )
-    spec = FigureSpec(width_cm=2.54, height_cm=5.08)
+    spec = FigureSpec(width=2.54, height=5.08)
     assert figure_size(spec) == pytest.approx((1, 2))
+    assert figure_size(FigureSpec(unit="pt", width=72)) == pytest.approx((1, 0.75))
+    assert figure_size(FigureSpec(unit="in", width=3, height=1)) == (3, 1)
 
 
 @pytest.mark.parametrize(
@@ -89,9 +91,9 @@ def test_direct_labels_are_ordered_by_final_value_and_spread(data):
 
 
 def test_lines_follow_the_ecdf(data):
-    from iohinspector.figures.ecdf import ecdf_plot
+    from iohinspector.figures.ecdf import ECDF
 
-    plot = ecdf_plot(FigureSpec(), data)
+    plot = ECDF.plot(Panel(), ECDF.frame(Panel(), data))
     assert [c.label for c in plot.curves] == sorted(ALGORITHMS)
     for curve in plot.curves:
         assert np.all(np.diff(curve.x) >= 0) and np.all(np.diff(curve.y) >= 0)
@@ -104,9 +106,14 @@ def test_lines_follow_the_ecdf(data):
 
 def test_label_template_and_series_overrides(data):
     spec = FigureSpec(
-        data=Data(
-            by=["algorithm_name", "dimension"], label="{algorithm_name} d={dimension}"
-        ),
+        panels=[
+            Panel(
+                data=Data(
+                    by=["algorithm_name", "dimension"],
+                    label="{algorithm_name} d={dimension}",
+                )
+            )
+        ],
         series={
             "DE d=5": Series(name="DE (small)", color="#ff0000", marker="s"),
             "RS d=20": Series(visible=False),
@@ -123,12 +130,14 @@ def test_label_template_and_series_overrides(data):
 
 def test_where_selects_rows(data):
     spec = FigureSpec(
-        data=Data(where={"dimension": [5], "algorithm_name": ["DE", "RS"]})
+        panels=[
+            Panel(data=Data(where={"dimension": [5], "algorithm_name": ["DE", "RS"]}))
+        ]
     )
     _, ax = draw(spec, data)
     assert {t.get_text() for t in ax.texts} == {"DE", "RS"}
     with pytest.raises(ValueError, match="selects no rows"):
-        render(FigureSpec(data=Data(where={"dimension": [3]})), data)
+        render(FigureSpec(panels=[Panel(data=Data(where={"dimension": [3]}))]), data)
 
 
 @pytest.mark.parametrize("mode", ["box", "outside", "none"])
@@ -151,17 +160,21 @@ def test_legend_modes(data, mode):
     ],
 )
 def test_log_tick_formats(data, ticks, label, expected):
-    _, ax = draw(FigureSpec(x=Axis(ticks=ticks)), data)
+    _, ax = draw(FigureSpec(panels=[Panel(x=Axis(ticks=ticks))]), data)
     assert ax.get_xlabel() == label
     assert expected in [t.get_text() for t in ax.get_xticklabels()]
 
 
 def test_axis_overrides(data):
     spec = FigureSpec(
-        data=Data(per_dimension=False),
-        x=Axis(label="", scale="linear", lim=[0, None], grid="none"),
-        y=Axis(label="ECDF", lim=[0, 0.8]),
-        title="f1 and f2",
+        panels=[
+            Panel(
+                data=Data(per_dimension=False),
+                x=Axis(label="", scale="linear", lim=[0, None], grid="none"),
+                y=Axis(label="ECDF", lim=[0, 0.8]),
+                title="f1 and f2",
+            )
+        ],
         markers=0,
     )
     _, ax = draw(spec, data)

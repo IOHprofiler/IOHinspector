@@ -9,7 +9,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from iohinspector.figures import Axis, Data, FigureSpec, Legend, Series, render
+from iohinspector.figures import Axis, Data, FigureSpec, Legend, Panel, Series, render
 from iohinspector.figures.render import tex_escape
 from iohinspector.figures.tex import pgfplots
 
@@ -46,7 +46,7 @@ def test_tex_escape_leaves_math_alone():
 @needs_tex
 @pytest.mark.parametrize("venue", ["lncs", "ieee", "acm"])
 def test_pgf_uses_the_documents_font_and_compiles(data, tmp_path, venue):
-    spec = FigureSpec(venue=venue, formats=["pgf"], title="f_1 & f_2")
+    spec = FigureSpec(venue=venue, formats=["pgf"], panels=[Panel(title="f_1 & f_2")])
     pgf = render(spec, data)
     assert pgf == render(spec, data)
     assert b"%% Creator: Matplotlib, PGF backend" in pgf
@@ -86,9 +86,8 @@ def test_pgfplots_matches_the_figure(tex_files):
 def test_pgfplots_options(data):
     spec = FigureSpec(
         legend=Legend(mode="box", loc="upper left"),
-        x=Axis(ticks="plain", grid="both"),
+        panels=[Panel(x=Axis(ticks="plain", grid="both"), title="f1")],
         series={"DE": Series(name="D_E", linestyle=":", linewidth=2)},
-        title="f1",
     )
     tex = pgfplots(spec, data)["figure.tex"].decode()
     assert "legend pos=north west" in tex and "\\addlegendentry{D\\_E}" in tex
@@ -102,9 +101,16 @@ def test_pgfplots_options(data):
     "spec",
     [
         FigureSpec(venue="acm"),
-        FigureSpec(legend=Legend(mode="outside"), x=Axis(ticks="power")),
         FigureSpec(
-            data=Data(by=["algorithm_name", "dimension"]), x=Axis(ticks="plain")
+            legend=Legend(mode="outside"), panels=[Panel(x=Axis(ticks="power"))]
+        ),
+        FigureSpec(
+            panels=[
+                Panel(
+                    data=Data(by=["algorithm_name", "dimension"]),
+                    x=Axis(ticks="plain"),
+                )
+            ]
         ),
     ],
 )
