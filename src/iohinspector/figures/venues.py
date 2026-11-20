@@ -74,7 +74,8 @@ VENUES = {
     ),
     # acmart.cls, sigconf: geometry paperwidth 8.5in with inner and outer 54pt,
     # so \textwidth 506.295pt; columnsep 2pc, so \columnwidth 241.1475pt;
-    # default 9pt; Linux Libertine; captions at the body size.
+    # default 9pt; Linux Libertine (not shipped with matplotlib, so the render
+    # uses STIXGeneral, a Times design, as a stand-in); captions at the body size.
     "acm": Venue(
         name="ACM sigconf",
         document_class="acmart[sigconf]",
@@ -102,7 +103,9 @@ VENUES = {
     ),
     # article.cls (size10.clo), twocolumn on letter paper: \textwidth is
     # \paperwidth - 2in = 469.755pt rounded down to 469pt, \columnsep 10pt, so
-    # \columnwidth 229.5pt; captions at the body size, 10pt. Not tied to a
+    # \columnwidth 229.5pt. article sets captions at the body size; the preset
+    # takes \small, 9pt, like the other presets (LNCS and ACM 9pt, IEEE and
+    # Elsevier 8pt), so figure text stays below the body text. Not tied to a
     # venue's font, so matplotlib's default sans-serif.
     "generic": Venue(
         name="Generic (article)",
@@ -113,7 +116,7 @@ VENUES = {
         mpl_font="DejaVu Sans",
         mathtext="dejavusans",
         size=10,
-        caption_size=10,
+        caption_size=9,
     ),
 }
 
@@ -143,6 +146,26 @@ PALETTES = {
     ],
     # For greyscale print: the line styles and markers tell the series apart.
     "grey": ["#000000", "#555555", "#888888", "#AAAAAA"],
+    # The website's highlighting on a white page: the data colours of its
+    # Graphite light scheme (CVD-checked in the W19 design, section 10); the
+    # series highlighted yours and other take HIGHLIGHT's colours.
+    "highlight": ["#1844b9", "#c63170", "#7a4306", "#7868a9", "#88206b", "#1a6fe1"],
+}
+# Colour by family (the first ``by`` column), line style within it.
+PALETTES["family"] = PALETTES["okabe-ito"]
+# On a dark slide: Graphite dark's data colours, and light greys and white for
+# the palettes with black; the others stay.
+DARK_PALETTES = {
+    "highlight": ["#1f98ed", "#5aedd4", "#d664a3", "#d0dd16", "#adb0f6", "#7cbd89"],
+    "okabe-ito": [*PALETTES["okabe-ito"][:-1], "#FFFFFF"],
+    "grey": ["#FFFFFF", "#C8C8C8", "#969696", "#707070"],
+}
+DARK_PALETTES["family"] = DARK_PALETTES["okabe-ito"]
+# The colours of yours and the others in the highlight palette, on white and on
+# a dark slide (Graphite light and dark).
+HIGHLIGHT = {
+    "white": {"yours": "#c05800", "other": "#a3a9b1"},
+    "dark": {"yours": "#f6943f", "other": "#5c626b"},
 }
 LINESTYLES = ["-", "--", ":", "-."]
 MARKERS = ["o", "s", "^", "D", "v", "p", "X", "*"]
