@@ -27,11 +27,22 @@ Status: in progress
   (portfolio.py) still builds the full restarted steps: it needs the max over
   players at each x.
 
+- step 3: DataManager. Opening the 13 COCO datasets spent 1.0 s of 1.1 s in the
+  JSON-schema check of their 4 MB manifests (one entry per source file):
+  read_manifest now remembers the blake2b digests of manifest bytes it found
+  valid, so a process opens them again in 0.11 s (open + select f24 d2 + load).
+  select() also filters the trace and positions by the selected runs'
+  function_id and dimension, which row-group statistics can skip on (run ids
+  are hashes): one COCO trace file 1.4 ms to 0.7 ms; select + load of a pair
+  was already 0.08 s. POLARS_MAX_THREADS is honoured (pl.thread_pool_size()
+  after import); iohinspector starts no thread pools of its own.
+
 ## Next step
-Step 3: DataManager predicate pushdown (check that select() filters reach the
-parquet scan, and POLARS_MAX_THREADS is honoured) and a cache of the manifest
-validation; then step 4, docs/performance.md from scripts/bench.py runs on
-synthetic data and scratch/I22/coco-ds (results above, under step 2b and 2c).
+Step 4: docs/performance.md. Run scripts/bench.py (through memguard, one at a
+time) on synthetic data (start with --algorithms 20, then larger only if
+memory allows) and on scratch/I22/coco-ds --pair 24 2, with
+POLARS_MAX_THREADS=16 and default; record the tables, the before/after numbers
+of steps 2a-3, and how to rerun. Then step 5: final checks, PR body, D6 review.
 
 ## Decisions
 - bench_ert.py became bench.py (one harness); bench_shapley imports synthetic().
