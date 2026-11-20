@@ -106,6 +106,8 @@
 
 ### Changed
 
+- The generic venue preset (`figures.VENUES["generic"]`) sets captions and figure text at 9 pt (`\small`), not 10 pt, in line with the other presets; generic figures render slightly smaller. ACM's Linux Libertine stays rendered with STIXGeneral as a stand-in.
+
 - The default of `get_ecdf`, `get_ecdf_auc` (targets, continuum ECDF and AOCC),
   `get_portfolio_ecdf` and `get_shapley_values` is now `stopped="restart"`: a run
   that stopped before a budget is continued by simulated restarts (EC-7), as in
