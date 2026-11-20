@@ -107,6 +107,7 @@
 - `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc` no longer take `seed`:
   the restarts are computed exactly. `aggregate_convergence(stopped="restart")`
   uses `seed=0` by default.
+
 ### Fixed
 
 - `get_eaf_pareto_data` and `get_eaf_diff_data` read each run as one set when
