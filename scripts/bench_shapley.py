@@ -2,7 +2,7 @@
 
     python scripts/bench_shapley.py [--groups 5 10 15] [--samples 5] [--rows 40]
 
-Writes the synthetic full-bbob set of ``bench_ert.py`` (24 functions, 6 dimensions,
+Builds the synthetic full-bbob set of ``bench.py`` (24 functions, 6 dimensions,
 15 runs per algorithm and pair) for the largest number of groups. For each number
 of groups n, builds the game of ``get_shapley_values`` on the first n algorithms
 (``get_portfolio_ecdf``, default targets, log budget axis) and times the default
@@ -15,12 +15,10 @@ sampled values.
 from __future__ import annotations
 
 import argparse
-import tempfile
 import time
-from pathlib import Path
 
 import polars as pl
-from bench_ert import write
+from bench import synthetic
 
 from iohinspector.metrics import envelope_value, get_portfolio_ecdf, shapley_values
 
@@ -37,11 +35,7 @@ def main() -> None:
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--rows", type=int, default=40)
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory() as tmp:
-        write(Path(tmp), max(args.groups), args.rows)
-        runs = pl.read_parquet(Path(tmp) / "runs.parquet")
-        data = pl.read_parquet(Path(tmp) / "trace.parquet").join(runs, on="run_id")
-    data = data.with_columns(pl.col("algorithm_name").cast(pl.String))
+    data = synthetic(max(args.groups), args.rows)
     print(f"{pl.thread_pool_size()} threads, samples={args.samples}\n")
     print(
         "| groups | steps | ECDF data (s) | closed form (s) | enumeration (s) "

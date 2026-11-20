@@ -3,14 +3,19 @@ Branch: wp/I22-performance
 Status: in progress
 
 ## Done
-- (nothing yet)
+- step 1: scripts/bench.py (was bench_ert.py): synthetic full bbob written as
+  format-v1 datasets (one per algorithm) or --datasets DIR of converted
+  datasets; cases through DataManager and the website's metrics.
 
 ## Next step
-Step 1: one benchmark harness (scripts/bench.py) on the synthetic full-bbob set of
-bench_ert.py and on converted COCO bbob archives; record baseline timings.
+Step 2: vectorise restarts.continued (per (run set, k) polars loop) and the
+ECDF step function; then DataManager pushdown and manifest validation cache.
 
 ## Decisions
-- Reuse bench_ert.write for the synthetic set; no new data generator.
+- bench_ert.py became bench.py (one harness); bench_shapley imports synthetic().
+- Real data: 13 bbob archives of the COCO archive (every 20th of bbob/, not
+  incomplete/), converted with `iohinspector convert --format coco`; kept in the
+  session scratchpad, not committed. Baseline = src of main via PYTHONPATH.
 
 ## Open questions / Blocked
 - none
