@@ -22,7 +22,7 @@ jobs:
           uv pip install -e ".[dev]" "polars>=${{ matrix.polars }},<$(( ${{ matrix.polars }} + 1 ))"
           uv run --no-sync python -c "import polars; print(polars.__version__)"
       - name: Test
-        run: uv run --no-sync pytest -q
+        run: uv run --no-sync pytest -q -n auto
       # Baseline only: existing code has many findings, cleaned up in later work packages.
       - name: Ruff (informational)
         continue-on-error: true
