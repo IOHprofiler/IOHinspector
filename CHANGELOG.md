@@ -95,8 +95,14 @@
   pair, as in COCO, by default (`stopped="restart"`) in `get_ecdf`,
   `get_ecdf_auc` (continuum and AOCC included), `get_shapley_values`,
   `get_portfolio_ecdf`, `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc`.
-  The ECDF is the expected value over the restarts, computed exactly from the
-  runs' runtimes (no seed); the fixed-budget results report `n_restarted`.
+  The restarts are sampled as cocopp's drawSP does (`restarts.SAMPLES`, 1000
+  draws per run set and number of failing runs, with a fixed seed, so every
+  call gives the same result and a group's curve does not depend on the other
+  groups). `stopped="restart_exact"` computes their expected value exactly
+  instead; its time grows with the horizon, so it warns
+  (`metrics.RestartCostWarning`) when it will be slow, and
+  `metrics.get_restart_cost` estimates it beforehand. The fixed-budget results
+  report `n_restarted`.
   `stopped="carry_forward"` gives the ECDF without restarts, as IOHanalyzer.
   With restarts, `get_ecdf` and `get_ecdf_auc` also report `n_restarted` per
   group (the runs that stopped before the largest budget computed). The
@@ -149,8 +155,8 @@
   COCO. Results differ from 0.2.x wherever a run stopped before the largest
   budget; `stopped="carry_forward"` gives the 0.2.x results.
 - `get_fixed_budget_ecdf` and `get_fixed_budget_ecdf_auc` no longer take `seed`:
-  the restarts are computed exactly. `aggregate_convergence(stopped="restart")`
-  uses `seed=0` by default.
+  their restarts use a fixed seed, or none with `stopped="restart_exact"`.
+  `aggregate_convergence(stopped="restart")` uses `seed=0` by default.
 
 ### Fixed
 

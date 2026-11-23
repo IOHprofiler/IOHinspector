@@ -102,8 +102,10 @@ when it reached t. A target that no run of the set reaches stays unreached.
 B_i is the run's `evals_used`, or else its last logged evaluation, as for the
 ERT ([runtime](runtime.md)).
 
-The ECDF with restarts is the expected value over these draws. It is computed
-from the runs' runtimes, not by simulating restarts. For a run set of n runs
+The ECDF with restarts is the expected value over these draws, E_t below. By
+default (`stopped = "restart"`) it is estimated by sampling the restarts, as
+cocopp does; `stopped = "restart_exact"` computes it from the runs' runtimes.
+For a run set of n runs
 and a target t, let F be the runs that do not reach t. A restarted run whose
 first run is drawn uniformly reaches t within b with probability
 
@@ -116,10 +118,30 @@ cocopp's derandomised first draw and FB-6's one chain per run, because the
 mean over the first runs is the uniform draw. With restarts, the target ECDF
 averages E_t(b) over the targets and runs in place of the indicator
 1[T_i(t) ≤ b] averaged over them. The rest (EC-2 to EC-4) is unchanged. It is
-the limit of cocopp's estimate as cocopp's sample size grows, and it needs no
-seed.
+the limit of cocopp's estimate as cocopp's sample size grows.
 
-*Computation.* Over the integer evaluations, the increments r of E_t solve
+*Sampling (the default).* With q = |F|/n, what restarts add is
+
+    E_t(b) − (1/n) Σ_{i ∉ F} 1[T_i(t) ≤ b] = (1/n) Σ_{i ∉ F} Σ_{m ≥ 1} q^m P(S_m ≤ b − T_i(t)),
+
+S_m being the sum of m budgets drawn uniformly from F. Per run set and F,
+1000 values s of S_M are drawn, M ≥ 1 with P(M = m) = q^(m−1)(1 − q), each
+standing for the weight q/(1 − q)/1000 = |F|/(n − |F|)/1000. Each hit T_i(t)
+of a run that reaches t is continued at T_i(t) + s for every draw s within
+the horizon. All run sets use the same uniform numbers (common random
+numbers, a fixed seed), so every call gives the same result and a group's
+ECDF does not depend on the other groups in the selection. Unlike cocopp,
+which samples each target separately and pairs each draw with one successful
+run drawn at random, the draws are shared by the targets of a run set with
+the same F and combined with every successful run, which lowers the
+variance. The draws' total weight is exact, so far beyond the runs the ECDF
+reaches its limit exactly. The cost grows with the hits and the distinct
+draws, not with the horizon. On the COCO data of
+[performance](../performance.md) (13 algorithms, all 24 functions, 20-D, up
+to 10⁷·D evaluations) it differs from the exact ECDF by at most 0.0008 and
+from its AUC by at most 0.0001.
+
+*Exact computation.* Over the integer evaluations, the increments r of E_t solve
 r = h + (1/n) Σ_{j ∈ F} r(· − B_j), with h the increments without restarts
 (1/n at each T_i(t)). One pass computes it in blocks of the smallest B_j,
 since r looks back by at least that much. The recursion is linear, so the
@@ -128,7 +150,11 @@ final values (a run fails t exactly when its best value is worse than t), so
 a run set has at most n different F. The pass stops at the horizon below, or
 earlier where the chance that a chain has not yet succeeded, at most
 (|F|/n)^k after k restarts, is below 10⁻¹⁷. Beyond that point E_t equals its
-limit up to rounding.
+limit up to rounding. Its time therefore grows with the horizon, times the
+number of distinct B_j, per curve: 167 s for the 20-D COCO set above, against
+0.4 s sampled. `get_restart_cost` estimates it from the curves without
+computing them, and the exact computation warns (`RestartCostWarning`) above
+about 10 s or 2 GB.
 
 *Horizon.* With restarts, the ECDF keeps rising beyond the largest evaluation
 of the runs. The target ECDF is computed up to the largest budget asked for:
@@ -370,7 +396,7 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
 | AUC | trapezoid, divided by x | – | – | exact, divided by b_hi − b_lo |
 | AOCC bounds | – | – | from aligned data | fixed per pair |
 | Ranks | `frank`, average ties, NA last | – | – | same |
-| Stopped runs | carried forward | simulated restarts, sampled (`drawSP`) | carried forward | simulated restarts by default, their expected value computed exactly (EC-7) |
+| Stopped runs | carried forward | simulated restarts, sampled (`drawSP`) | carried forward | simulated restarts by default, sampled as `drawSP` (EC-7); exact on request |
 | Fixed-budget ECDF | strict T < b, 50-point value grid; stopped runs carried forward | – (runtime ECDF with restarts) | – | inclusive, exact (EC-9); simulated restarts by default (EC-7) |
 | Fixed-budget AUC | trapezoid over the value grid in its order, divided by x | – | – | exact, divided by v_hi − v_lo (EC-10) |
 
@@ -402,8 +428,11 @@ continuum ECDF with bounds 1e-4 and 1e4 (EC-5).
   procedure ("Simulated restarts" above): the target ECDF and its AUC, the
   continuum ECDF and the AOCC, the ECDFs of the portfolio game (SH-1,
   [portfolio](portfolio.md)), and the fixed-budget ECDF and its AUC. The
-  ECDF is the expected value over the restarts, computed from the runs'
-  runtimes (E_t), so it needs no seed and every call gives the same result.
+  restarts are sampled (1000 draws per run set and F, a fixed seed), so every
+  call gives the same result; `stopped = "restart_exact"` computes their
+  expected value E_t exactly, at a cost that grows with the horizon. Sampling
+  is the default since 2026-11-23 (the user's decision), after I22 measured
+  the exact computation at 167 s for the 20-D COCO set up to 10⁷·D.
   A run that reached a target is not restarted for it. `stopped =
   "carry_forward"` gives the ECDF without restarts. The default differs from
   IOHanalyzer, which carries forward, and from FB-6's default for the
@@ -577,3 +606,22 @@ cells by at most 0.0005 (2-D) and 0.0006 (3-D), the test bound being 0.005;
 carrying forward instead differs by up to 0.071 and 0.099.
 
 Cost: `docs/notes/simulated-restarts.md`.
+
+## Implementation (I22b)
+
+`restarts.continued` and `restarts.gained` sample by default and run the
+exact renewal pass with `stopped = "restart_exact"`. `_draws` draws the
+values of S_M for many (run set, F) at once, with the same uniform numbers
+for each; `_shifts` keeps the distinct draws and their counts. The target
+ECDF continues each hit by each distinct draw of its curve, in batches of
+about `CHUNK` pairs, and sums them at the samples, weighted for the AUC, or
+returns them as steps (the portfolio game). The fixed-budget ECDF and the
+EAF look the draws up at b − T. The exact pass counts its work first
+(`_cost`), which `get_restart_cost` returns and which raises the warning.
+
+Tests: the sampled ECDF, AUC and fixed-budget ECDF are within 0.03 of the
+exact ones with 1000 draws and within 0.003 with 100000; the sampled
+restarts reach their limit exactly; a group's ECDF is the same with or
+without another group; both modes match cocopp (the sampled one within 5
+standard errors of both samples); chunking changes neither mode. The tests
+of E_t by its definition use `"restart_exact"`.

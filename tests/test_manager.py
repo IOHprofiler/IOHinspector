@@ -134,6 +134,17 @@ def test_select_run_ids(manager):
     assert set(selection.load()["run_id"]) == set(ids)
 
 
+def test_select_filters_the_trace_scan_by_pair(manager):
+    # the run ids are hashes, so the trace scan also gets the runs' functions and
+    # dimensions, which row-group statistics can skip on (format.md, trace)
+    ids = manager.select(function_ids=[1]).overview["run_id"][:2].to_list()
+    selection = manager.select(run_ids=ids)
+    for dataset in selection.datasets:
+        plan = dataset.trace.explain()
+        assert "function_id" in plan and "dimension" in plan
+    assert set(selection.load()["run_id"]) == set(ids)
+
+
 def test_load_columns(manager):
     df = manager.select(function_ids=[1]).load(include_columns=["function_id"])
     assert df.columns == ["run_id", "function_id", "evaluations", "raw_y", "is_final"]
