@@ -42,7 +42,7 @@ dev = [
   "pytest",
   "pytest-xdist",
   "hypothesis",
-  "ruff",
+  "ruff>=0.17,<0.18",
   "pyright",
   "coverage",
   "ioh",
