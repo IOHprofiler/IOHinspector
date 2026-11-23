@@ -20,7 +20,7 @@ import numpy as np
 import polars as pl
 from scipy import stats
 
-from ..targets import PAIR, get_target_dt
+from ..targets import PAIR, targets_per_pair
 from .distributions import get_runtime_sample, get_value_sample
 from .stats import hochberg, holm
 from .utils import runs_of
@@ -88,13 +88,10 @@ def get_dsc_sample(  # pylint: disable=too-many-arguments
         pl.DataFrame: ``function_id``, ``dimension``, the ``by`` columns,
             ``run_id``, ``target`` and ``value``.
     """
-    if perspective not in ("fixed_target", "fixed_budget"):
-        raise ValueError(f"perspective {perspective!r}: fixed_target or fixed_budget")
     if na not in ("par", "ert", "remove"):
         raise ValueError(f"na {na!r}: par, ert or remove")
     options = {"fval_var": fval_var, "eval_var": eval_var, "maximization": maximization}
-    if targets is None:
-        targets = get_target_dt(data, perspective, by=by, **options)
+    targets = targets_per_pair(data, targets, perspective, by=by, **options)
     if perspective == "fixed_target":
         sampler = partial(_runtimes, by=by, na=na, k=k, **options)
     else:

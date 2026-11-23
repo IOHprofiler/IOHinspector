@@ -180,11 +180,10 @@ def get_target_dt(  # pylint: disable=too-many-arguments
     of the runs' final best values, 98 % when maximising; then the best of these.
     ``"fixed_budget"``: the largest logged evaluation of the pair.
     """
+    _check_perspective(perspective)
     if perspective == "fixed_budget":
         target = pl.col(eval_var).max().cast(pl.Float64)
         return data.group_by(PAIR).agg(target.alias("target")).sort(PAIR)
-    if perspective != "fixed_target":
-        raise ValueError(f"perspective {perspective!r}: fixed_target or fixed_budget")
     best = pl.max if maximization else pl.min
     quantile = pl.col("final").quantile(0.98 if maximization else 0.02, "linear")
     return (
@@ -195,4 +194,34 @@ def get_target_dt(  # pylint: disable=too-many-arguments
         .group_by(PAIR)
         .agg(best("target"))
         .sort(PAIR)
+    )
+
+
+def _check_perspective(perspective: str) -> None:
+    if perspective not in ("fixed_target", "fixed_budget"):
+        raise ValueError(f"perspective {perspective!r}: fixed_target or fixed_budget")
+
+
+def targets_per_pair(  # pylint: disable=too-many-arguments
+    data: pl.DataFrame,
+    targets: pl.DataFrame | None,
+    perspective: str,
+    *,
+    maximization: bool = False,
+    fval_var: str = "raw_y",
+    eval_var: str = "evaluations",
+    by: Sequence[str] = ("algorithm_name",),
+) -> pl.DataFrame:
+    """``targets`` (targets or budgets per pair), or one default per pair
+    (``get_target_dt``) when None, after checking ``perspective``."""
+    _check_perspective(perspective)
+    if targets is not None:
+        return targets
+    return get_target_dt(
+        data,
+        perspective,
+        maximization=maximization,
+        fval_var=fval_var,
+        eval_var=eval_var,
+        by=by,
     )
