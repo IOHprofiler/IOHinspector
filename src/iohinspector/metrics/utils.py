@@ -143,11 +143,7 @@ def normalize_objectives(
     for i, col in enumerate(obj_vars):
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
         is_max = maximize[col] if isinstance(maximize, dict) else maximize
-        lb, ub = bounds[col] if bounds and col in bounds else (None, None)
-        if lb is None:
-            lb = result[col].min() if ndpoints is None else ndpoints[:, i].min()
-        if ub is None:
-            ub = result[col].max() if ndpoints is None else ndpoints[:, i].max()
+        lb, ub = _bounds(result, col, i, bounds, ndpoints)
         v = pl.col(col)
         if use_log:
             if lb <= 0:
@@ -167,6 +163,17 @@ def normalize_objectives(
         result = result.with_columns(norm_expr.alias(name))
 
     return result
+
+
+def _bounds(data: pl.DataFrame, col: str, i: int, bounds, ndpoints):
+    """The given bounds of ``col``, else its smallest and largest value (of the
+    nondominated points ``ndpoints``, column ``i``, if given)."""
+    lb, ub = bounds[col] if bounds and col in bounds else (None, None)
+    if lb is None:
+        lb = data[col].min() if ndpoints is None else ndpoints[:, i].min()
+    if ub is None:
+        ub = data[col].max() if ndpoints is None else ndpoints[:, i].max()
+    return lb, ub
 
 
 def add_normalized_objectives(
