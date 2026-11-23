@@ -30,6 +30,7 @@ from .schema import (
     DESCRIPTORS_SCHEMA,
     DESCRIPTORS_SORT_KEYS,
     RUNS_FILE,
+    TYPED_VALUE_COLUMN,
     descriptor_key_problem,
 )
 
@@ -261,14 +262,11 @@ def _run_problems(df: pl.DataFrame, runs: pl.DataFrame) -> list[str]:
 def _value_problems(df: pl.DataFrame) -> list[str]:
     """Each row's value is canonical for its type and matches its typed column."""
     problems = []
-    typed = {"int": "value_int", "float": "value_float", "bool": "value_bool"}
     for kind in DESCRIPTOR_TYPES:
         rows = df.filter(pl.col("type") == kind)
         if not rows.height:
             continue
-        unused = [c for t, c in typed.items() if t != kind]
-        if kind not in typed:
-            unused = list(typed.values())
+        unused = [c for t, c in TYPED_VALUE_COLUMN.items() if t != kind]
         extra = rows.filter(
             pl.any_horizontal([pl.col(c).is_not_null() for c in unused])
         )

@@ -71,7 +71,6 @@ _INPUT_SLICE_ROWS = 2**18
 _MIN_MEMORY_LIMIT = 2**20
 _MIN_SPILL_ROWS = 2**12
 _MIN_BATCH_ROWS = 2**10
-_PARQUET_OPTIONS = PARQUET_OPTIONS
 _OBJECTIVE = re.compile(r"y[0-9]+")
 
 
@@ -725,7 +724,7 @@ class _RowGroupWriter:  # pylint: disable=too-many-instance-attributes
         self.schema = schema
         self.min_rows = min(min_rows, max_rows)
         self.max_rows = max_rows
-        self.writer = pq.ParquetWriter(str(file), schema, **_PARQUET_OPTIONS)
+        self.writer = pq.ParquetWriter(str(file), schema, **PARQUET_OPTIONS)
         self.parts: list[pl.DataFrame] = []
         self.rows = 0
         self.bounds: list[int] = []  # buffered row positions where the group changes

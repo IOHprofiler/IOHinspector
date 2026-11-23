@@ -199,7 +199,6 @@ def _trace_batch(batch: pl.DataFrame, labels: pl.LazyFrame) -> pl.DataFrame:
 @dataclass
 class _State:  # pylint: disable=too-many-instance-attributes
     report: VerifyReport
-    manifest: dict[str, Any]
     runs: pl.DataFrame
     listed: dict[str, dict[str, Any]]
     archives: dict[str, dict[str, Any]]
@@ -446,7 +445,6 @@ def _state(dataset: Path, report: VerifyReport) -> _State:
         primaries.setdefault(_stem(path), set()).add(path)
     return _State(
         report,
-        manifest,
         runs,
         {s["path"]: s for s in manifest.get("sources", [])},
         {a["path"]: a for a in manifest.get("archives", [])},
