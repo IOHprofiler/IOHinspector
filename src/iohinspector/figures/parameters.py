@@ -8,7 +8,7 @@ import polars as pl
 
 from ..metrics import get_ecdf_auc
 from ..targets import get_ecdf_targets
-from .base import Curve, Plot, categories, library_kind, with_labels
+from .base import Curve, Plot, categories, library_kind, matrix, with_labels
 
 MEASURE = "ECDF AUC"
 
@@ -98,9 +98,7 @@ def map_plot(panel, frame: pl.DataFrame) -> Plot:
         raise ValueError("parameter_map: two parameters in data.by")
     px, py = panel.data.by
     xs, ys = frame[px].unique().sort(), frame[py].unique().sort()
-    z = np.full((len(ys), len(xs)), np.nan)
-    for (vx, vy), rows in frame.group_by(px, py):
-        z[ys.index_of(vy), xs.index_of(vx)] = rows["auc"].mean()  # type: ignore[index]
+    z = matrix(frame, py, px, "auc", ys, xs)
     ex, ey = (np.arange(len(v) + 1) - 0.5 for v in (xs, ys))
     return Plot(
         [Curve(MEASURE, ex, ey, z=z)],

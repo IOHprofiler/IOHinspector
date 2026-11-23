@@ -8,9 +8,7 @@ from ..metrics import (
     get_cumulative_difference,
     get_ecdf,
     get_ks_tests,
-    get_runtime_sample,
     get_shapley_values,
-    get_value_sample,
     get_win_fractions,
     group_label,
 )
@@ -18,14 +16,17 @@ from ..targets import get_ecdf_targets
 from .base import (
     Curve,
     Plot,
+    budget_at,
     categories,
     curves,
-    default_budget,
-    default_target,
     edges,
+    evals_axis,
     library_kind,
+    matrix,
     one_pair,
-    pairs,
+    per_pair,
+    sample_at,
+    target_at,
     with_labels,
 )
 from .spec import Annotation
@@ -33,13 +34,6 @@ from .spec import Annotation
 TARGET_ROWS, BUDGET_COLUMNS = 21, 31  # the cells of the target-by-budget map
 EMPTY = 0.02  # cells where a probability, or a difference, is below this are empty
 TIE = 0.01  # probabilities this close tie in "best of"
-
-
-def _with_pair(frame: pl.DataFrame, runs: pl.DataFrame) -> pl.DataFrame:
-    return frame.with_columns(
-        function_id=pl.lit(runs["function_id"][0]),
-        dimension=pl.lit(runs["dimension"][0]),
-    )
 
 
 def _heatmap(panel, frame: pl.DataFrame, value: str, label: str, fmt: str) -> Plot:
@@ -50,11 +44,8 @@ def _heatmap(panel, frame: pl.DataFrame, value: str, label: str, fmt: str) -> Pl
     vs = frame.select(pl.col(f"{c}_vs").alias(c) for c in by)
     cols = vs.select(group_label(by, template).alias("col"))["col"]
     names = sorted({*rows, *cols})
-    index = {n: i for i, n in enumerate(names)}
-    z = np.full((len(names), len(names)), np.nan)
-    cells = frame.select(row=rows, col=cols, v=pl.col(value).cast(pl.Float64))
-    for (row, col), group in cells.group_by("row", "col"):
-        z[index[row], index[col]] = group["v"].mean()  # type: ignore[index]
+    cells = frame.select(row=rows, col=cols, v=pl.col(value))
+    z = matrix(cells, "row", "col", "v", names, names)
     e = np.arange(len(names) + 1) - 0.5
     axis = categories(names)
     return Plot(
@@ -74,27 +65,13 @@ def tests_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
     the default being the pair's largest budget or the loosest target all runs
     reach."""
     d = panel.data
-    out = []
-    for run in pairs(runs):
-        if d.measure == "runtime":
-            target = d.at if d.at is not None else default_target(run, d.maximization)
-            sample = get_runtime_sample(
-                run, [target], d.by, maximization=d.maximization
-            )
-            ks = get_ks_tests(sample, "runtime", d.by, view=["target"], **d.options)
-        else:
-            budget = d.at or default_budget(run)
-            sample = get_value_sample(run, [budget], d.by, maximization=d.maximization)
-            ks = get_ks_tests(
-                sample,
-                "value",
-                d.by,
-                view=["budget"],
-                higher_is_better=d.maximization,
-                **d.options,
-            )
-        out.append(_with_pair(ks, run))
-    return pl.concat(out)
+
+    def tests(run: pl.DataFrame) -> pl.DataFrame:
+        sample, value, view = sample_at(d, run)
+        values = {"higher_is_better": d.maximization} if value == "value" else {}
+        return get_ks_tests(sample, value, d.by, view=[view], **values, **d.options)
+
+    return per_pair(runs, tests)
 
 
 def tests_plot(panel, frame: pl.DataFrame) -> Plot:
@@ -152,41 +129,19 @@ def target_budget_plot(panel, frame: pl.DataFrame) -> Plot:
     frame = with_labels(panel, frame)
     targets = frame["target"].unique(maintain_order=True)  # easiest first
     budgets = frame["evaluations"].unique().sort()
-    p = {}
-    for (label,), rows in frame.group_by("label"):
-        z = np.full((len(targets), len(budgets)), np.nan)
-        i = {t: k for k, t in enumerate(targets)}
-        j = {b: k for k, b in enumerate(budgets)}
-        for t, b, v in rows.select("target", "evaluations", "ecdf").iter_rows():
-            z[i[t], j[b]] = v
-        p[str(label)] = z
-    ranked = sorted(p, key=lambda k: -np.nanmean(p[k]))
+    p = {
+        str(label): matrix(rows, "target", "evaluations", "ecdf", targets, budgets)
+        for (label,), rows in frame.group_by("label", maintain_order=True)
+    }
     mode, focus = d.mode or "best", d.focus or min(p)
-    if mode not in ("best", "one", "vs_best"):
+    if mode not in SHOW:
         raise ValueError(f"target_budget mode {mode!r}: best, one or vs_best")
     if mode != "best" and focus not in p:
         raise ValueError(f"target_budget focus {focus!r}: one of {sorted(p)}")
     x, y = edges(budgets, log=True), edges(targets, log=True)
-    if mode == "one":
-        shown = {focus: p[focus]}
-    elif mode == "vs_best":
-        others = [z for k, z in p.items() if k != focus]
-        if not others:
-            raise ValueError("target_budget vs_best: needs a second group")
-        diff = p[focus] - np.max(others, axis=0)
-        shown = {focus: np.where(abs(diff) < EMPTY, np.nan, diff)}
-    else:
-        top = np.max([p[k] for k in ranked], axis=0)
-        won = np.full(top.shape, "", dtype=object)
-        for k in ranked[::-1]:  # the better ranked group last: it wins ties
-            won[p[k] >= top - TIE] = k
-        won[top < EMPTY] = ""
-        shown = {k: np.where(won == k, p[k], np.nan) for k in ranked}
-        shown = {k: z for k, z in shown.items() if np.isfinite(z).any()}
-    unit = "# f-evals / dimension" if d.per_dimension else "# f-evals"
     return Plot(
-        [Curve(k, x, y, z=z, family=k) for k, z in shown.items()],
-        x={"label": unit, "scale": "log", "ticks": "exponent", "lim": [x[0], x[-1]]},
+        [Curve(k, x, y, z=z, family=k) for k, z in SHOW[mode](p, focus).items()],
+        x=evals_axis(d.per_dimension, lim=[x[0], x[-1]]),
         y={
             "label": "target",
             "scale": "log",
@@ -197,6 +152,39 @@ def target_budget_plot(panel, frame: pl.DataFrame) -> Plot:
     )
 
 
+def _best(p: dict, focus) -> dict:
+    """Each cell in the colour of the group most likely to have reached the
+    target, ties within ``TIE`` to the better ranked (larger mean); cells below
+    ``EMPTY`` empty."""
+    ranked = sorted(p, key=lambda k: -np.nanmean(p[k]))
+    top = np.max([p[k] for k in ranked], axis=0)
+    won = np.full(top.shape, "", dtype=object)
+    for k in ranked[::-1]:  # the better ranked group last: it wins ties
+        won[p[k] >= top - TIE] = k
+    won[top < EMPTY] = ""
+    shown = {k: np.where(won == k, p[k], np.nan) for k in ranked}
+    return {k: z for k, z in shown.items() if np.isfinite(z).any()}
+
+
+def _one(p: dict, focus) -> dict:
+    """The probability of the ``focus`` group."""
+    return {focus: p[focus]}
+
+
+def _vs_best(p: dict, focus) -> dict:
+    """The ``focus`` group's probability less the best of the others, empty
+    within ``EMPTY``."""
+    others = [z for k, z in p.items() if k != focus]
+    if not others:
+        raise ValueError("target_budget vs_best: needs a second group")
+    diff = p[focus] - np.max(others, axis=0)
+    return {focus: np.where(abs(diff) < EMPTY, np.nan, diff)}
+
+
+#: the looks of the target-by-budget map (``Data.mode``)
+SHOW = {"best": _best, "one": _one, "vs_best": _vs_best}
+
+
 def cumulative_difference_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
     """``get_cumulative_difference`` of the two groups of one pair, with its
     ``label`` ("A − B"): at the target ``Data.at`` for ``measure="runtime"``
@@ -204,11 +192,9 @@ def cumulative_difference_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
     d = panel.data
     run = one_pair(runs, "cumulative_difference")
     if d.measure == "runtime":
-        at = {
-            "target": d.at if d.at is not None else default_target(run, d.maximization)
-        }
+        at = {"target": target_at(d, run)}
     else:
-        at = {"budget": d.at or default_budget(run)}
+        at = {"budget": budget_at(d, run)}
     options = {"seed": 0} | d.options  # the same band every time
     result = get_cumulative_difference(
         run, by=d.by, maximization=d.maximization, **at, **options

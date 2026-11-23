@@ -14,7 +14,7 @@ import polars as pl
 
 from ..metrics.ecdf import get_ecdf
 from ..targets import get_ecdf_targets
-from .base import Curve, Kind, Plot, with_labels
+from .base import Curve, Kind, Plot, evals_axis, with_labels
 
 
 def ecdf_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
@@ -49,10 +49,9 @@ def ecdf_plot(panel, frame: pl.DataFrame) -> Plot:
         _curve(label, rows, start, end)
         for (label,), rows in frame.group_by("label", maintain_order=True)
     ]
-    unit = "# f-evals / dimension" if panel.data.per_dimension else "# f-evals"
     return Plot(
         curves,
-        x={"label": unit, "scale": "log", "ticks": "exponent", "lim": [start, end]},
+        x=evals_axis(panel.data.per_dimension, lim=[start, end]),
         y={"label": "Fraction of targets reached", "lim": [0, 1]},
         step=True,
     )

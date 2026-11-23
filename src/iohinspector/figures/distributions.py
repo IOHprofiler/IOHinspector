@@ -7,35 +7,23 @@ target all runs reach or the largest budget."""
 import numpy as np
 import polars as pl
 
-from ..metrics import get_histogram, get_runtime_sample, get_value_sample, get_violin
+from ..metrics import get_histogram, get_violin
 from .base import (
     Curve,
     Plot,
     categories,
-    default_budget,
-    default_target,
     finite,
     library_kind,
     log_if_positive,
     one_pair,
+    sample_at,
     with_labels,
 )
 
 
 def _sample(panel, runs: pl.DataFrame, kind: str) -> tuple[pl.DataFrame, str, str]:
     """The sample, its value column and its view column."""
-    d = panel.data
-    run = one_pair(runs, kind)
-    if d.measure == "runtime":
-        target = d.at if d.at is not None else default_target(run, d.maximization)
-        sample = get_runtime_sample(run, [target], d.by, maximization=d.maximization)
-        return sample, "runtime", "target"
-    budget = d.at or default_budget(run)
-    return (
-        get_value_sample(run, [budget], d.by, maximization=d.maximization),
-        "value",
-        "budget",
-    )
+    return sample_at(panel.data, one_pair(runs, kind))
 
 
 def _value(frame: pl.DataFrame) -> str:
