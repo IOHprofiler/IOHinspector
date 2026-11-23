@@ -14,9 +14,17 @@ Targets are compared as levels, larger is better: -f when minimising, f when
 maximising, or the normalised quality of the continuum ECDF. A run fails a target
 exactly when its final level is below the target's, so F is the k runs of the set
 with the lowest final levels, k being the number of final levels below the target.
+
+By default (``stopped="restart"``) the restarts are sampled, as cocopp's drawSP
+does: per run set and k, ``SAMPLES`` draws of the evaluations that the restarts
+add before a run that reaches t (``_draws``). The exact renewal
+(``stopped="restart_exact"``) costs time in proportion to the horizon
+(``exact_cost``).
 """
 
 import math
+import warnings
+from functools import partial
 
 import numpy as np
 import polars as pl
@@ -27,13 +35,23 @@ from .utils import runs_of
 EPSILON = 1e-17
 #: evaluations per chunk of the renewal pass (``continued``), which bounds its memory
 CHUNK = 1 << 20
+#: draws per run set and number of failed runs of the sampled restarts, and their seed
+SAMPLES = 1000
+SEED = 20261123
+#: ``stopped`` for the exact restarts
+EXACT = "restart_exact"
+#: the exact restarts warn above this estimate (``exact_cost``)
+WARN_SECONDS, WARN_GB = 10.0, 2.0
 
 
 def restarts(stopped: str) -> bool:
-    """Whether ``stopped`` asks for simulated restarts (EC-7, FB-6)."""
-    if stopped not in ("restart", "carry_forward"):
-        raise ValueError(f"stopped is 'restart' or 'carry_forward', not {stopped!r}")
-    return stopped == "restart"
+    """Whether ``stopped`` asks for simulated restarts (EC-7, FB-6): ``"restart"``
+    (sampled) or ``"restart_exact"``, else ``"carry_forward"``."""
+    if stopped not in ("restart", EXACT, "carry_forward"):
+        raise ValueError(
+            f"stopped is 'restart', {EXACT!r} or 'carry_forward', not {stopped!r}"
+        )
+    return stopped != "carry_forward"
 
 
 def run_sets(data: pl.DataFrame, by: list[str], eval_var: str, final: pl.Expr):
@@ -205,14 +223,166 @@ def _batches(size: np.ndarray, limit: int):
         first = last
 
 
-def continued(  # pylint: disable=R0914
+class RestartCostWarning(UserWarning):
+    """Exact simulated restarts (``stopped="restart_exact"``) will be slow or large.
+    Raise it as an error to guard against them:
+    ``warnings.simplefilter("error", RestartCostWarning)``."""
+
+
+#: seconds per step of the renewal pass (an evaluation times a failed budget), per
+#: evaluation copied between windows, and per evaluation of a windowed curve,
+#: measured for get_ecdf on one laptop (Apple M5, ``docs/performance.md``): a
+#: rough guide, within a factor of about 2 there
+PER_STEP, PER_COPY, PER_WINDOWED = 3.0e-10, 1.5e-10, 1.5e-9
+
+
+def _cost(size: np.ndarray, values=None, counts=None) -> dict:
+    """The estimated cost of the exact renewal pass over curves of ``size``
+    evaluations whose failed runs have the distinct budgets ``values`` (rows,
+    padded where ``counts`` is 0): ``curves``, ``evaluations``, ``seconds`` and
+    ``gigabytes`` (the arrays of the largest windowed curve on top of the data).
+    Counted from the curves without computing them."""
+    cost = {"curves": int(np.count_nonzero(size)), "evaluations": int(size.sum())}
+    if not cost["curves"]:
+        return {**cost, "seconds": 0.0, "gigabytes": 0.0}
+    used = counts > 0
+    steps = np.sum(size * (used & (values < size[:, None])).sum(axis=1))
+    history = np.minimum(np.where(used, values, 0).max(axis=1), size)
+    long = size > CHUNK
+    copied = np.sum(np.ceil(size[long] / CHUNK) * history[long])
+    seconds = PER_STEP * steps + PER_COPY * copied + PER_WINDOWED * size[long].sum()
+    peak = 4 * history[long].max(initial=0) + 16 * min(CHUNK, int(size.max()))
+    return {**cost, "seconds": float(seconds), "gigabytes": float(8 * peak / 2**30)}
+
+
+def _warn(cost: dict) -> None:
+    if cost["seconds"] > WARN_SECONDS or cost["gigabytes"] > WARN_GB:
+        warnings.warn(
+            f"exact restarts (stopped={EXACT!r}) will take roughly "
+            f"{cost['seconds']:.0f} s and {cost['gigabytes']:.1f} GB here: "
+            f"{cost['curves']} curves, {cost['evaluations']:.2g} evaluations in "
+            "all, which grow with the horizon. Sampled restarts "
+            "(stopped='restart') or a smaller horizon cost far less.",
+            RestartCostWarning,
+            stacklevel=2,
+        )
+
+
+def _draws(first, n, k, used, horizon) -> np.ndarray:
+    """``SAMPLES`` draws per row of what restarts add before a run that reaches:
+    the sum of M budgets drawn uniformly from the row's k failed runs, M >= 1 with
+    P(M = m) = q^(m-1) (1 - q), q = k/n, -1 past the row's ``horizon``. Rows are
+    arrays: ``first``, the row's run set's first run in ``used`` (B_i by final
+    level, so its failed runs follow), n, k and ``horizon``. As E's renewal
+    function less 1 is sum_m q^m P(m budgets sum to at most x), a draw stands for
+    the weight k / (n - k) / SAMPLES. The same uniforms serve every row (common
+    random numbers): a row's draws depend only on its own runs."""
+    rng = np.random.default_rng(SEED)
+    count = 1 + np.floor(np.log1p(-rng.random(SAMPLES)) / np.log(k / n)[:, None])
+    total = np.zeros(count.shape, np.int64)
+    flat, count = total.reshape(-1), count.reshape(-1)
+    live, m = np.arange(flat.size), 0
+    while live.size:
+        m += 1
+        u = rng.random(SAMPLES)
+        row, column = np.divmod(live, SAMPLES)
+        flat[live] += used[first[row] + (u[column] * k[row]).astype(np.int64)]
+        live = live[(count[live] > m) & (flat[live] <= horizon[row])]
+    return np.where(total <= horizon[:, None], total, -1)
+
+
+def _shifts(runs: pl.DataFrame, run_set, k, horizon):
+    """Per row (arrays ``run_set``, ``k`` and ``horizon``): its distinct draws
+    (``_draws``) within the horizon, ascending, at ``values[bounds[i]:bounds[i +
+    1]]`` with their ``counts``, and the weight of one draw. ``runs`` is sorted
+    by run set and final level (``run_sets``)."""
+    sets, used = runs["run_set"].to_numpy(), runs["evals_used"].to_numpy()
+    first = np.searchsorted(sets, run_set, "left")
+    n = np.searchsorted(sets, run_set, "right") - first
+    found: list = [], [], []
+    step = max(1, CHUNK // SAMPLES)
+    for lo in range(0, k.size, step):
+        part = slice(lo, lo + step)
+        draws = np.sort(_draws(first[part], n[part], k[part], used, horizon[part]))
+        row = np.repeat(np.arange(lo, lo + draws.shape[0]), SAMPLES)
+        flat = draws.reshape(-1)
+        start = np.flatnonzero(
+            np.r_[True, (flat[1:] != flat[:-1]) | (row[1:] != row[:-1])]
+        )
+        keep = flat[start] >= 0
+        for out, x in zip(
+            found, (row[start], flat[start], np.diff(np.r_[start, flat.size]))
+        ):
+            out.append(x[keep])
+    row, values, counts = (np.concatenate(x) for x in found)
+    bounds = np.searchsorted(row, np.arange(k.size + 1))
+    return values, counts, bounds, k / (n - k) / SAMPLES
+
+
+def _sampled(hits, curves, runs, eval_var, cuts, weigh):  # pylint: disable=R0914
+    """``continued`` by sampling: a hit of a curve at T with weight w is continued
+    at T + s for each distinct draw s of its run set and k (``_shifts``), with w
+    times the weight of its draws. (curve, evaluation, increment) arrays, in
+    batches of about ``CHUNK`` pairs of a hit and a draw."""
+    horizon = curves["horizon"].to_numpy()
+    if cuts is not None:
+        horizon = np.minimum(horizon, [c[-1] if c.size else -1 for c in cuts])
+    rows = curves.select("run_set", "k", horizon=pl.Series(horizon))
+    unique = rows.group_by("run_set", "k").agg(pl.col("horizon").max())
+    unique = unique.sort("run_set", "k").with_row_index("_u")
+    row = rows.join(unique.drop("horizon"), on=["run_set", "k"], maintain_order="left")
+    row = row["_u"].to_numpy().astype(np.int64)
+    values, counts, sbound, mass = _shifts(
+        runs, *(unique[c].to_numpy() for c in ("run_set", "k", "horizon"))
+    )
+    hits = hits.group_by("_curve", eval_var).agg(pl.col("inc").sum())
+    hits = hits.sort("_curve", eval_var)
+    curve, time = hits["_curve"].to_numpy(), hits[eval_var].to_numpy().astype(np.int64)
+    weight = hits["inc"].to_numpy()
+    hbound = np.searchsorted(curve, np.arange(curves.height + 1))
+    nh, ns = np.diff(hbound), np.diff(sbound)[row]
+    pairs = nh * ns
+    if cuts is not None:
+        width = np.array([c.size for c in cuts])
+        stride = int(max((c[-1] for c in cuts if c.size), default=0)) + 2
+        owner = np.repeat(np.arange(len(cuts)), width)
+        points = np.concatenate(cuts) if width.sum() else np.zeros(0, np.int64)
+        sums = np.zeros(points.size)
+    parts = []
+    for part in _batches(pairs, CHUNK):
+        c = np.repeat(np.arange(part.start, part.stop), pairs[part])
+        j = np.arange(c.size) - np.repeat(
+            np.cumsum(pairs[part]) - pairs[part], pairs[part]
+        )
+        hit = hbound[c] + j // ns[c]
+        draw = sbound[row[c]] + j % ns[c]
+        evaluation = time[hit] + values[draw]
+        inc = weight[hit] * counts[draw] * mass[row[c]]
+        keep = evaluation <= horizon[c]
+        c, evaluation, inc = c[keep], evaluation[keep], inc[keep]
+        if cuts is not None:  # each at the first sample at or after it
+            at = np.searchsorted(owner * stride + points, c * stride + evaluation)
+            sums += np.bincount(at, inc, points.size)
+        elif weigh is not None:
+            parts.append(weigh(c, evaluation, inc))
+        else:
+            parts.append((c, evaluation, inc))
+    if cuts is not None:
+        parts.append((owner, points, sums))
+    return parts
+
+
+def continued(  # pylint: disable=R0913
     hits: pl.DataFrame,
     runs: pl.DataFrame,
     key: list[str],
     eval_var: str,
     at: pl.DataFrame | None = None,
     weighted: pl.Expr | None = None,
-) -> pl.DataFrame:
+    *,
+    exact: bool = False,
+    cost_only: bool = False,
+):
     """The increments that restarts add to ``hits`` (``key``, ``run_set``, ``k``,
     ``eval_var`` the hitting time, ``inc`` and ``horizon``, in evaluations): per
     curve of ``key`` (within one run set) and k, r - h up to the horizon. Rows per
@@ -223,15 +393,66 @@ def continued(  # pylint: disable=R0914
     expression of ``key`` and ``eval_var``), only each curve's sum of the
     increments times it, at evaluation 0 (in rows of a chunk each).
 
-    Curves of up to ``CHUNK`` evaluations are computed together in arrays of about
-    that size, longer ones one at a time in windows (``_windows``)."""
+    Sampled (``_sampled``) unless ``exact`` (``_exact``); with ``cost_only`` only
+    the estimated cost of the exact computation (``exact_cost``)."""
     hits = hits.filter(pl.col("k") > 0).with_row_index("_row")
     first = pl.col("_row").min().over([*key, "k"]).rank("dense").cast(pl.Int64) - 1
     hits = hits.with_columns(_curve=first).sort("_curve", maintain_order=True)
     schema = {**hits.select(key).schema, eval_var: pl.Int64, "inc": pl.Float64}
     if hits.is_empty():
-        return pl.DataFrame(schema=schema)
+        return (
+            _cost(np.zeros(0, np.int64)) if cost_only else pl.DataFrame(schema=schema)
+        )
     curves = hits.group_by("_curve").agg(pl.all().first()).sort("_curve")
+    cuts = None
+    if at is not None:
+        at = at.group_by(key).agg(pl.col(eval_var).unique().sort())
+        points = {r[:-1]: np.asarray(r[-1], np.int64) for r in at.rows()}
+        none = np.zeros(0, np.int64)
+        cuts = [points.get(r, none) for r in curves.select(key).rows()]
+    names = curves.select(key)
+    weigh = None
+    if weighted is not None:
+        weigh = partial(_weigh, names, eval_var, weighted)
+    if not (exact or cost_only):
+        found = _sampled(hits, curves, runs, eval_var, cuts, weigh)
+    else:
+        found = _exact(hits, curves, runs, eval_var, cuts, weigh, cost_only)
+        if cost_only:
+            return found
+    if not found:
+        return pl.DataFrame(schema=schema)
+    which, evaluation, inc = (np.concatenate(x) for x in zip(*found))
+    keep = np.flatnonzero(inc)
+    order = keep[np.argsort(which[keep], kind="stable")]  # the long curves came last
+    return names[which[order]].with_columns(
+        pl.Series(eval_var, evaluation[order], pl.Int64), pl.Series("inc", inc[order])
+    )
+
+
+def _weigh(names, eval_var, weighted, which, evaluation, inc):
+    """Per curve in ``which`` (rows of ``names``, its ``key``), the sum of its
+    ``inc`` times ``weighted``, at evaluation 0, so that memory stays bounded."""
+    rows = names[which].with_columns(
+        pl.Series("_c", which),
+        pl.Series(eval_var, evaluation, pl.Int64),
+        pl.Series("inc", inc),
+    )
+    rows = rows.group_by("_c").agg((pl.col("inc") * weighted).sum())
+    return (
+        rows["_c"].to_numpy(),
+        np.zeros(rows.height, np.int64),
+        rows["inc"].to_numpy(),
+    )
+
+
+def _exact(  # pylint: disable=R0913,R0914,R0917
+    hits, curves, runs, eval_var, cuts, weigh, cost_only
+):
+    """``continued`` by the renewal pass: (curve, evaluation, increment) arrays,
+    or with ``cost_only`` its estimated cost. Curves of up to ``CHUNK``
+    evaluations are computed together in arrays of about that size, longer ones
+    one at a time in windows (``_windows``)."""
     time, curve = hits[eval_var].to_numpy().astype(int), hits["_curve"].to_numpy()
     weight = hits["inc"].to_numpy()
     bounds = np.searchsorted(curve, np.arange(curves.height + 1))
@@ -241,32 +462,24 @@ def continued(  # pylint: disable=R0914
         runs, curves["run_set"].to_numpy(), curves["k"].to_numpy()
     )
     size = _lengths(n, values, counts, latest, curves["horizon"].to_numpy())
-    cuts: list[np.ndarray] = []
-    if at is not None:
-        at = at.group_by(key).agg(pl.col(eval_var).unique().sort())
-        points = {r[:-1]: np.asarray(r[-1], np.int64) for r in at.rows()}
-        none = np.zeros(0, np.int64)
-        cuts = [points.get(r, none) for r in curves.select(key).rows()]
+    if cuts is not None:
         size = np.minimum(size, [c[-1] + 1 if c.size else 0 for c in cuts])
     size = np.where(values[:, 0] + lowest < size, size, 0)  # else no restart in it
+    cost = _cost(size, values, counts)
+    if cost_only:
+        return cost
+    _warn(cost)
 
     def terms(c):
         d = np.count_nonzero(counts[c])
         return list(zip(values[c, :d].tolist(), (counts[c, :d] / n[c]).tolist()))
 
-    parts = []
-
     def add(which, evaluation, inc):
-        if weighted is not None:  # summed per chunk, so memory stays bounded
-            rows = curves.select(key)[which].with_columns(
-                pl.Series("_c", which),
-                pl.Series(eval_var, evaluation, pl.Int64),
-                pl.Series("inc", inc),
-            )
-            rows = rows.group_by("_c").agg((pl.col("inc") * weighted).sum())
-            which, inc = rows["_c"].to_numpy(), rows["inc"].to_numpy()
-            evaluation = np.zeros(which.size, np.int64)
-        parts.append((which, evaluation, inc))
+        parts.append(
+            (which, evaluation, inc) if weigh is None else weigh(which, evaluation, inc)
+        )
+
+    parts: list = []
 
     small = np.where(size <= CHUNK, size, 0)
     for part in _batches(small, CHUNK):
@@ -282,7 +495,7 @@ def continued(  # pylint: disable=R0914
             first, end = int(lowest[c]), int(size[c])
             _renew(r, terms(c), first, 0, end, int(offset[c - part.start]))
         extra = r - h
-        if at is None:
+        if cuts is None:
             place = np.flatnonzero(extra)
             g = np.searchsorted(offset, place, "right") - 1
             add(part.start + g, place - offset[g], extra[place])
@@ -299,48 +512,102 @@ def continued(  # pylint: disable=R0914
     for c in np.flatnonzero(size > CHUNK):
         span = slice(bounds[c], bounds[c + 1])
         chunks = _windows(time[span], weight[span], terms(c), int(size[c]))
-        if at is None:
+        if cuts is None:
             for start, extra in chunks:
                 place = np.flatnonzero(extra)
                 add(np.full(place.size, c), start + place, extra[place])
         else:
             sums = _binned(chunks, _bins(cuts[c], size[c]))
             parts.append((np.full(sums.size, c), cuts[c][: sums.size], sums))
-    if not parts:
-        return pl.DataFrame(schema=schema)
-    which, evaluation, inc = (np.concatenate(x) for x in zip(*parts))
-    keep = np.flatnonzero(inc)
-    order = keep[np.argsort(which[keep], kind="stable")]  # the long curves came last
-    return curves.select(key)[which[order]].with_columns(
-        pl.Series(eval_var, evaluation[order], pl.Int64), pl.Series("inc", inc[order])
-    )
+    return parts
 
 
 def gained(
-    pieces: pl.DataFrame, runs: pl.DataFrame, budgets: dict, eval_var: str
+    pieces: pl.DataFrame,
+    runs: pl.DataFrame,
+    budgets: dict,
+    eval_var: str,
+    *,
+    exact: bool = False,
 ) -> np.ndarray:
     """Per piece (``run_set``, ``k``, ``eval_var`` its hitting time T) and budget b
     of its run set (``budgets`` maps each run set to its budgets): what restarts
     add to 1[b >= T], E's renewal function at b - T less 1[b >= T]. One row per
-    piece, one column per budget (zero beyond a run set's budgets)."""
+    piece, one column per budget (zero beyond a run set's budgets). Sampled
+    (``_shifts``) unless ``exact``."""
     width = max((len(b) for b in budgets.values()), default=0)
-    sets, gain = _sets(runs), np.zeros((pieces.height, width))
+    gain = np.zeros((pieces.height, width))
     rows = pieces.with_row_index("_row").filter(pl.col("k") > 0)
-    for (s, k), part in rows.partition_by(["run_set", "k"], as_dict=True).items():
+    if rows.is_empty():
+        return gain
+    table = np.full((rows.height, width), -1, np.int64)  # each row's budgets
+    sets = rows["run_set"].to_numpy()
+    for s in np.unique(sets):
+        b = np.asarray(budgets[s], np.int64)
+        table[sets == s, : b.size] = b
+    wait = table - rows[eval_var].to_numpy().astype(np.int64)[:, None]
+    late = (table < 0) | (wait < 0)
+    if exact:
+        more = _gained_exact(rows, runs, wait, late)
+    else:
+        groups = rows.select("run_set", "k").unique().sort("run_set", "k")
+        groups = groups.with_columns(_last=pl.Series(_last(rows, wait, groups)))
+        group = (
+            rows.join(
+                groups.with_row_index("_g"), on=["run_set", "k"], maintain_order="left"
+            )["_g"]
+            .to_numpy()
+            .astype(np.int64)
+        )
+        values, counts, bounds, mass = _shifts(
+            runs, *(groups[c].to_numpy() for c in ("run_set", "k", "_last"))
+        )
+        stride = int(groups["_last"].max()) + 2
+        keys = np.repeat(np.arange(groups.height), np.diff(bounds)) * stride + values
+        within = np.clip(wait, 0, stride - 1) + group[:, None] * stride
+        total = np.r_[0, np.cumsum(counts)]
+        found = total[np.searchsorted(keys, within, "right")]
+        more = mass[group][:, None] * (found - total[bounds[group]][:, None])
+    gain[rows["_row"].to_numpy()] = np.where(late, 0.0, more)
+    return gain
+
+
+def _last(rows: pl.DataFrame, wait: np.ndarray, groups: pl.DataFrame) -> np.ndarray:
+    """Per group (``run_set``, ``k``) of ``rows``: the largest ``wait`` of its rows."""
+    largest = rows.select("run_set", "k", _w=pl.Series(wait.max(axis=1)))
+    largest = largest.group_by("run_set", "k").agg(pl.col("_w").max())
+    return groups.join(largest, on=["run_set", "k"], maintain_order="left")[
+        "_w"
+    ].to_numpy()
+
+
+def _gained_exact(rows, runs, wait, late) -> np.ndarray:  # pylint: disable=R0914
+    """``gained`` by the renewal pass, per run set and k."""
+    sets, more = _sets(runs), np.zeros(wait.shape)
+    jobs, sizes, budgets = [], [], []
+    for (s, k), part in (
+        rows.with_row_index("_i").partition_by(["run_set", "k"], as_dict=True).items()
+    ):
         n, used = sets[s]
-        time = part[eval_var].to_numpy().astype(int)
-        wait = np.asarray(budgets[s])[None, :] - time[:, None]
-        late = wait < 0
-        if used[:k].min() > wait.max():  # no restart before the largest budget
+        index = part["_i"].to_numpy()
+        largest = int(np.where(late[index], -1, wait[index]).max())
+        if used[:k].min() > largest:  # no restart before the largest budget
             continue
-        size = _length(used[:k], n, 0, int(wait.max()))
-        values, counts = np.unique(used[:k], return_counts=True)
+        jobs.append((index, n, used[:k]))
+        sizes.append(_length(used[:k], n, 0, largest))
+        budgets.append(np.unique(used[:k]))
+    if not jobs:
+        return more
+    padded = np.zeros((len(jobs), max(b.size for b in budgets)), np.int64)
+    for i, b in enumerate(budgets):
+        padded[i, : b.size] = b
+    _warn(_cost(np.array(sizes), padded, (padded > 0).astype(int)))
+    for (index, n, used), size in zip(jobs, sizes):
+        values, counts = np.unique(used, return_counts=True)
         terms = list(zip(values.tolist(), (counts / n).tolist()))
-        wait = np.clip(wait, 0, None)  # (more is 0 where b < T)
-        at, index = np.unique(wait, return_inverse=True)
+        at, inverse = np.unique(np.clip(wait[index], 0, None), return_inverse=True)
         chunks = _windows(np.zeros(1, np.int64), np.ones(1), terms, size)
         sums = np.cumsum(_binned(chunks, _bins(at, size)))
-        more = np.r_[sums, np.full(at.size - sums.size, sums[-1])]
-        more = more[index.reshape(wait.shape)]
-        gain[part["_row"].to_numpy(), : wait.shape[1]] = np.where(late, 0.0, more)
-    return gain
+        sums = np.r_[sums, np.full(at.size - sums.size, sums[-1])]
+        more[index] = sums[inverse.reshape(index.size, -1)]
+    return more

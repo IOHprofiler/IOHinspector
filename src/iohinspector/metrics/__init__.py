@@ -22,7 +22,9 @@ from .ecdf import (
     get_fixed_budget_ecdf,
     get_fixed_budget_ecdf_auc,
     get_rank_table,
+    get_restart_cost,
 )
+from .restarts import RestartCostWarning
 from .eaf import (
     get_discritized_eaf_single_objective,
     get_eaf,
@@ -95,6 +97,8 @@ __all__ = [
     "get_fixed_budget_ecdf_auc",
     "get_heatmap_single_run_data",
     "get_rank_table",
+    "get_restart_cost",
+    "RestartCostWarning",
     "get_shapley_values",
     "get_overview",
     "get_portfolio_ecdf",

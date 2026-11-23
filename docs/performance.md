@@ -89,18 +89,34 @@ of f24 d2).
 
 ## Limits
 
-- **Restarts over long horizons.** The ECDF with restarts is exact, so its
-  renewal pass costs time in proportion to the horizon (in evaluations) times
-  the number of distinct budgets of the failing runs, for each curve. The
-  memory stays bounded, but the time does not: on the COCO data, all 24
-  functions in dimension 20 up to 2·10^8 evaluations take 160 s (3.4 GB), and
-  f24 in dimension 40 up to 4·10^8 takes 45 s. The sampled ECDF of every pair
-  of the COCO data at once, up to 4·10^8, exceeds 8 GB. Python and numpy hold
-  only about 300 MB of that, so where the rest goes is still open. Such views
-  need either a shorter horizon or a faster algorithm for the renewal.
+- **Exact restarts over long horizons.** The exact restarts
+  (`stopped="restart_exact"`) cost time in proportion to the horizon (in
+  evaluations) times the number of distinct budgets of the failing runs, for
+  each curve. The default samples them instead (I22b), whose cost does not
+  grow with the horizon. All 24 COCO functions in dimension 20 (13
+  algorithms, 50 samples; the AUC on a log axis from 1):
+
+  | horizon | carry forward | sampled | exact ECDF | exact AUC |
+  |---|---|---|---|---|
+  | 2·10^4 | 0.14 s | 0.17 s | 0.15 s | |
+  | 2·10^5 | 0.13 s | 0.21 s | 0.18 s | |
+  | 2·10^6 | 0.14 s | 0.32 s | 0.70 s | 1.3 s |
+  | 2·10^7 | 0.13 s | 0.38 s | 14.2 s | 22.5 s |
+  | 2·10^8 | 0.15 s | 0.42 s | 167 s | 265 s |
+
+  The process holds 1.3 GB after loading; the sampled ECDF peaks at 1.85 GB,
+  the exact one at 2.3 GB. Sampled and exact differ by at most 0.0008 (ECDF)
+  and 0.0001 (AUC). `get_restart_cost` estimates the exact time from the
+  curves in about 0.2 s here (0.8, 15 and 148 s for the last three
+  horizons), and the exact restarts warn above 10 s or 2 GB. Every pair of
+  the COCO data at once (144 pairs, all dimensions, 1.7 million rows) up to
+  4·10^8, which exceeded 8 GB with the exact restarts, takes 1.7 s sampled,
+  within the 3.2 GB of the loaded data.
 - **Shapley values** (`metrics/portfolio.py`) still build the restarted step
   function, because the portfolio's ECDF is the maximum over its players at
-  each x.
+  each x. Sampled, it has one row per hit and distinct draw: the 20-D COCO set
+  (13 players, 24 functions, log axis up to 2·10^8) takes 4.0 s and 2.1 GB on
+  top of the data.
 - **Per-curve loop.** The renewal pass loops in Python over curves (a group,
   a pair and a number of failing runs), not over runs: 29,603 curves on the
   synthetic 20-algorithm set, about half of the 1.1 s of its sampled ECDF.
