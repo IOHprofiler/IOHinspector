@@ -5,6 +5,7 @@ from typing import Any, TypeVar, Union
 
 import matplotlib.pyplot as plt
 import polars as pl
+import seaborn as sbs
 
 from ..metrics.utils import group_label
 
@@ -218,11 +219,34 @@ def _hue(df: Any, by: Sequence[str]) -> Any:
     return pl.from_pandas(df[by]).select(group_label(by)).to_series().to_numpy()
 
 
-def _check_measures(df: pl.DataFrame, measures: Iterable[str]) -> None:
-    """Fail when a measure is not a column of the summary ``df``."""
-    unknown = sorted(set(measures) - set(df.columns))
+def _measures(
+    summary: pl.DataFrame, x: str, by: Sequence[str], measures: Iterable[str]
+) -> pl.DataFrame:
+    """The ``measures`` columns of ``summary`` in long form (``variable``,
+    ``value``) per ``x`` and group of ``by``; an unknown measure fails."""
+    unknown = sorted(set(measures) - set(summary.columns))
     if unknown:
-        raise ValueError(f"unknown measures {unknown}; the summary has {df.columns}")
+        raise ValueError(
+            f"unknown measures {unknown}; the summary has {summary.columns}"
+        )
+    return (
+        summary.unpivot(index=[x, *by])
+        .filter(pl.col("variable").is_in(list(measures)))
+        .sort(by, maintain_order=True)
+    )
+
+
+def _measure_lines(pdf, x: str, by: Sequence[str], plot_args, ax) -> None:
+    """One line per group of ``by`` and measure (line style) of ``_measures``."""
+    sbs.lineplot(
+        pdf,
+        x=x,
+        y="value",
+        style="variable",
+        hue=_hue(pdf, by),
+        palette=plot_args.line_colors,
+        ax=ax,
+    )
 
 
 def _save_fig(fig=None, file_name: str | None = None, plot_args: BasePlotArgs = None):

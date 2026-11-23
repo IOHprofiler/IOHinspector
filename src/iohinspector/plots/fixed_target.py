@@ -2,17 +2,10 @@ from collections.abc import Iterable, Sequence
 
 import matplotlib
 import polars as pl
-import seaborn as sbs
 
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_target import aggregate_running_time
-from .utils import (
-    LinePlotArgs,
-    _canvas,
-    _check_measures,
-    _create_plot_args,
-    _hue,
-)
+from .utils import LinePlotArgs, _canvas, _create_plot_args, _measure_lines, _measures
 
 
 @upgrade_hints
@@ -87,12 +80,7 @@ def plot_single_function_fixed_target(
         eval_max=eval_max,
         maximization=maximization,
     )
-    _check_measures(dt_agg, measures)
-    dt_plot = (
-        dt_agg.unpivot(index=[fval_var, *by])
-        .filter(pl.col("variable").is_in(list(measures)))
-        .sort(by, maintain_order=True)
-    )
+    dt_plot = _measures(dt_agg, fval_var, by, measures)
     pdf = dt_plot.to_pandas()
 
     plot_args = _create_plot_args(
@@ -107,14 +95,6 @@ def plot_single_function_fixed_target(
     )
 
     with _canvas(ax, plot_args, file_name) as ax:
-        sbs.lineplot(
-            pdf,
-            x=fval_var,
-            y="value",
-            style="variable",
-            hue=_hue(pdf, by),
-            palette=plot_args.line_colors,
-            ax=ax,
-        )
+        _measure_lines(pdf, fval_var, by, plot_args, ax)
 
     return ax, dt_plot
