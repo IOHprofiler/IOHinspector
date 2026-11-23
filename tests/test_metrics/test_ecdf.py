@@ -712,6 +712,22 @@ def test_restarts_in_chunks_and_sampled_are_the_exact_steps(monkeypatch, divide)
         assert value == pytest.approx(last, rel=1e-12)
 
 
+def test_long_curves_do_not_leak_into_a_batch_of_short_ones(monkeypatch):
+    # curves of up to CHUNK evaluations are computed in one array; a longer curve
+    # between them (computed on its own) must place no hits in that array
+    b = _ragged(12).with_columns(
+        algorithm_name=pl.lit("B"), run_id=pl.col("run_id") + 9
+    )
+    df = pl.concat([_ragged(11), b])
+    targets = get_ecdf_targets(df, n=8)
+    xs = [1, 4, 9, 13, 20, 37, 60, 150]
+    expected = get_ecdf(df, targets, x_values=xs)
+    for chunk in range(4, 160, 3):
+        monkeypatch.setattr(restarts, "CHUNK", chunk)
+        ours = get_ecdf(df, targets, x_values=xs)
+        np.testing.assert_allclose(ours["ecdf"], expected["ecdf"], rtol=1e-12)
+
+
 @pytest.mark.parametrize("chunk", [None, 7])
 @pytest.mark.parametrize(
     "options",

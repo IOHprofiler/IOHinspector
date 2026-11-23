@@ -274,7 +274,7 @@ def continued(  # pylint: disable=R0914
         if not live.size:
             continue
         offset = np.cumsum(small[part]) - small[part]
-        rows = (curve >= part.start) & (curve < part.stop) & (time < size[curve])
+        rows = (curve >= part.start) & (curve < part.stop) & (time < small[curve])
         place = offset[curve[rows] - part.start] + time[rows]
         h = np.bincount(place, weight[rows], int(small[part].sum()))
         r = h.copy()
