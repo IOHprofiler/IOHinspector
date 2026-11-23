@@ -21,7 +21,12 @@ from typing import Any
 import polars as pl
 
 from ..format import check_source_path, descriptor_frame, new_manifest, write_dataset
-from ..format.schema import RUNS_SCHEMA, descriptor_key_problem, is_reserved_trace_name
+from ..format.schema import (
+    RESERVED_DESCRIPTOR_KEYS,
+    RUNS_SCHEMA,
+    descriptor_key_problem,
+    is_reserved_trace_name,
+)
 
 #: A number token: decimal, optionally with an exponent, or inf / nan in any
 #: letter case, each with an optional sign (``docs/format.md``, "Value rules").
@@ -116,9 +121,17 @@ class Renamer:
     def descriptor_key(
         self, key: str, taken: Iterable[str], suffix: str, source: str
     ) -> str:
+        """``key``, renamed if it is reserved or taken; a key that no suffix can
+        make valid (too long, control characters) is an error."""
+        taken = set(taken)
+        if descriptor_key_problem(key) is not None or key in taken:
+            first = f"{key}_{suffix}"  # the first rename; later ones add digits
+            problem = descriptor_key_problem(first)
+            if problem is not None and first not in RESERVED_DESCRIPTOR_KEYS:
+                raise ReaderError(f"{source}: descriptor key {key!r}: {problem}")
         return self.rename(
             key,
-            set(taken),
+            taken,
             (suffix, source, "descriptors"),
             lambda k: descriptor_key_problem(k) is not None,
         )
