@@ -41,7 +41,7 @@ def add_indicator(
             group of data.
     """
     indicator_callable = partial(indicator, obj_vars=obj_vars, **kwargs)
-    return df.group_by("run_id").map_groups(indicator_callable)
+    return df.group_by("run_id", maintain_order=True).map_groups(indicator_callable)
 
 
 __all__ = [
