@@ -624,15 +624,20 @@ def _legends(fig, axes, spec: FigureSpec, plots, styles, add: Add) -> list:
             )
             add(f"p{i}-legend", "legend", f"p{i}", [box])
             continue
-        ends = [s for s in entries if s["end"] is not None]
-        size = mpl.rcParams["legend.fontsize"]
-        points = [(s["name"], s["end"].x[-1], s["end"].y[-1], s["color"]) for s in ends]
-        texts = add_direct_labels(ax, points, size)
-        for look, text in zip(ends, texts):
-            sid = f"p{i}-s-{look['id']}"
-            add(f"{sid}-label", "label", sid, [text])
-        direct.append((ax, texts))
+        direct.append((ax, _direct_labels(ax, i, entries, add)))
     return direct
+
+
+def _direct_labels(ax, i: int, entries: list[dict], add: Add) -> list:
+    """A label at the end of each curve of panel ``i`` that has one."""
+    ends = [s for s in entries if s["end"] is not None]
+    size = mpl.rcParams["legend.fontsize"]
+    points = [(s["name"], s["end"].x[-1], s["end"].y[-1], s["color"]) for s in ends]
+    texts = add_direct_labels(ax, points, size)
+    for look, text in zip(ends, texts):
+        sid = f"p{i}-s-{look['id']}"
+        add(f"{sid}-label", "label", sid, [text])
+    return texts
 
 
 def shared_legend(spec: FigureSpec, plots, styles) -> tuple[list[dict], str]:

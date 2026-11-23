@@ -301,22 +301,30 @@ def _array(values) -> str:
 
 def _curves(plot, labels: list[str]) -> list[str]:
     """The code that draws the curves of ``plot`` from their numbers."""
-    if plot.mark == "line":  # as the frame of x and y that ``draw`` takes
-        end = max(float(c.x[-1]) for c in plot.curves)
-        columns: dict = {"label": [c.label for c in plot.curves for _ in c.x]}
-        for name in ("x", "y", "lo", "hi"):
-            parts = [getattr(c, name) for c in plot.curves]
-            if name in "xy" or any(p is not None for p in parts):
-                parts = [
-                    np.full(len(c.x), np.nan) if p is None else p
-                    for c, p in zip(plot.curves, parts)
-                ]
-                columns[name] = _array(np.concatenate(parts))
-        text = ", ".join(f"{k!r}: {v}" for k, v in columns.items())
-        return [
-            f"frame = pl.DataFrame({{{text}}})",
-            f"draw(ax, frame, {labels!r}, 'x', 'y', {end!r}, {plot.step})",
-        ]
+    return _line_code(plot, labels) if plot.mark == "line" else _mark_code(plot)
+
+
+def _line_code(plot, labels: list[str]) -> list[str]:
+    """Line curves as the frame of x and y (and the band) that ``draw`` takes."""
+    end = max(float(c.x[-1]) for c in plot.curves)
+    columns: dict = {"label": [c.label for c in plot.curves for _ in c.x]}
+    for name in ("x", "y", "lo", "hi"):
+        parts = [getattr(c, name) for c in plot.curves]
+        if name in "xy" or any(p is not None for p in parts):
+            parts = [
+                np.full(len(c.x), np.nan) if p is None else p
+                for c, p in zip(plot.curves, parts)
+            ]
+            columns[name] = _array(np.concatenate(parts))
+    text = ", ".join(f"{k!r}: {v}" for k, v in columns.items())
+    return [
+        f"frame = pl.DataFrame({{{text}}})",
+        f"draw(ax, frame, {labels!r}, 'x', 'y', {end!r}, {plot.step})",
+    ]
+
+
+def _mark_code(plot) -> list[str]:
+    """Other marks as a list of curves, each drawn by its mark function."""
     fields = ("x", "y", "lo", "hi", "z")
     out = ["CURVES = ["]
     for c in plot.curves:
