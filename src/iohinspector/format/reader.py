@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 import polars as pl
 
-from .descriptors import _key_column
+from .descriptors import descriptor_columns
 from .manifest import DatasetWarning, read_manifest
 from .schema import (
     ALGORITHM_DESCRIPTORS,
@@ -79,15 +79,13 @@ class StoredDataset:
         if unknown:
             raise ValueError(f"no runs column or descriptor is named {unknown}")
         lf = self.runs.select("run_id", *[b for b in by if b in RUNS_SCHEMA])
-        for key in by:
-            if key in RUNS_SCHEMA:
-                continue
-            if key in keys:
-                lf = lf.join(
-                    _key_column(self.descriptors, key, mixed), on="run_id", how="left"
-                )
-            else:  # a required descriptor of a dataset without runs
-                lf = lf.with_columns(pl.lit(None, pl.String).alias(key))
+        present = [b for b in by if b not in RUNS_SCHEMA and b in keys]
+        if present:
+            columns = descriptor_columns(self.descriptors, present, mixed=mixed)
+            lf = lf.join(columns, on="run_id", how="left")
+        absent = [b for b in by if b not in RUNS_SCHEMA and b not in keys]
+        # a required descriptor of a dataset without runs
+        lf = lf.with_columns(pl.lit(None, pl.String).alias(key) for key in absent)
         return lf.select("run_id", *by)
 
 

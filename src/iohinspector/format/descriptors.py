@@ -413,24 +413,27 @@ def descriptor_columns(
     ``ValueError`` with ``mixed="error"``. Runs without the key are null.
     Raises ``ValueError`` for a key the table does not have.
     """
-    lf = descriptors.lazy()
     keys = list(dict.fromkeys(keys))
-    base = lf.filter(pl.col("key").is_in(keys)).select("run_id").unique()
-    for key in keys:
-        base = base.join(_key_column(lf, key, mixed), on="run_id", how="left")
-    return base.select("run_id", *keys)
-
-
-def _key_column(lf: pl.LazyFrame, key: str, mixed: str) -> pl.LazyFrame:
-    """``run_id`` and the values of one key, typed as ``descriptor_columns`` says."""
-    rows = lf.filter(pl.col("key") == key)
-    stats = (
-        rows.group_by("type")
+    rows = descriptors.lazy().filter(pl.col("key").is_in(keys))
+    stats = (  # the types of every key in one pass
+        rows.group_by("key", "type")
         .agg(pl.col("value_int").null_count().alias("nulls"))
         .collect()
     )
-    if not stats.height:
-        raise ValueError(f"no descriptor or runs column is named {key!r}")
+    values = []
+    for key in keys:
+        own = stats.filter(pl.col("key") == key)
+        if not own.height:
+            raise ValueError(f"no descriptor or runs column is named {key!r}")
+        expr = _value(key, own, mixed)
+        values.append(expr.filter(pl.col("key") == key).first().alias(key))
+    # (run_id, key) is unique, so the first value of a key is its only one
+    return rows.group_by("run_id").agg(values).select("run_id", *keys)
+
+
+def _value(key: str, stats: pl.DataFrame, mixed: str) -> pl.Expr:
+    """The column of one key's values, typed by its ``stats`` (``type`` and the
+    ``nulls`` of ``value_int`` per type) as ``descriptor_columns`` says."""
     types = set(stats["type"].to_list())
     big = stats.filter(pl.col("type") == "int")["nulls"].sum() > 0
     if types == {"int"} and not big:
@@ -445,7 +448,7 @@ def _key_column(lf: pl.LazyFrame, key: str, mixed: str) -> pl.LazyFrame:
         raise ValueError(f"descriptor {key!r} has several types: {sorted(types)}")
     else:  # string, int with values outside int64, or several types
         expr = pl.col("value")
-    return rows.select("run_id", expr.alias(key))
+    return expr
 
 
 # -- editing after conversion -------------------------------------------------------

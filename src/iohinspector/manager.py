@@ -147,6 +147,10 @@ class DataManager:
         return DataManager([_only(d, keep) for d in self.datasets])
 
     def _distinct(self, column: str) -> tuple[Any, ...]:
+        runs = self.runs
+        if column in runs.collect_schema():  # no descriptors needed
+            values = runs.select(pl.col(column).drop_nulls().unique().sort())
+            return tuple(values.collect().to_series())
         overview = self.overview
         if column not in overview.columns:
             return ()
