@@ -93,73 +93,37 @@ def plot_attractor_network(
             title="Attractor Network",
             xlabel="MDS-reduced decision vector",
             ylabel="fitness",
-            color_map="viridis",
         ),
         plot_args,
     )
 
     network = nx.DiGraph()
-    for idx, row in enumerate(nodes.iter_rows(named=True)):
-        network.add_node(
-            idx,
-            decision=np.array([row[c] for c in coord_vars]),
-            fitness=row["y"],
-            hitcount=row["count"],
-            evals=row["evals"] / row["count"],
-        )
-
-    for row in edges.iter_rows(named=True):
-        network.add_edge(
-            row["start"],
-            row["end"],
-            weight=row["count"],
-            evaldiff=row["stag_length_avg"],
-        )
-    network.remove_edges_from(nx.selfloop_edges(network))
-
-    D = [network.nodes[node]["decision"] for node in network.nodes()]
+    network.add_nodes_from(range(nodes.height))
+    network.add_edges_from(
+        (start, end)
+        for start, end in edges.select("start", "end").iter_rows()
+        if start != end
+    )
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=UserWarning)
         mds = MDS(n_components=1, random_state=0, n_init=4)
-        if len(D[0]) == len(D):
-            x_positions = mds.fit_transform(D)
-        else:
-            x_positions = mds.fit_transform(D)
+        x_positions = mds.fit_transform(list(nodes.select(coord_vars).to_numpy()))
 
-    x_positions = x_positions.flatten()  # Flatten to get 1D array for x-axis
-    y_positions = [network.nodes[node]["fitness"] for node in network.nodes()]
-    pos = {
-        node: (x, y) for node, x, y in zip(network.nodes(), x_positions, y_positions)
-    }
-
-    hitcounts = [network.nodes[node]["hitcount"] for node in network.nodes()]
-    if len(hitcounts) > 1:
-        min_hitcount = min(hitcounts)
-        max_hitcount = max(hitcounts)
-
+    fitness_values = nodes["y"].to_list()
+    pos = dict(enumerate(zip(x_positions.flatten(), fitness_values)))
+    hitcounts = nodes["count"].to_numpy()
     if len(hitcounts) > 1 and np.std(hitcounts) > 0:
-        node_sizes = [
-            100
-            + (
-                400
-                * (network.nodes[node]["hitcount"] - min_hitcount)
-                / (max_hitcount - min_hitcount)
-            )
-            for node in network.nodes()
-        ]
+        low, high = hitcounts.min(), hitcounts.max()
+        node_sizes = list(100 + 400 * (hitcounts - low) / (high - low))
     else:
         node_sizes = [500] * len(hitcounts)
-    fitness_values = y_positions  # Reuse y_positions as they represent 'fitness'
 
     if plot_args.yscale == "log":
         norm = matplotlib.colors.LogNorm(min(fitness_values), max(fitness_values))
     else:
         norm = plt.Normalize(min(fitness_values), max(fitness_values))
-
-    # Safely get colormap name or default to 'viridis' if not present on plot_args
-    cmap_name = getattr(plot_args, "color_map", "viridis")
-    cmap = plt.get_cmap(cmap_name)
+    cmap = plt.get_cmap(plot_args.color_map)
     node_colors = cmap(norm(fitness_values))
 
     with _canvas(ax, plot_args, file_name) as ax:
