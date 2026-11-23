@@ -1,8 +1,10 @@
+from collections.abc import Iterable, Sequence
+
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sbs
 import polars as pl
-from typing import Iterable, Optional, Sequence
+import seaborn as sbs
+
 from .._upgrade import upgrade_hints
 from ..metrics.ecdf import _ecdf_on_grid  # get_data_ecdf without its warning
 from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
@@ -15,16 +17,16 @@ def plot_ecdf(
     eval_var: str = "evaluations",
     by: Sequence[str] = ("algorithm_name",),
     maximization: bool = False,
-    f_min: int = None,
-    f_max: int = None,
+    f_min: int | None = None,
+    f_max: int | None = None,
     scale_f_log: bool = True,
-    eval_values: Iterable[int] = None,
-    eval_min: int = None,
-    eval_max: int = None,
+    eval_values: Iterable[int] | None = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
     scale_eval_log: bool = True,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
     plot_args: dict | LinePlotArgs = None,
 ):
     """Plot Empirical Cumulative Distribution Function (ECDF) based on Empirical Attainment Functions.

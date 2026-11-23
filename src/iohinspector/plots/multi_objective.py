@@ -1,14 +1,16 @@
-from typing import Iterable, Optional, Sequence
-from .._upgrade import upgrade_hints
-from ..metrics.multi_objective import (
-    get_pareto_front_2d,
-    get_indicator_over_time_data,
-)
-import polars as pl
+from collections.abc import Iterable, Sequence
+
 import matplotlib
 import matplotlib.pyplot as plt
+import polars as pl
 import seaborn as sbs
-from .utils import ScatterPlotArgs, LinePlotArgs, _create_plot_args, _hue, _save_fig
+
+from .._upgrade import upgrade_hints
+from ..metrics.multi_objective import (
+    get_indicator_over_time_data,
+    get_pareto_front_2d,
+)
+from .utils import LinePlotArgs, ScatterPlotArgs, _create_plot_args, _hue, _save_fig
 
 
 @upgrade_hints
@@ -19,7 +21,7 @@ def plot_paretofronts_2d(
     by: Sequence[str] = ("algorithm_name",),
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | ScatterPlotArgs = None,
 ):
     """Visualize 2D Pareto fronts for multi-objective optimization algorithms.
@@ -95,7 +97,7 @@ def plot_indicator_over_time(
     eval_steps: int = 50,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
     plot_args: dict | LinePlotArgs = None,
 ):
     """Plot the anytime performance of multi-objective quality indicators over evaluation budgets.

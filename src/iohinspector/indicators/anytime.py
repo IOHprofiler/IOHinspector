@@ -1,17 +1,16 @@
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 import polars as pl
-
-from .._upgrade import removed_names
-
 from moocore import (
-    hypervolume,
-    igd_plus,
     epsilon_additive,
     epsilon_mult,
     filter_dominated,
+    hypervolume,
+    igd_plus,
 )
+
+from .._upgrade import removed_names
 
 
 def get_reference_set(

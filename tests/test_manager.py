@@ -234,11 +234,11 @@ def test_removed_module_names_fail_with_a_hint():
     import iohinspector
 
     with pytest.raises(ImportError, match="removed in iohinspector 0.1.0"):
-        iohinspector.Dataset
+        iohinspector.Dataset  # noqa: B018  (the attribute access raises)
     with pytest.raises(ImportError, match="removed in iohinspector 0.1.0"):
         from iohinspector.data import Scenario  # noqa: F401
     with pytest.raises(AttributeError, match="has no attribute"):
-        iohinspector.nothing_like_this
+        iohinspector.nothing_like_this  # noqa: B018
 
 
 def test_metrics_fail_with_a_hint():

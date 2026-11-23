@@ -1,9 +1,9 @@
 import warnings
-from typing import Iterable, Optional, Sequence
+from collections.abc import Iterable, Sequence
 
-import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
+import polars as pl
 import seaborn as sbs
 
 from .._upgrade import upgrade_hints
@@ -25,7 +25,7 @@ def plot_tournament_ranking(
     maximization: bool = False,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | BasePlotArgs = None,
 ):
     """Plot ELO ratings from tournament-style algorithm competition across multiple problems.
@@ -111,7 +111,7 @@ def plot_robustrank_over_time(
     evals: Iterable[int],
     indicator: object,
     *,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
 ):
     """Plot robust ranking confidence intervals at distinct evaluation timesteps.
 
@@ -174,7 +174,7 @@ def plot_robustrank_changes(
     indicator: object,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
 ):
     """Plot robust ranking changes over evaluation timesteps as connected line plots.
 

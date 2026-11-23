@@ -1,7 +1,8 @@
+from collections.abc import Iterable
+
 import numpy as np
 import pandas as pd
 import polars as pl
-from typing import Iterable, Tuple
 
 from .._upgrade import upgrade_hints
 
@@ -41,7 +42,7 @@ def get_attractor_network(
     beta: int = 40,
     epsilon: float = 0.0001,
     eval_max=None,
-) -> Tuple[pl.DataFrame, pl.DataFrame]:
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Create an attractor network from optimization trajectory data.
 
     Args:

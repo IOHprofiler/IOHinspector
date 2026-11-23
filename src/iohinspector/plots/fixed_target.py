@@ -1,8 +1,10 @@
-import polars as pl
+from collections.abc import Iterable, Sequence
+
 import matplotlib
 import matplotlib.pyplot as plt
+import polars as pl
 import seaborn as sbs
-from typing import Iterable, Sequence
+
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_target import aggregate_running_time
 from .utils import (
@@ -20,15 +22,15 @@ def plot_single_function_fixed_target(
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
     by: Sequence[str] = ("algorithm_name",),
-    f_min: float = None,
-    f_max: float = None,
+    f_min: float | None = None,
+    f_max: float | None = None,
     scale_f_log: bool = True,
-    eval_max: int = None,
+    eval_max: int | None = None,
     maximization: bool = False,
     measures: Iterable[str] = ["ERT"],
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | LinePlotArgs = None,
 ):
     """Create a fixed-target plot showing Expected Running Time (ERT) analysis for algorithm performance.

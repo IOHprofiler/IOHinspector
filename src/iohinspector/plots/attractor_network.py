@@ -1,11 +1,11 @@
 import warnings
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
-import numpy as np
-import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
 
 from iohinspector.metrics import get_attractor_network
 from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
@@ -55,7 +55,7 @@ def plot_attractor_network(
     epsilon: float = 0.0001,
     *,
     ax: matplotlib.axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | AttractorNetworkPlotArgs = None,
 ):
     """Plot an attractor network visualization from optimization algorithm data.
@@ -92,7 +92,7 @@ def plot_attractor_network(
     """
     try:
         import networkx as nx
-    except:
+    except ImportError:
         print("NetworkX is required to use this plot type")
         return
     from sklearn.manifold import MDS

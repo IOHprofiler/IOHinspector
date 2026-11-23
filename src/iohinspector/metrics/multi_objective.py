@@ -1,4 +1,5 @@
-from typing import Iterable
+from collections.abc import Iterable
+
 import polars as pl
 
 from .._upgrade import upgrade_hints

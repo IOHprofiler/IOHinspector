@@ -1,8 +1,10 @@
+from collections.abc import Iterable, Sequence
+
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sbs
 import polars as pl
-from typing import Iterable, Sequence
+import seaborn as sbs
+
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_budget import aggregate_convergence
 from .utils import (
@@ -20,13 +22,13 @@ def plot_single_function_fixed_budget(
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
     by: Sequence[str] = ("algorithm_name",),
-    eval_min: float = None,
-    eval_max: float = None,
+    eval_min: float | None = None,
+    eval_max: float | None = None,
     maximization: bool = False,
     measures: Iterable[str] = ["geometric_mean"],
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | LinePlotArgs = None,
 ):
     """Create a fixed-budget convergence plot showing algorithm performance over evaluation budgets.

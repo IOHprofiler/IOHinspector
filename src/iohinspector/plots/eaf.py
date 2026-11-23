@@ -1,11 +1,12 @@
-import numpy as np
-import polars as pl
+
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon, Rectangle
+import numpy as np
+import polars as pl
 import seaborn as sbs
-from typing import Optional
-from ..metrics import get_eaf_data, get_eaf_pareto_data, get_eaf_diff_data
+from matplotlib.patches import Polygon, Rectangle
+
+from ..metrics import get_eaf_data, get_eaf_diff_data, get_eaf_pareto_data
 from .utils import HeatmapPlotArgs, _create_plot_args, _save_fig
 
 
@@ -13,13 +14,13 @@ def plot_eaf_single_objective(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
-    eval_min: int = None,
-    eval_max: int = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
     scale_eval_log: bool = True,
     n_quantiles: int = 100,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
     plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) for single-objective optimization against budget.
@@ -132,7 +133,7 @@ def plot_eaf_pareto(
     obj2_var: str,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
     plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) for multi-objective optimization with two objectives.
@@ -245,7 +246,7 @@ def plot_eaf_diffs(
     obj2_var: str,
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: Optional[str] = None,
+    file_name: str | None = None,
     plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) differences between two algorithms.

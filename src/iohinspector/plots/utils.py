@@ -1,7 +1,6 @@
-from dataclasses import dataclass, field
-from typing import Optional, Tuple, Sequence, Union, Dict, Any, Iterable
-from dataclasses import fields
-from typing import TypeVar
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field, fields
+from typing import Any, TypeVar, Union
 
 import polars as pl
 
@@ -12,30 +11,30 @@ T = TypeVar("T", bound="BasePlotArgs")
 
 @dataclass
 class BasePlotArgs:
-    title: Optional[str] = None
-    xlabel: Optional[str] = None
-    ylabel: Optional[str] = None
+    title: str | None = None
+    xlabel: str | None = None
+    ylabel: str | None = None
 
-    xlim: Optional[Tuple[float, float]] = None
-    ylim: Optional[Tuple[float, float]] = None
+    xlim: tuple[float, float] | None = None
+    ylim: tuple[float, float] | None = None
 
     xscale: str = None
     yscale: str = None
 
-    figsize: Optional[Tuple[float, float]] = (16, 9)
-    dpi: Optional[int] = None
+    figsize: tuple[float, float] | None = (16, 9)
+    dpi: int | None = None
 
-    grid: Union[bool, str] = False
+    grid: bool | str = False
     legend: bool = False
     legend_loc: str = "best"
-    legend_kwargs: Dict[str, Any] = field(default_factory=dict)
+    legend_kwargs: dict[str, Any] = field(default_factory=dict)
 
-    fontsize: Optional[Union[int, str]] = None
-    title_fontsize: Optional[Union[int, str]] = None
-    tick_params: Dict[str, Any] = field(default_factory=dict)
+    fontsize: int | str | None = None
+    title_fontsize: int | str | None = None
+    tick_params: dict[str, Any] = field(default_factory=dict)
 
-    xticks: Optional[Sequence[float]] = None
-    yticks: Optional[Sequence[float]] = None
+    xticks: Sequence[float] | None = None
+    yticks: Sequence[float] | None = None
 
     reverse_xaxis: bool = False
     reverse_yaxis: bool = False
@@ -52,7 +51,7 @@ class BasePlotArgs:
         if self.yticks is not None and not isinstance(self.yticks, tuple):
             self.yticks = tuple(self.yticks)  # type: ignore
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         """Convert the plot arguments to a dictionary representation.
 
         Returns:
@@ -142,7 +141,7 @@ class BasePlotArgs:
             # Only attempt to create legend if there are labeled artists
             try:
                 ax.legend(**kwargs)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # fallback: call without kwargs
                 ax.legend()
 
@@ -160,7 +159,7 @@ class BasePlotArgs:
 
         return ax
 
-    def override(self, other: Optional[Union["BasePlotArgs", Dict[str, Any]]]):
+    def override(self, other: Union["BasePlotArgs", dict[str, Any]] | None):
         """Update plot arguments in place with values from another source.
 
         Args:
@@ -189,7 +188,7 @@ class BasePlotArgs:
 
 @dataclass
 class LinePlotArgs(BasePlotArgs):
-    line_colors: Optional[Sequence[str]] = None
+    line_colors: Sequence[str] | None = None
 
     def as_dict(self):
         """Convert the line plot arguments to a dictionary representation.
@@ -223,7 +222,7 @@ class LinePlotArgs(BasePlotArgs):
 
 @dataclass
 class HeatmapPlotArgs(BasePlotArgs):
-    heatmap_palette: Optional[str] = "viridis"
+    heatmap_palette: str | None = "viridis"
     use_background_color: bool = True
     background_color: str = "white"
 
@@ -259,7 +258,7 @@ class HeatmapPlotArgs(BasePlotArgs):
 
 @dataclass
 class ScatterPlotArgs(BasePlotArgs):
-    point_colors: Optional[Sequence[str]] = None
+    point_colors: Sequence[str] | None = None
 
     def as_dict(self):
         """Convert the scatter plot arguments to a dictionary representation.
@@ -307,7 +306,7 @@ def _check_measures(df: pl.DataFrame, measures: Iterable[str]) -> None:
         raise ValueError(f"unknown measures {unknown}; the summary has {df.columns}")
 
 
-def _save_fig(fig=None, file_name: str = None, plot_args: BasePlotArgs = None):
+def _save_fig(fig=None, file_name: str | None = None, plot_args: BasePlotArgs = None):
     """Save a matplotlib figure to file with optional plot arguments.
 
     Args:
@@ -323,7 +322,7 @@ def _save_fig(fig=None, file_name: str = None, plot_args: BasePlotArgs = None):
 
 def _create_plot_args(
     defaults: T,
-    overrides: Optional[Union[T, Dict[str, Any]]] = None,
+    overrides: T | dict[str, Any] | None = None,
 ) -> T:
     """Create plot properties by merging defaults with overrides, preserving the exact type of the defaults object.
 

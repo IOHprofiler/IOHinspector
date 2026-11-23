@@ -119,8 +119,8 @@ def get_discritized_eaf_single_objective(
 def get_eaf_data(
     data: pl.DataFrame,
     eval_var: str = "evaluations",
-    eval_min: int = None,
-    eval_max: int = None,
+    eval_min: int | None = None,
+    eval_max: int | None = None,
     scale_eval_log: bool = True,
     maximization: bool = False,
 ) -> pl.DataFrame:

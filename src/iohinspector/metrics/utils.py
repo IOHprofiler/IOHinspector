@@ -1,17 +1,14 @@
 import string
 import warnings
-from collections.abc import Callable, Sequence
-from typing import Iterable, Optional, Union, Dict
+from collections.abc import Callable, Iterable, Sequence
 
 import numpy as np
 import polars as pl
-
 from moocore import (
     filter_dominated,
 )
 
 from ..targets import seq_rt, spaced
-
 
 #: The probabilities of the quantile columns ``q2`` ... ``q98``, in percent: the
 #: nine of IOHanalyzer (``docs/definitions/runtime.md`` RT-5, ``fixed-budget.md`` FB-2).
@@ -116,9 +113,9 @@ def group_label(by: Sequence[str], template: str | None = None) -> pl.Expr:
 def normalize_objectives(
     data: pl.DataFrame,
     obj_vars: Iterable[str] = ["raw_y"],
-    bounds: Optional[Dict[str, tuple[Optional[float], Optional[float]]]] = None,
-    log_scale: Union[bool, Dict[str, bool]] = False,
-    maximize: Union[bool, Dict[str, bool]] = False,
+    bounds: dict[str, tuple[float | None, float | None]] | None = None,
+    log_scale: bool | dict[str, bool] = False,
+    maximize: bool | dict[str, bool] = False,
     only_nondominated: bool = False,
     prefix: str = "ert",
     keep_original: bool = True,
@@ -175,8 +172,8 @@ def normalize_objectives(
 def add_normalized_objectives(
     data: pl.DataFrame,
     obj_vars: Iterable[str],
-    max_obj: Optional[pl.DataFrame] = None,
-    min_obj: Optional[pl.DataFrame] = None,
+    max_obj: pl.DataFrame | None = None,
+    min_obj: pl.DataFrame | None = None,
     only_nondominated: bool = False,
 ) -> pl.DataFrame:
     """Add new normalized columns to provided dataframe based on the provided objective columns.
