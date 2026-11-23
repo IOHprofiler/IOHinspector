@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from itertools import pairwise
 
 import numpy as np
 import pandas as pd
@@ -61,69 +62,51 @@ def get_attractor_network(
             number (``start`` and ``end`` of an edge) is its row number.
     """
 
-    running_idx = 0
-    running_edgeidx = 0
     nodes = pd.DataFrame(columns=[*coord_vars, "y", "count", "evals"])
     edges = pd.DataFrame(columns=["start", "end", "count", "stag_length_avg"])
+    edge_rows: dict[tuple, int] = {}  # (start, end) -> row of edges
     if eval_max is None:
         eval_max = max(data[eval_var])
 
-    for run_id in data["run_id"].unique(maintain_order=True):
-        dt_group = data.filter(pl.col("run_id") == run_id, pl.col(eval_var) <= eval_max)
-        if maximization:
-            ys = np.maximum.accumulate(np.array(dt_group[fval_var]))
+    def node(xloc, yval, evals) -> int:
+        """The row of the node at (xloc, yval), added or counted once more."""
+        index = _get_nodeidx(xloc, yval, nodes, epsilon)
+        if index == -1:
+            index = len(nodes)
+            nodes.loc[index] = [*xloc, yval, 1, evals]
         else:
-            ys = np.minimum.accumulate(np.array(dt_group[fval_var]))
-        xs = np.array(dt_group[coord_vars])
+            nodes.loc[index, "evals"] += evals
+            nodes.loc[index, "count"] += 1
+        return index
 
-        stopping_points = np.where(np.abs(np.diff(ys, prepend=np.inf)) > 0)[0]
+    runs = data.filter(pl.col(eval_var) <= eval_max).partition_by(
+        "run_id", as_dict=True
+    )
+    for run_id in data["run_id"].unique(maintain_order=True):
+        if (run_id,) not in runs:
+            continue
+        dt_group = runs[run_id,]
+        best = np.maximum if maximization else np.minimum
+        ys = best.accumulate(np.array(dt_group[fval_var]))
+        xs = np.array(dt_group[coord_vars])
         evals = np.array(dt_group[eval_var])
 
+        stopping_points = np.where(np.abs(np.diff(ys, prepend=np.inf)) > 0)[0]
         stagnation_lengths = np.diff(evals[stopping_points], append=eval_max)
-        edge_lengths = stagnation_lengths[stagnation_lengths > beta]
-        real_idxs = [stopping_points[i] for i in np.where(stagnation_lengths > beta)[0]]
-        if not real_idxs:
-            continue
-
-        xloc = xs[real_idxs[0]]
-        yval = ys[real_idxs[0]]
-        nodeidx = _get_nodeidx(xloc, yval, nodes, epsilon)
-        if nodeidx == -1:
-            nodes.loc[running_idx] = [*xloc, yval, 1, evals[real_idxs[0]]]
-            node1 = running_idx
-            running_idx += 1
-        else:
-            nodes.loc[nodeidx, "evals"] += evals[real_idxs[0]]
-            nodes.loc[nodeidx, "count"] += 1
-            node1 = nodeidx
-
-        if len(real_idxs) == 1:
-            continue
-
-        for i in range(len(real_idxs) - 1):
-            xloc = xs[real_idxs[i + 1]]
-            yval = ys[real_idxs[i + 1]]
-            nodeidx = _get_nodeidx(xloc, yval, nodes, epsilon)
-            if nodeidx == -1:
-                nodes.loc[running_idx] = [*xloc, yval, 1, evals[real_idxs[i + 1]]]
-                node2 = running_idx
-                running_idx += 1
+        long = stagnation_lengths > beta
+        ids = [node(xs[i], ys[i], evals[i]) for i in stopping_points[long]]
+        for (node1, node2), edgelen in zip(pairwise(ids), stagnation_lengths[long]):
+            row = edge_rows.get((node1, node2))
+            if row is None:
+                row = edge_rows[node1, node2] = len(edges)
+                edges.loc[row] = [node1, node2, 1, edgelen]
             else:
-                nodes.loc[nodeidx, "evals"] += evals[real_idxs[i + 1]]
-                nodes.loc[nodeidx, "count"] += 1
-                node2 = nodeidx
-
-            edgelen = edge_lengths[i]
-            edge_idxs = edges.query(f"start == {node1} & end == {node2}").index
-            if len(edge_idxs) == 0:
-                edges.loc[running_edgeidx] = [node1, node2, 1, edgelen]
-                running_edgeidx += 1
-            else:
-                curr_count = edges.loc[edge_idxs[0]]["count"]
-                curr_len = edges.loc[edge_idxs[0]]["stag_length_avg"]
-                edges.loc[edge_idxs[0], "stag_length_avg"] = (
-                    curr_len * curr_count + edgelen
-                ) / (curr_count + 1)
-                edges.loc[edge_idxs[0], "count"] += 1
-            node1 = node2
+                count, length = (
+                    edges.loc[row, "count"],
+                    edges.loc[row, "stag_length_avg"],
+                )
+                edges.loc[row, "stag_length_avg"] = (length * count + edgelen) / (
+                    count + 1
+                )
+                edges.loc[row, "count"] += 1
     return pl.from_pandas(nodes.infer_objects()), pl.from_pandas(edges.infer_objects())
