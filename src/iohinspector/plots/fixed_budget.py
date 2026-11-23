@@ -31,6 +31,10 @@ def plot_single_function_fixed_budget(
 ):
     """Create a fixed-budget convergence plot showing algorithm performance over evaluation budgets.
 
+    Newer: the figure kind "convergence" of ``iohinspector.figures`` draws the median and quartiles over the budgets (and ``"fixed_budget"`` one budget across functions), for
+    publication and the website: ``render(FigureSpec(panels=[Panel("convergence")]), data)``.
+    This function stays as it is.
+
     Visualizes how different algorithms converge by plotting aggregate performance measures
     (geometric mean, median, etc.) against evaluation budgets, allowing direct comparison
     of convergence behavior across algorithms.

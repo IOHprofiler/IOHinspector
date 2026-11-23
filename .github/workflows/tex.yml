@@ -34,4 +34,4 @@ jobs:
         run: |
           . "$HOME/.local/bin/env"
           pdflatex --version | head -1
-          uv run --no-sync pytest -q -rs tests/test_figures
+          uv run --no-sync pytest -q -rs -n auto tests/test_figures

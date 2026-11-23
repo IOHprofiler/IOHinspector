@@ -3,7 +3,9 @@ cases for every decision DS-1 to DS-14."""
 
 import json
 import math
+import os
 import urllib.request
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -79,15 +81,26 @@ def example_matrix() -> dict:
 # The published example (downloaded; skipped offline, Q-DS-4)
 
 
+#: the downloaded example, kept between runs (not committed: it is not ours)
+CACHE = Path(__file__).parents[1] / ".cache" / "dsctool"
+
+
 @pytest.fixture(scope="module")
 def example():
     files = {}
     try:
         for name in ("dsc.json", "dsc.result", "omnibus.result", "posthoc.result"):
-            url = EXAMPLE + name
-            assert url.startswith("https://")
-            with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
-                files[name] = json.load(response)
+            cached = CACHE / name
+            if not cached.exists():
+                url = EXAMPLE + name
+                assert url.startswith("https://")
+                with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
+                    body = response.read()
+                CACHE.mkdir(parents=True, exist_ok=True)
+                partial = cached.with_suffix(f".{os.getpid()}")  # workers in parallel
+                partial.write_bytes(body)
+                partial.replace(cached)
+            files[name] = json.loads(cached.read_bytes())
     except (OSError, ValueError) as error:
         pytest.skip(f"DSCTool example not available: {error}")
     return files

@@ -1,3 +1,19 @@
+"""The matplotlib and seaborn plots of iohinspector 0.0.x: each returns ``(ax, df)``.
+
+They stay as they are. ``iohinspector.figures`` draws the same views as figure
+kinds, from one ``FigureSpec`` for publication and the website
+(``render(FigureSpec(panels=[Panel(kind)]), data)``):
+
+=====================================  =========================================
+``plot_ecdf``                          ``"ecdf"``
+``plot_single_function_fixed_budget``  ``"convergence"``, ``"fixed_budget"``
+``plot_single_function_fixed_target``  ``"ert"`` (across dimensions)
+``plot_eaf_single_objective``          ``"eaf"``
+``plot_eaf_diffs``                     ``"eaf_difference"``
+``plot_tournament_ranking``            ``"win_fractions"``, ``"pairwise_tests"``
+=====================================  =========================================
+"""
+
 from .fixed_target import plot_single_function_fixed_target
 from .fixed_budget import plot_single_function_fixed_budget
 from .ecdf import plot_ecdf

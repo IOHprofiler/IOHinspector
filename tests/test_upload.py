@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import shutil
 import threading
@@ -91,7 +92,8 @@ def _handler(fake: Fake):
 def _server():
     fake = Fake()
     httpd = HTTPServer(("127.0.0.1", 0), _handler(fake))
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    serve = functools.partial(httpd.serve_forever, poll_interval=0.01)  # quick shutdown
+    threading.Thread(target=serve, daemon=True).start()
     fake.url = f"http://127.0.0.1:{httpd.server_port}"  # type: ignore[attr-defined]
     yield fake
     httpd.shutdown()

@@ -21,13 +21,22 @@ from matplotlib.lines import Line2D
 from matplotlib.style import context as style_context
 from matplotlib.text import Text
 
+from . import compare, distributions, eaf, parameters, performance
 from .base import Curve, Kind, Plot
 from .ecdf import ECDF
 from .labels import add_direct_labels, place_direct_labels
+from .marks import MARKS
 from .spec import FORMATS, UNITS, Axis, FigureSpec, Panel, Series, _one_of
 from .venues import DARK_PALETTES, HIGHLIGHT, LINESTYLES, MARKERS, PALETTES, VENUES
 
-KINDS: dict[str, Kind] = {"ecdf": ECDF}
+KINDS: dict[str, Kind] = {
+    "ecdf": ECDF,
+    **performance.KINDS,
+    **compare.KINDS,
+    **distributions.KINDS,
+    **eaf.KINDS,
+    **parameters.KINDS,
+}
 METADATA = {  # without dates; the PGF backend takes none
     "pdf": {"metadata": {"CreationDate": None}},
     "svg": {"metadata": {"Date": None}},
@@ -317,6 +326,8 @@ def _figure(
     for i, (ax, panel, plot) in enumerate(zip(axes, spec.panels, plots)):
         _panel(ax, i, spec, panel, plot, styles, add)
     for i, (ax, plot) in enumerate(zip(axes, plots)):  # on final limits
+        if plot.mark != "line":
+            continue
         for curve, x, y in marker_positions(ax, spec, plot, styles):
             look = styles[curve.label]
             line = ax.plot(
@@ -378,7 +389,7 @@ def _panel(ax, i: int, spec, panel: Panel, plot: Plot, styles, add: Add) -> None
             ax,
             curve,
             styles[curve.label],
-            plot.step,
+            plot,
             f"{p}-s-{styles[curve.label]['id']}",
             add,
         )
@@ -403,7 +414,7 @@ def _panel(ax, i: int, spec, panel: Panel, plot: Plot, styles, add: Add) -> None
         add(f"{p}-{which}axis", "axis", p, [axis])
         add(f"{p}-{which}label", "label", f"{p}-{which}axis", [axis.label])
     size = spec.text.annotation_size or mpl.rcParams["font.size"]
-    for j, note in enumerate(panel.annotations):
+    for j, note in enumerate([*panel.annotations, *plot.annotations]):
         add(f"{p}-a{j}", "annotation", p, _annotate(ax, note, size), annotation=j)
 
 
@@ -416,7 +427,15 @@ def axis_settings(own: Axis, defaults: dict) -> dict:
     if own.label is None and label and scale == "log" and ticks == "exponent":
         label = f"$\\log_{{10}}$({label})"
     lim = own.lim or defaults.get("lim")
-    return {"label": label, "scale": scale, "lim": lim, "ticks": ticks}
+    grid = own.grid or defaults.get("grid", "major")
+    return {
+        "label": label,
+        "scale": scale,
+        "lim": lim,
+        "ticks": ticks,
+        "grid": grid,
+        "names": defaults.get("ticklabels"),
+    }
 
 
 def _axis(ax, which: str, own: Axis, defaults: dict) -> None:
@@ -437,11 +456,18 @@ def _axis(ax, which: str, own: Axis, defaults: dict) -> None:
     if log and a["ticks"] != "auto":
         axis.set_major_formatter(ticker.FuncFormatter(TICK_FORMATS[a["ticks"]]))
         axis.set_minor_formatter(ticker.NullFormatter())
-    if own.grid != "none":
-        ax.grid(True, which=own.grid, axis=which)
+    if a["names"]:  # categories at 0, 1, ...
+        axis.set_ticks(range(len(a["names"])), a["names"])
+    if a["grid"] != "none":
+        ax.grid(True, which=a["grid"], axis=which)
 
 
-def _draw(ax, curve: Curve, look: dict, step: bool, sid: str, add: Add) -> None:
+def _draw(ax, curve: Curve, look: dict, plot: Plot, sid: str, add: Add) -> None:
+    if plot.mark in MARKS:
+        for part, artists in MARKS[plot.mark](ax, curve, look, plot.fmt).items():
+            add(f"{sid}-{part}", part, sid, artists)
+        return
+    step = plot.step
     if curve.lo is not None and curve.hi is not None and look["band"]:
         band = ax.fill_between(
             curve.x,
@@ -558,6 +584,7 @@ def _legends(fig, axes, spec: FigureSpec, plots, styles, add: Add) -> list:
     """Direct labels or legends; returns the direct labels of each axes, to
     place once the layout is known."""
     legend, direct = spec.legend, []
+    plots = [p if p.legend else Plot([]) for p in plots]
     if legend.mode == "none":
         return direct
     if legend.mode == "outside" or (
@@ -584,7 +611,9 @@ def _legends(fig, axes, spec: FigureSpec, plots, styles, add: Add) -> list:
         return direct
     for i, (ax, plot) in enumerate(zip(axes, plots)):
         entries = legend_entries(spec, plot.curves, styles)
-        if legend.mode == "box":
+        if not entries:
+            continue
+        if legend.mode == "box" or plot.mark not in ("line", "points"):
             box = ax.legend(
                 handles=list(map(_handle, entries)),
                 loc=legend.loc,

@@ -4,6 +4,9 @@
 
 ### New
 
+- The `plots` functions stay as they are (they return `(ax, df)`); their docstrings
+  and `iohinspector.plots` name the `figures` kind that draws the same view.
+
 - EAF and EAF differences (`docs/definitions/eaf.md`): `metrics.get_eaf` is the
   single-objective EAF of each group of `by` on the runs' best-so-far traces,
   as attainment surfaces at IOHanalyzer's levels (`mode="precise"`, moocore) or
@@ -69,6 +72,20 @@
   has a stable id in the SVG, and `elements(spec, data)` gives their tree with
   boxes in points. `to_python(spec, data)` writes the figure as matplotlib code
   with `rcParams` and a `STYLE` table.
+- Every Workbench figure kind on the element model (D11, I20): besides the ECDF,
+  `Panel.kind` is `convergence` (median and quartile band, the target as a
+  line), `fixed_budget`, `ert` (over the dimension), `fixed_budget_ecdf`,
+  `target_budget` (three modes: best of, one, yours vs best), `pairwise_tests`
+  and `win_fractions` (heatmaps), `box`, `violin`, `histogram`, `eaf`,
+  `eaf_difference`, `shapley` (bars), `cumulative_difference` and the parameter
+  figures `parallel_coordinates`, `marginals`, `parameter_map` and
+  `sensitivity`. Each frame is its metric's own result (`aggregate_convergence`,
+  `get_ks_tests`, `get_eaf_difference`, ...), drawn only from the frame, with
+  stable element ids (`p0-s-<series>-cells`, `-bars`, `-box`, ...) and Python
+  code. `Data` gained `at` (the target or budget), `measure`, `mode`, `focus`
+  and `options` (keyword arguments of the metric); axes can name categories and
+  default to no grid for them. `figures.atlas(spec, runs)` is one panel per
+  (function, dimension) pair. `maximization` is passed on to every metric.
 - The fixed-budget ECDF and its AUC (`docs/definitions/ecdf.md`, EC-9 and EC-10):
   `metrics.get_fixed_budget_ecdf` gives, at each value v, the fraction of (run,
   budget) pairs whose best-so-far value at the budget is v or better (inclusive;
