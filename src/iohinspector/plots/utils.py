@@ -44,14 +44,10 @@ class BasePlotArgs:
     tight_layout: bool = True
 
     def __post_init__(self) -> None:
-        if self.xlim is not None and not isinstance(self.xlim, tuple):
-            self.xlim = tuple(self.xlim)  # type: ignore
-        if self.ylim is not None and not isinstance(self.ylim, tuple):
-            self.ylim = tuple(self.ylim)  # type: ignore
-        if self.xticks is not None and not isinstance(self.xticks, tuple):
-            self.xticks = tuple(self.xticks)  # type: ignore
-        if self.yticks is not None and not isinstance(self.yticks, tuple):
-            self.yticks = tuple(self.yticks)  # type: ignore
+        for name in ("xlim", "ylim", "xticks", "yticks"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, tuple):
+                setattr(self, name, tuple(value))
 
     def as_dict(self) -> dict[str, Any]:
         """Convert the plot arguments to a dictionary representation.
@@ -90,85 +86,63 @@ class BasePlotArgs:
         Returns:
             ax: The modified matplotlib Axes object with properties applied.
         """
-        # Title and labels with fontsize handling
-        if self.title is not None:
-            if self.title_fontsize is not None:
-                ax.set_title(self.title, fontsize=self.title_fontsize)
-            elif self.fontsize is not None:
-                ax.set_title(self.title, fontsize=self.fontsize)
-            else:
-                ax.set_title(self.title)
-
-        if self.xlabel is not None:
-            if self.fontsize is not None:
-                ax.set_xlabel(self.xlabel, fontsize=self.fontsize)
-            else:
-                ax.set_xlabel(self.xlabel)
-
-        if self.ylabel is not None:
-            if self.fontsize is not None:
-                ax.set_ylabel(self.ylabel, fontsize=self.fontsize)
-            else:
-                ax.set_ylabel(self.ylabel)
-
-        # Ticks
-        if self.xticks is not None:
-            ax.set_xticks(list(self.xticks))
-        if self.yticks is not None:
-            ax.set_yticks(list(self.yticks))
-
-        # Limits
-        if self.xlim is not None:
-            ax.set_xlim(*self.xlim)
-        if self.ylim is not None:
-            ax.set_ylim(*self.ylim)
-
-        # Scales
-        if self.xscale:
-            ax.set_xscale(self.xscale)
-        if self.yscale:
-            ax.set_yscale(self.yscale)
-
-        # Grid
+        self._apply_text(ax)
+        self._apply_axes(ax)
         if isinstance(self.grid, bool):
             ax.grid(self.grid)
         elif isinstance(self.grid, str):
             ax.grid(True, which=self.grid)
-
-        # Legend
         if self.legend:
-            kwargs = dict(self.legend_kwargs or {})
-            if "loc" not in kwargs:
-                kwargs["loc"] = self.legend_loc
-            # Only attempt to create legend if there are labeled artists
+            kwargs = {"loc": self.legend_loc, **(self.legend_kwargs or {})}
             try:
                 ax.legend(**kwargs)
             except Exception:  # noqa: BLE001
-                # fallback: call without kwargs
-                ax.legend()
-
-        # Tick params (includes labelsize if provided)
+                ax.legend()  # fallback: call without kwargs
         if self.tick_params:
             ax.tick_params(**self.tick_params)
         elif self.fontsize is not None:
             ax.tick_params(labelsize=self.fontsize)
-
-        # Reverse axes if requested
-        if self.reverse_xaxis:
-            ax.invert_xaxis()
-        if self.reverse_yaxis:
-            ax.invert_yaxis()
-
+        for axis in "xy":
+            if getattr(self, f"reverse_{axis}axis"):
+                getattr(ax, f"invert_{axis}axis")()
         return ax
+
+    def _apply_text(self, ax) -> None:
+        """The title and axis labels, in ``fontsize`` (the title in
+        ``title_fontsize`` if given)."""
+        size = {} if self.fontsize is None else {"fontsize": self.fontsize}
+        if self.title is not None:
+            title = size
+            if self.title_fontsize is not None:
+                title = {"fontsize": self.title_fontsize}
+            ax.set_title(self.title, **title)
+        for axis in "xy":
+            label = getattr(self, f"{axis}label")
+            if label is not None:
+                getattr(ax, f"set_{axis}label")(label, **size)
+
+    def _apply_axes(self, ax) -> None:
+        """The ticks, limits and scales of x and y, in that order."""
+        for axis in "xy":
+            ticks = getattr(self, f"{axis}ticks")
+            if ticks is not None:
+                getattr(ax, f"set_{axis}ticks")(list(ticks))
+        for axis in "xy":
+            lim = getattr(self, f"{axis}lim")
+            if lim is not None:
+                getattr(ax, f"set_{axis}lim")(*lim)
+        for axis in "xy":
+            scale = getattr(self, f"{axis}scale")
+            if scale:
+                getattr(ax, f"set_{axis}scale")(scale)
 
     def override(self, other: Union["BasePlotArgs", dict[str, Any]] | None):
         """Update plot arguments in place with values from another source.
 
         Args:
             other (Optional[Union[BasePlotArgs, Dict[str, Any]]]): Plot arguments to override current values with.
-                Can be either a BasePlotArgs instance or a dictionary. Values from `other` override those
-                from `self` when they are not None. Dictionary fields (legend_kwargs, tick_params) are merged
-                with `other` taking precedence for overlapping keys.
+                Can be either a BasePlotArgs instance or a dictionary. Values from `other` replace those
+                of `self` when they are not None, dictionary fields (legend_kwargs, tick_params) too.
 
         Note:
             Works with inheritance - handles fields from both base and derived classes.
@@ -202,25 +176,6 @@ class LinePlotArgs(BasePlotArgs):
         results["line_colors"] = self.line_colors
         return results
 
-    def apply(self, ax):
-        """Apply line plot properties to a matplotlib Axes object.
-
-        Args:
-            ax: matplotlib Axes instance to apply the line plot properties to.
-
-        Returns:
-            ax: The modified matplotlib Axes object with line plot properties applied.
-        """
-        return super().apply(ax)
-
-    def override(self, other):
-        """Update line plot arguments in place with values from another source.
-
-        Args:
-            other: Line plot arguments to override current values with.
-        """
-        return super().override(other)
-
 
 @dataclass
 class HeatmapPlotArgs(BasePlotArgs):
@@ -238,25 +193,6 @@ class HeatmapPlotArgs(BasePlotArgs):
         results["heatmap_palette"] = self.heatmap_palette
         return results
 
-    def apply(self, ax):
-        """Apply heatmap plot properties to a matplotlib Axes object.
-
-        Args:
-            ax: matplotlib Axes instance to apply the heatmap plot properties to.
-
-        Returns:
-            ax: The modified matplotlib Axes object with heatmap plot properties applied.
-        """
-        return super().apply(ax)
-
-    def override(self, other):
-        """Update heatmap plot arguments in place with values from another source.
-
-        Args:
-            other: Heatmap plot arguments to override current values with.
-        """
-        return super().override(other)
-
 
 @dataclass
 class ScatterPlotArgs(BasePlotArgs):
@@ -271,25 +207,6 @@ class ScatterPlotArgs(BasePlotArgs):
         results = super().as_dict()
         results["point_colors"] = self.point_colors
         return results
-
-    def apply(self, ax):
-        """Apply scatter plot properties to a matplotlib Axes object.
-
-        Args:
-            ax: matplotlib Axes instance to apply the scatter plot properties to.
-
-        Returns:
-            ax: The modified matplotlib Axes object with scatter plot properties applied.
-        """
-        return super().apply(ax)
-
-    def override(self, other):
-        """Update scatter plot arguments in place with values from another source.
-
-        Args:
-            other: Scatter plot arguments to override current values with.
-        """
-        return super().override(other)
 
 
 def _hue(df: Any, by: Sequence[str]) -> Any:

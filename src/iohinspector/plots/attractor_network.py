@@ -25,25 +25,6 @@ class AttractorNetworkPlotArgs(BasePlotArgs):
         results["color_map"] = self.color_map
         return results
 
-    def apply(self, ax):
-        """Apply attractor network plot properties to a matplotlib Axes object.
-
-        Args:
-            ax: matplotlib Axes instance to apply the attractor network plot properties to.
-
-        Returns:
-            ax: The modified matplotlib Axes object with attractor network plot properties applied.
-        """
-        return super().apply(ax)
-
-    def override(self, other):
-        """Update attractor network plot arguments in place with values from another source.
-
-        Args:
-            other: Attractor network plot arguments to override current values with.
-        """
-        return super().override(other)
-
 
 def plot_attractor_network(
     data: pl.DataFrame,
