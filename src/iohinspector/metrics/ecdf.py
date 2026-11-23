@@ -11,7 +11,7 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import PAIR, get_ecdf_budgets, get_ecdf_targets, seq_rt
-from .restarts import continued, failed, gained, restarts, run_sets, split
+from .restarts import EXACT, continued, failed, gained, restarts, run_sets, split
 from .utils import runs_of
 
 ALL = "_all"  # the one group when ``by`` is empty
@@ -149,7 +149,9 @@ def _restarted(  # pylint: disable=R0913
     divide_by_dimension: bool,
     fval_var: str,
     eval_var: str,
-) -> pl.DataFrame:
+    exact: bool = False,
+    cost_only: bool = False,
+):
     """The increments that simulated restarts add to ``steps`` (EC-7), per curve of
     ``key`` up to the budget ``horizon``: ``key``, ``eval_var`` and ``inc``. The
     restarts of a run draw from its group of ``by`` in its pair. ``steps`` are the
@@ -159,7 +161,8 @@ def _restarted(  # pylint: disable=R0913
     the last evaluation at or before each. With ``area`` (b_lo and the log axis
     of ``get_ecdf_auc``), only their area up to ``horizon``: per curve and chunk
     an increment at x = 0, each increment weighted by the part of the axis it
-    covers (``_area``)."""
+    covers (``_area``). Sampled unless ``exact``; with ``cost_only`` only the
+    estimated cost of the exact restarts (``restarts.continued``)."""
     sets = list(dict.fromkeys([*by, *PAIR]))
     if continuous:  # each increment of q cut where the set's runs end
         runs = run_sets(steps, sets, eval_var, pl.col("q").max())
@@ -183,7 +186,9 @@ def _restarted(  # pylint: disable=R0913
     if area is not None:
         x, lo, hi = _axis(_x(eval_var, divide_by_dimension), area[0], horizon, area[1])
         weighted = (hi - x) / (hi - lo)
-    return continued(steps, runs, key, eval_var, at, weighted)
+    return continued(
+        steps, runs, key, eval_var, at, weighted, exact=exact, cost_only=cost_only
+    )
 
 
 def _x(eval_var: str, divide_by_dimension: bool) -> pl.Expr:
@@ -237,12 +242,14 @@ def _increments(  # pylint: disable=R0913,R0914
     area: tuple[float, bool] | None = None,
     fval_var: str = "raw_y",
     eval_var: str = "evaluations",
-) -> tuple[pl.DataFrame, float, pl.DataFrame | None]:
+    cost_only: bool = False,
+):
     """The weighted ECDF increments ``inc`` at ``x`` per group of ``by`` (with a 0 at
     x = 0 for every group), with simulated restarts up to ``horizon`` (by default the
     largest budget in the selection), that largest budget, and with restarts
     ``n_restarted`` per group of ``by``. With ``samples``, the restarts' increments
-    are only right at those x values, with ``area`` only their area (``_restarted``)."""
+    are only right at those x values, with ``area`` only their area (``_restarted``).
+    With ``cost_only``, only the estimated cost of exact restarts."""
     # #lizard forgives  (the options of get_ecdf and get_ecdf_auc, passed on as one)
     restart = restarts(stopped)
     data, targets = _prepare(
@@ -257,7 +264,7 @@ def _increments(  # pylint: disable=R0913,R0914
     steps = steps.with_columns(inc=pl.col("dy") * pl.col("weight"))
     keep = [*dict.fromkeys([*by, *PAIR]), eval_var, "inc"]
     counts = None
-    if restart:
+    if restart or cost_only:
         until = float(x_max if horizon is None else horizon)
         counts = _stopped_before(
             data, by, eval_var, _evaluations(until, divide_by_dimension)
@@ -275,7 +282,11 @@ def _increments(  # pylint: disable=R0913,R0914
             divide_by_dimension=divide_by_dimension,
             fval_var=fval_var,
             eval_var=eval_var,
+            exact=stopped == EXACT,
+            cost_only=cost_only,
         )
+        if cost_only:
+            return extra
         steps = pl.concat([steps.select(keep), extra.cast(steps.select(keep).schema)])
     zero = data.select(by).unique().with_columns(x=pl.lit(0.0), inc=pl.lit(0.0))
     steps = steps.filter(pl.col("inc") != 0).select(*by, x=x, inc="inc")
@@ -350,11 +361,12 @@ def get_ecdf(
     stops (B_i, its ``evals_used`` or else its last logged evaluation) without
     reaching a target is continued by simulated restarts by default (EC-7):
     runs drawn uniformly from its group in its pair until one reaches the target,
-    as in COCO. The ECDF is their expected value, computed from the runs'
-    runtimes, up to the largest of ``x_values`` or else the largest evaluation in
-    ``data``. It is exact (EC-3): without ``x_values`` the result has one row per x
-    at which the ECDF steps, with its value from x on, and a row at x = 0 (value
-    0) for every group.
+    as in COCO, up to the largest of ``x_values`` or else the largest evaluation
+    in ``data``. The restarts are sampled, as cocopp's drawSP, with a fixed seed,
+    or with ``stopped="restart_exact"`` their expected value is computed, which
+    takes time in proportion to that budget (``get_restart_cost``). Without
+    ``x_values`` the result has one row per x at which the ECDF steps (EC-3),
+    with its value from x on, and a row at x = 0 (value 0) for every group.
 
     Args:
         data: the runs' logged rows in evaluation order (``DataManager.load``): at
@@ -384,7 +396,10 @@ def get_ecdf(
               ``"all"``: over each group's own pairs. Both warn, naming the
               missing pairs, when the groups' pairs differ (EC-2).
             - ``divide_by_dimension`` (False): x is evaluations / dimension.
-            - ``stopped`` (``"restart"``): simulated restarts (EC-7), or
+            - ``stopped`` (``"restart"``): simulated restarts (EC-7), sampled
+              (``restarts.SAMPLES`` draws per run set and number of runs that
+              fail a target); ``"restart_exact"``: their expected value, which
+              warns (``RestartCostWarning``) when it will be slow; or
               ``"carry_forward"``: none, a run keeps its final value (IOHanalyzer).
               The EAF (``get_eaf``) carries forward by default, so the AOCC is
               the volume under it only with the same ``stopped`` on both sides.
@@ -456,6 +471,39 @@ def get_ecdf_auc(  # pylint: disable=too-many-arguments
     return _with_counts(auc, counts, by)
 
 
+def get_restart_cost(
+    data: pl.DataFrame,
+    targets: pl.DataFrame | None = None,
+    by: Sequence[str] = ("algorithm_name",),
+    *,
+    horizon: float | None = None,
+    **options,
+) -> dict:
+    """The estimated cost of exact simulated restarts
+    (``stopped="restart_exact"``) in ``get_ecdf`` and ``get_ecdf_auc`` up to the
+    budget ``horizon`` (by default the largest in ``data``), without computing
+    them. It takes about as long as the ECDF without restarts.
+
+    The exact restarts compute, per curve (a group of ``by``, a pair and a number
+    of runs that fail a target), every evaluation up to the horizon, once per
+    distinct budget of the failed runs. A rough guide, measured on one laptop:
+    ``get_ecdf`` and ``get_ecdf_auc`` warn (``restarts.RestartCostWarning``)
+    above 10 s or 2 GB.
+
+    Args:
+        data, targets, by: as in ``get_ecdf``.
+        horizon: the largest budget, as ``max(x_values)`` or ``b_hi``.
+        **options: the other options of ``get_ecdf``.
+
+    Returns:
+        dict: ``curves``, ``evaluations`` (summed over the curves), ``seconds``
+            and ``gigabytes`` (on top of the data).
+    """
+    data, by = _one_group(data, by)
+    options = {k: v for k, v in options.items() if k != "stopped"}
+    return _increments(data, targets, by, horizon=horizon, cost_only=True, **options)
+
+
 def _value_increments(  # pylint: disable=R0913,R0914
     data: pl.DataFrame,
     budgets: pl.DataFrame | None,
@@ -502,7 +550,8 @@ def _value_increments(  # pylint: disable=R0913,R0914
         lists = pieces.select("run_set", *PAIR).unique()
         lists = lists.join(budgets.group_by(PAIR).agg("budget"), on=PAIR)
         budget = {r: np.array(b) for r, b in lists.select("run_set", "budget").rows()}
-        gain = pl.Series(gained(pieces, runs, budget, eval_var).sum(axis=1))
+        gain = gained(pieces, runs, budget, eval_var, exact=stopped == EXACT)
+        gain = pl.Series(gain.sum(axis=1))
     pieces = pieces.with_columns(gain=gain).with_row_index("_piece")
     reached = (
         pieces.select("_piece", *PAIR, eval_var)
@@ -569,7 +618,8 @@ def get_fixed_budget_ecdf(
         fval_var: the function value column.
         **options: keyword-only: ``maximization`` (False), ``pairs``
             (``"common"``) and ``eval_var`` (``"evaluations"``), as for
-            ``get_ecdf``; ``stopped``: ``"restart"`` (default) or
+            ``get_ecdf``; ``stopped``: ``"restart"`` (default),
+            ``"restart_exact"`` or
             ``"carry_forward"``, the run's final value (IOHanalyzer's rule).
 
     Returns:

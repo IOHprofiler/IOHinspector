@@ -8,7 +8,7 @@ import polars as pl
 from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import seq_rt
-from .restarts import restarts
+from .restarts import EXACT, restarts
 from .utils import custom, describe, name_run_sets, runs_of
 
 
@@ -64,6 +64,11 @@ def aggregate_convergence(  # pylint: disable=R0913,R0914,R0917
     if data.is_empty():
         raise ValueError("Data is empty, cannot aggregate convergence.")
     restart = restarts(stopped)
+    if stopped == EXACT:
+        raise ValueError(
+            "aggregate_convergence's restarts are simulated chains (FB-6): "
+            "stopped='restart' or 'carry_forward'"
+        )
     used = ["evals_used"] if "evals_used" in data.columns else []
     if restart and not used:
         raise ValueError(

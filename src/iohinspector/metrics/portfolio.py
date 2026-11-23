@@ -10,7 +10,7 @@ import polars as pl
 
 from ..targets import PAIR
 from .ecdf import _hits, _prepare, _restarted, _x
-from .restarts import restarts
+from .restarts import EXACT, restarts
 
 __all__ = [
     "envelope_value",
@@ -280,6 +280,7 @@ def _portfolio(  # pylint: disable=R0913,R0914
             divide_by_dimension=divide_by_dimension,
             fval_var=fval_var,
             eval_var=eval_var,
+            exact=stopped == EXACT,
         )
         hits = pl.concat([keep, extra.cast(keep.schema)])
     x = x.clip(lo, hi)
