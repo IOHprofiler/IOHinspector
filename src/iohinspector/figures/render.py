@@ -147,15 +147,10 @@ def series_styles(
     (a slug of its label, unique among ``labels``). The ``family`` palette
     colours by ``families`` (default: the labels); ``highlight`` colours the
     series highlighted yours (wider) and other (thinner) by its rules."""
-    name = spec.palette if isinstance(spec.palette, str) else None
-    dark = spec.background == "dark"
-    palette = (dark and DARK_PALETTES.get(name or "")) or PALETTES.get(name or "")
-    palette = palette or spec.palette
-    roles = HIGHLIGHT["dark" if dark else "white"]
+    name, palette, roles = _palette(spec)
     families = families or labels
     family_index = {f: i for i, f in enumerate(dict.fromkeys(families))}
     in_family, ids, styles = Counter(), set(), {}
-    width = mpl.rcParams["lines.linewidth"]
     index = 0  # among the series that take a palette colour
     for label, family in zip(labels, families):
         own = spec.series.get(label, Series())
@@ -169,29 +164,51 @@ def series_styles(
         else:
             color, dash = palette[index % len(palette)], index
             index += 1
-        slug = re.sub(r"[^A-Za-z0-9_-]+", "_", label).strip("_") or "series"
-        while slug in ids:
-            slug += "_"
-        ids.add(slug)
-        styles[label] = {
-            "label": label,
-            "id": slug,
-            "name": own.name or label,
-            "color": own.color or color,
-            "color_below": own.color_below,
-            "linestyle": own.linestyle or LINESTYLES[dash % len(LINESTYLES)],
-            "marker": own.marker or MARKERS[dash % len(MARKERS)],
-            "marker_size": own.marker_size or mpl.rcParams["lines.markersize"],
-            "linewidth": own.linewidth
-            or width * {"yours": 1.5, "other": 0.75}.get(role or "", 1),
-            "every": own.every,
-            "visible": own.visible,
-            "order": own.order,
-            "band": own.band,
-            "band_opacity": own.band_opacity,
-            "highlight": own.highlight,
-        }
+        styles[label] = _style(own, label, _slug(label, ids), color, dash, role)
     return styles
+
+
+def _palette(spec: FigureSpec) -> tuple[str | None, list, dict]:
+    """The palette's name (None for a list of colours), its colours (the dark
+    variant on a dark background) and the colours of the highlight roles."""
+    name = spec.palette if isinstance(spec.palette, str) else None
+    dark = spec.background == "dark"
+    palette = (dark and DARK_PALETTES.get(name or "")) or PALETTES.get(name or "")
+    return name, palette or spec.palette, HIGHLIGHT["dark" if dark else "white"]
+
+
+def _slug(label: str, ids: set) -> str:
+    """An id for ``label``: its letters, digits, ``_`` and ``-``, made unique among
+    ``ids`` (and added to them)."""
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", label).strip("_") or "series"
+    while slug in ids:
+        slug += "_"
+    ids.add(slug)
+    return slug
+
+
+def _style(own: Series, label: str, slug: str, color, dash: int, role) -> dict:
+    """The look of one series: its ``Series`` overrides, else ``color`` and the
+    ``dash``-th line style and marker, and a width by its highlight ``role``."""
+    width = mpl.rcParams["lines.linewidth"]
+    return {
+        "label": label,
+        "id": slug,
+        "name": own.name or label,
+        "color": own.color or color,
+        "color_below": own.color_below,
+        "linestyle": own.linestyle or LINESTYLES[dash % len(LINESTYLES)],
+        "marker": own.marker or MARKERS[dash % len(MARKERS)],
+        "marker_size": own.marker_size or mpl.rcParams["lines.markersize"],
+        "linewidth": own.linewidth
+        or width * {"yours": 1.5, "other": 0.75}.get(role or "", 1),
+        "every": own.every,
+        "visible": own.visible,
+        "order": own.order,
+        "band": own.band,
+        "band_opacity": own.band_opacity,
+        "highlight": own.highlight,
+    }
 
 
 def rc_params(spec: FigureSpec) -> dict:
@@ -590,24 +607,10 @@ def _legends(fig, axes, spec: FigureSpec, plots, styles, add: Add) -> list:
     if legend.mode == "outside" or (
         legend.mode == "box" and legend.shared and len(axes) > 1
     ):
-        union = {}
-        for plot in plots:
-            for curve in plot.curves:
-                union.setdefault(curve.label, curve)
-        handles = [
-            _handle(s) for s in legend_entries(spec, list(union.values()), styles)
-        ]
-        loc = (
-            "outside right center"
-            if legend.mode == "outside"
-            else "outside lower center"
-        )
-        add(
-            "legend",
-            "legend",
-            "figure",
-            [fig.legend(handles=handles, loc=loc, ncols=legend.columns)],
-        )
+        entries, loc = shared_legend(spec, plots, styles)
+        handles = list(map(_handle, entries))
+        box = fig.legend(handles=handles, loc=loc, ncols=legend.columns)
+        add("legend", "legend", "figure", [box])
         return direct
     for i, (ax, plot) in enumerate(zip(axes, plots)):
         entries = legend_entries(spec, plot.curves, styles)
@@ -630,6 +633,19 @@ def _legends(fig, axes, spec: FigureSpec, plots, styles, add: Add) -> list:
             add(f"{sid}-label", "label", sid, [text])
         direct.append((ax, texts))
     return direct
+
+
+def shared_legend(spec: FigureSpec, plots, styles) -> tuple[list[dict], str]:
+    """The entries of one legend for all panels (each label once, from the plots
+    that have a legend) and its place: right of the panels for ``outside``, else
+    below them."""
+    union = {}
+    for plot in plots:
+        for curve in plot.curves if plot.legend else []:
+            union.setdefault(curve.label, curve)
+    entries = legend_entries(spec, list(union.values()), styles)
+    outside = spec.legend.mode == "outside"
+    return entries, "outside right center" if outside else "outside lower center"
 
 
 def _handle(look: dict) -> Line2D:
