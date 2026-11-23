@@ -53,6 +53,7 @@ from typing import Any
 
 import polars as pl
 
+from ..align import best_so_far
 from ..format import file_entry, run_id
 from .base import (
     NUMBER,
@@ -521,7 +522,7 @@ def infer_triggers(
     """
     if trace.is_empty():
         return None
-    best = pl.col("raw_y").cum_max() if maximization else pl.col("raw_y").cum_min()
+    best = best_so_far("raw_y", maximization)
     df = trace.select(
         "row",
         "evaluations",

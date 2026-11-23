@@ -180,14 +180,20 @@ def _sets(runs: pl.DataFrame):
     }
 
 
+def _set_bounds(runs: pl.DataFrame, run_set: np.ndarray):
+    """B_i of ``runs`` (sorted by run set, ``run_sets``), and per entry of
+    ``run_set`` the position of its set's first run and the set's size n."""
+    sets, used = runs["run_set"].to_numpy(), runs["evals_used"].to_numpy()
+    first = np.searchsorted(sets, run_set, "left")
+    return used, first, np.searchsorted(sets, run_set, "right") - first
+
+
 def _failures(runs: pl.DataFrame, run_set: np.ndarray, k: np.ndarray):
     """Per pair of ``run_set`` and ``k`` (arrays): the size n of the run set and the
     B_i of its k runs with the lowest final levels, as their distinct ``values`` in
     ascending order and their ``counts``, one row per pair (padded with count 0).
     ``runs`` is sorted by run set and final level (``run_sets``)."""
-    sets, used = runs["run_set"].to_numpy(), runs["evals_used"].to_numpy()
-    first = np.searchsorted(sets, run_set, "left")
-    n = np.searchsorted(sets, run_set, "right") - first
+    used, first, n = _set_bounds(runs, run_set)
     column = np.arange(int(k.max()))
     taken = column < k[:, None]
     budgets = used[np.minimum(first[:, None] + column, used.size - 1)]
@@ -296,9 +302,7 @@ def _shifts(runs: pl.DataFrame, run_set, k, horizon):
     (``_draws``) within the horizon, ascending, at ``values[bounds[i]:bounds[i +
     1]]`` with their ``counts``, and the weight of one draw. ``runs`` is sorted
     by run set and final level (``run_sets``)."""
-    sets, used = runs["run_set"].to_numpy(), runs["evals_used"].to_numpy()
-    first = np.searchsorted(sets, run_set, "left")
-    n = np.searchsorted(sets, run_set, "right") - first
+    used, first, n = _set_bounds(runs, run_set)
     found: list = [], [], []
     step = max(1, CHUNK // SAMPLES)
     for lo in range(0, k.size, step):

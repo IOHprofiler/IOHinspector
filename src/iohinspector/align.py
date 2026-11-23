@@ -12,6 +12,13 @@ __getattr__ = removed_names(__name__)
 RUN = "_run"
 
 
+def best_so_far(value: str | pl.Expr, maximization: bool = False) -> pl.Expr:
+    """The running best of ``value`` (a column name or expression), in row order;
+    apply ``.over`` per run (AL-6)."""
+    v = pl.col(value) if isinstance(value, str) else value
+    return v.cum_max() if maximization else v.cum_min()
+
+
 @upgrade_hints
 def align_data(  # pylint: disable=R0913,R0914,R0917
     df: pl.DataFrame,
@@ -62,8 +69,7 @@ def align_data(  # pylint: disable=R0913,R0914,R0917
     group_cols = list(dict.fromkeys(group_cols))
     budget = x_col == eval_var
     fval = y_col if budget else x_col
-    best = pl.col(fval).cum_max() if maximization else pl.col(fval).cum_min()
-    df = df.with_columns(best.over(group_cols))
+    df = df.with_columns(best_so_far(fval, maximization).over(group_cols))
     stopped = budget and "evals_used" in df.columns
     if stopped:  # B_i per run, from the run metadata (AL-9)
         runs = df.group_by(group_cols, maintain_order=True).agg(

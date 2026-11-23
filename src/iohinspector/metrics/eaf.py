@@ -11,9 +11,9 @@ import polars as pl
 from moocore import eaf, eafdiff
 
 from .._upgrade import upgrade_hints
-from ..align import align_data
-from ..targets import PAIR, get_ecdf_targets, seq_fv, seq_rt, spaced
-from .ecdf import ALL, _one_group, _quality
+from ..align import align_data, best_so_far
+from ..targets import PAIR, seq_fv, seq_rt, spaced
+from .ecdf import ALL, _one_group, _quality, _with_targets
 from .restarts import EXACT, failed, gained, restarts, run_sets
 from .utils import runs_of, transform_fval
 
@@ -254,16 +254,11 @@ def _traces(  # pylint: disable=R0913
     keep = list(dict.fromkeys(["run_id", *by, *PAIR, eval_var]))
     one_pair = data.select(pl.struct(PAIR).n_unique().over(by).max()).item() == 1
     if one_pair:
-        f = pl.col(fval_var)
-        best = (f.cum_max() if maximization else f.cum_min()).over("run_id")
+        best = best_so_far(fval_var, maximization).over("run_id")
         runs = data.select(*keep, best.alias(fval_var))
         runs = runs.filter(pl.col(fval_var).is_first_distinct().over("run_id"))
         return runs, fval_var, maximization, PAIR
-    if targets is None:
-        kind = "log-linear" if scale_f_log else "linear"
-        targets = get_ecdf_targets(data, kind, fval_var=fval_var)
-    targets = targets.cast({c: data.schema[c] for c in PAIR})
-    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    data, targets = _with_targets(data, targets, scale_f_log, fval_var)
     # q changes only where it differs from 0 before; each run starts at q = 0
     first = data.unique("run_id", keep="first", maintain_order=True)
     steps = _quality(data, targets, maximization, scale_f_log, fval_var)
@@ -596,9 +591,8 @@ def get_eaf(
             ``quality``) and ``percentile``, the points of each surface;
             discretised: ``by``, ``eval_var``, the value and ``eaf`` (alpha).
     """
-    data, by, (runs, value, larger, scope), grid_options, restart = _prepare(
-        data, by, mode, options
-    )
+    prepared = _prepare(data, by, mode, options)
+    data, by, (runs, value, larger, _), _, _ = prepared
     eval_var = options.get("eval_var", "evaluations")
     if mode == "precise":
         levels = list(percentiles)
@@ -606,19 +600,7 @@ def get_eaf(
             runs, by, lambda g: _surfaces(g, value, larger, eval_var, levels)
         )
     else:
-        grid = _grid(data, scope, value, **grid_options)
-        result = _attainment(
-            runs,
-            grid,
-            by,
-            scope,
-            value,
-            larger,
-            eval_var,
-            data if restart else None,
-            exact=restart == EXACT,
-        )
-        result = result.select(*by, eval_var, value, "eaf")
+        result = _alpha(prepared, eval_var).select(*by, eval_var, value, "eaf")
     return _finish(result, data, eval_var)
 
 
@@ -648,22 +630,22 @@ def _minus_best_other(cell: list[str]) -> pl.Expr:
     return pl.col("eaf") - pl.when(pl.col("eaf") < best).then(best).otherwise(second)
 
 
+def _alpha(prepared, eval_var: str) -> pl.DataFrame:
+    """alpha of each group of ``by`` on the grid of its scope (``_attainment``), with
+    the simulated restarts of ``stopped``: the discretised EAF."""
+    data, by, (runs, value, larger, scope), grid_options, restart = prepared
+    grid = _grid(data, scope, value, **grid_options)
+    restarted = data if restart else None
+    return _attainment(
+        runs, grid, by, scope, value, larger, eval_var, restarted, restart == EXACT
+    )
+
+
 def _margin(prepared, eval_var: str, column: str) -> pl.DataFrame:
     """alpha of each group of ``by`` minus the largest alpha of the other groups,
     on the grid of ``get_eaf(mode="discretised")``, in ``column`` (EA-2)."""
-    data, by, (runs, value, larger, scope), grid_options, restart = prepared
-    grid = _grid(data, scope, value, **grid_options)
-    alpha = _attainment(
-        runs,
-        grid,
-        by,
-        scope,
-        value,
-        larger,
-        eval_var,
-        data if restart else None,
-        exact=restart == EXACT,
-    )
+    data, by, (_, value, _, scope), _, _ = prepared
+    alpha = _alpha(prepared, eval_var)
     cell = [*scope, eval_var, value]
     result = alpha.select(*by, eval_var, value, _minus_best_other(cell).alias(column))
     return _finish(result, data, eval_var)
