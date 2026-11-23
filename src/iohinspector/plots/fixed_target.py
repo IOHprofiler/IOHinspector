@@ -33,6 +33,10 @@ def plot_single_function_fixed_target(
 ):
     """Create a fixed-target plot showing Expected Running Time (ERT) analysis for algorithm performance.
 
+    Newer: the figure kind "ert" of ``iohinspector.figures`` draws the ERT of one function across dimensions at a target; the ERT over targets has no kind yet, for
+    publication and the website: ``render(FigureSpec(panels=[Panel("ert")]), data)``.
+    This function stays as it is.
+
     Visualizes how much computational budget (evaluations) algorithms need to reach specific target
     performance levels, allowing comparison of algorithm efficiency across different difficulty targets.
 

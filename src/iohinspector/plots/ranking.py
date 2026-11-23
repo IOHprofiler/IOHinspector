@@ -30,6 +30,10 @@ def plot_tournament_ranking(
 ):
     """Plot ELO ratings from tournament-style algorithm competition across multiple problems.
 
+    Newer: the figure kind "win_fractions" of ``iohinspector.figures`` draws pairwise win fractions (and ``"pairwise_tests"`` the tests); not the same ratings, for
+    publication and the website: ``render(FigureSpec(panels=[Panel("win_fractions")]), data)``.
+    This function stays as it is.
+
     Creates a point plot with error bars showing ELO ratings calculated from pairwise algorithm
     competitions. In each round, all algorithms compete against each other on every function,
     with performance samples determining winners and ELO rating updates.

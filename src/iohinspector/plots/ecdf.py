@@ -29,6 +29,10 @@ def plot_ecdf(
 ):
     """Plot Empirical Cumulative Distribution Function (ECDF) based on Empirical Attainment Functions.
 
+    Newer: the figure kind "ecdf" of ``iohinspector.figures`` draws the same ECDF, for
+    publication and the website: ``render(FigureSpec(panels=[Panel("ecdf")]), data)``.
+    This function stays as it is.
+
     Creates line plots showing the cumulative probability of achieving different performance levels
     at various evaluation budgets, allowing comparison between algorithms or configurations.
 

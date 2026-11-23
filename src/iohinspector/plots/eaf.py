@@ -24,6 +24,10 @@ def plot_eaf_single_objective(
 ):
     """Plot the Empirical Attainment Function (EAF) for single-objective optimization against budget.
 
+    Newer: the figure kind "eaf" of ``iohinspector.figures`` draws the EAF, for
+    publication and the website: ``render(FigureSpec(panels=[Panel("eaf")]), data)``.
+    This function stays as it is.
+
     Creates a heatmap visualization showing the probability of attaining different function values
     at different evaluation budgets across multiple algorithm runs.
 
@@ -245,6 +249,10 @@ def plot_eaf_diffs(
     plot_args: dict | HeatmapPlotArgs = None,
 ):
     """Plot the Empirical Attainment Function (EAF) differences between two algorithms.
+
+    Newer: the figure kind "eaf_difference" of ``iohinspector.figures`` draws the EAF difference of two groups, for
+    publication and the website: ``render(FigureSpec(panels=[Panel("eaf_difference")]), data)``.
+    This function stays as it is.
 
     Creates a heatmap visualization showing the statistical differences in attainment probabilities
     between two algorithms in the objective space, highlighting regions where one algorithm

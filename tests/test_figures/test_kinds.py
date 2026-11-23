@@ -310,3 +310,14 @@ def test_the_new_data_fields_round_trip_and_are_checked():
     assert FigureSpec.from_json(spec.to_json()) == spec
     with pytest.raises(ValueError, match="measure"):
         Data(measure="speed")
+
+
+def test_the_old_plots_name_kinds_that_exist():
+    # iohinspector.plots stays as it is; its docstrings point to these kinds
+    import re
+
+    from iohinspector import plots
+    from iohinspector.figures.spec import KINDS
+
+    named = set(re.findall(r'``"(\w+)"``', plots.__doc__))
+    assert named and named <= set(KINDS)

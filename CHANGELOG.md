@@ -4,6 +4,9 @@
 
 ### New
 
+- The `plots` functions stay as they are (they return `(ax, df)`); their docstrings
+  and `iohinspector.plots` name the `figures` kind that draws the same view.
+
 - EAF and EAF differences (`docs/definitions/eaf.md`): `metrics.get_eaf` is the
   single-objective EAF of each group of `by` on the runs' best-so-far traces,
   as attainment surfaces at IOHanalyzer's levels (`mode="precise"`, moocore) or
