@@ -1,7 +1,6 @@
 from collections.abc import Iterable, Sequence
 
 import matplotlib
-import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sbs
 
@@ -10,7 +9,7 @@ from ..metrics.multi_objective import (
     get_indicator_over_time_data,
     get_pareto_front_2d,
 )
-from .utils import LinePlotArgs, ScatterPlotArgs, _create_plot_args, _hue, _save_fig
+from .utils import LinePlotArgs, ScatterPlotArgs, _canvas, _create_plot_args, _hue
 
 
 @upgrade_hints
@@ -63,24 +62,16 @@ def plot_paretofronts_2d(
         plot_args,
     )
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    pdf = df.to_pandas()
-    sbs.scatterplot(
-        pdf,
-        x=obj1_var,
-        y=obj2_var,
-        hue=_hue(pdf, by),
-        palette=plot_args.point_colors,
-        ax=ax,
-    )
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        pdf = df.to_pandas()
+        sbs.scatterplot(
+            pdf,
+            x=obj1_var,
+            y=obj2_var,
+            hue=_hue(pdf, by),
+            palette=plot_args.point_colors,
+            ax=ax,
+        )
 
     return ax, df
 
@@ -154,21 +145,14 @@ def plot_indicator_over_time(
         plot_args,
     )
 
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
-    else:
-        fig = None
-    pdf = df.to_pandas()
-    sbs.lineplot(
-        pdf,
-        x="evaluations",
-        y=indicator.var_name,
-        hue=_hue(pdf, by),
-        palette=sbs.color_palette(n_colors=data.select(by).n_unique()),
-        ax=ax,
-    )
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        pdf = df.to_pandas()
+        sbs.lineplot(
+            pdf,
+            x="evaluations",
+            y=indicator.var_name,
+            hue=_hue(pdf, by),
+            palette=sbs.color_palette(n_colors=data.select(by).n_unique()),
+            ax=ax,
+        )
     return ax, df

@@ -1,7 +1,9 @@
 from collections.abc import Iterable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from typing import Any, TypeVar, Union
 
+import matplotlib.pyplot as plt
 import polars as pl
 
 from ..metrics.utils import group_label
@@ -318,6 +320,19 @@ def _save_fig(fig=None, file_name: str | None = None, plot_args: BasePlotArgs = 
         if plot_args.tight_layout:
             fig.tight_layout()
         fig.savefig(file_name, dpi=plot_args.dpi)
+
+
+@contextmanager
+def _canvas(ax, plot_args: BasePlotArgs, file_name: str | None):
+    """The axes to draw on: ``ax``, or those of a new figure of ``plot_args``'s
+    size. On exit ``plot_args`` is applied to them, and a new figure is saved to
+    ``file_name`` if given."""
+    fig = None
+    if ax is None:
+        fig, ax = plt.subplots(figsize=plot_args.figsize)
+    yield ax
+    plot_args.apply(ax)
+    _save_fig(fig, file_name, plot_args)
 
 
 def _create_plot_args(

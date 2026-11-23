@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 
 from iohinspector.metrics import get_attractor_network
-from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
+from iohinspector.plots.utils import BasePlotArgs, _canvas, _create_plot_args
 
 
 @dataclass
@@ -181,31 +181,23 @@ def plot_attractor_network(
     cmap = plt.get_cmap(cmap_name)
     node_colors = cmap(norm(fitness_values))
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
+    with _canvas(ax, plot_args, file_name) as ax:
+        nx.draw(
+            network,
+            pos=pos,
+            with_labels=True,
+            node_size=node_sizes,
+            node_color=node_colors[:, :3],
+            edge_color="gray",
+            width=2,
+            ax=ax,
+        )
+        # ensure the axis frame, ticks and grid are visible
+        ax.set_axis_on()
+        ax.set_aspect("auto")
 
-    nx.draw(
-        network,
-        pos=pos,
-        with_labels=True,
-        node_size=node_sizes,
-        node_color=node_colors[:, :3],
-        edge_color="gray",
-        width=2,
-        ax=ax,
-    )
-    # ensure the axis frame, ticks and grid are visible
-    ax.set_axis_on()
-    ax.set_aspect("auto")
-
-    # Add colorbar for fitness values
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array(fitness_values)
-    plt.colorbar(sm, ax=ax)
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args)
+        # Add colorbar for fitness values
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array(fitness_values)
+        plt.colorbar(sm, ax=ax)
     return ax, nodes, edges

@@ -56,3 +56,7 @@ iohinspector = "iohinspector.cli:main"
 [project.urls]
 Homepage = "https://github.com/IOHprofiler/iohinspector"
 Issues = "https://github.com/IOHprofiler/iohinspector/issues"
+
+[tool.ruff.lint.per-file-ignores]
+# the legacy plots draw on ``with _canvas(ax, ...) as ax``: the given axes or new ones
+"src/iohinspector/plots/*" = ["PLR1704"]

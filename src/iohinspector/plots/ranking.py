@@ -12,7 +12,7 @@ from ..metrics.ranking import (
     get_robustrank_over_time,
     get_tournament_ratings,
 )
-from .utils import BasePlotArgs, _create_plot_args, _save_fig
+from .utils import BasePlotArgs, _canvas, _create_plot_args, _save_fig
 
 
 @upgrade_hints
@@ -80,27 +80,19 @@ def plot_tournament_ranking(
         plot_args,
     )
 
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
-    else:
-        fig = None
+    with _canvas(ax, plot_args, file_name) as ax:
+        sbs.pointplot(data=pdf, x=by[0], y="Rating", linestyle="none", ax=ax)
 
-    sbs.pointplot(data=pdf, x=by[0], y="Rating", linestyle="none", ax=ax)
-
-    ax.errorbar(
-        pdf[by[0]],
-        pdf["Rating"],
-        yerr=pdf["Deviation"],
-        fmt="o",
-        color="blue",
-        alpha=0.6,
-        capsize=5,
-        elinewidth=1.5,
-    )
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args)
+        ax.errorbar(
+            pdf[by[0]],
+            pdf["Rating"],
+            yerr=pdf["Deviation"],
+            fmt="o",
+            color="blue",
+            alpha=0.6,
+            capsize=5,
+            elinewidth=1.5,
+        )
 
     return ax, dt_elo
 
@@ -207,13 +199,7 @@ def plot_robustrank_changes(
         figsize=(max(5 * len(evals), 16), 5),
     )
 
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
-    else:
-        fig = None
-    plot_line_ranks(comparisons, ax=ax)
-
-    plot_args.apply(ax)
-    _save_fig(fig, file_name, plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        plot_line_ranks(comparisons, ax=ax)
 
     return ax, comparisons

@@ -1,4 +1,3 @@
-
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,7 +6,7 @@ import seaborn as sbs
 from matplotlib.patches import Polygon, Rectangle
 
 from ..metrics import get_eaf_data, get_eaf_diff_data, get_eaf_pareto_data
-from .utils import HeatmapPlotArgs, _create_plot_args, _save_fig
+from .utils import HeatmapPlotArgs, _canvas, _create_plot_args
 
 
 def plot_eaf_single_objective(
@@ -84,45 +83,39 @@ def plot_eaf_single_objective(
     )
     f_min, f_max = plot_args.ylim
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    quantiles = np.arange(0, 1 + 1 / ((n_quantiles - 1) * 2), 1 / (n_quantiles - 1))
-    cmap = plt.get_cmap(plot_args.heatmap_palette)
-    norm = plt.Normalize(vmin=0, vmax=1)
-    colors = [cmap(norm(quant)) for quant in quantiles]
-    if not plot_args.use_background_color:
-        ax.add_patch(
-            Rectangle(
-                (eval_min, f_min),
-                eval_max - eval_min,
-                f_max - f_min,
-                facecolor=cmap(norm(0)),
-                zorder=0,
+    with _canvas(ax, plot_args, file_name) as ax:
+        quantiles = np.arange(0, 1 + 1 / ((n_quantiles - 1) * 2), 1 / (n_quantiles - 1))
+        cmap = plt.get_cmap(plot_args.heatmap_palette)
+        norm = plt.Normalize(vmin=0, vmax=1)
+        colors = [cmap(norm(quant)) for quant in quantiles]
+        if not plot_args.use_background_color:
+            ax.add_patch(
+                Rectangle(
+                    (eval_min, f_min),
+                    eval_max - eval_min,
+                    f_max - f_min,
+                    facecolor=cmap(norm(0)),
+                    zorder=0,
+                )
             )
-        )
 
-    # a run with no value yet (null, AL-5) has attained nothing: the worst value
-    worst = df.with_columns(pl.col(fval_var).fill_null(np.inf))
-    for quant, color in zip(quantiles, colors):
-        poly = np.array(
-            worst.group_by(eval_var).quantile(quant).sort(eval_var)[eval_var, fval_var]
-        )
-        poly = np.append(poly, np.array([[max(poly[:, 0]), f_max]]), axis=0)
-        poly = np.append(poly, np.array([[min(poly[:, 0]), f_max]]), axis=0)
-        poly2 = np.repeat(poly, 2, axis=0)
-        poly2[2::2, 1] = poly[:, 1][:-1]
-        ax.add_patch(Polygon(poly2, facecolor=color))
+        # a run with no value yet (null, AL-5) has attained nothing: the worst value
+        worst = df.with_columns(pl.col(fval_var).fill_null(np.inf))
+        for quant, color in zip(quantiles, colors):
+            poly = np.array(
+                worst.group_by(eval_var)
+                .quantile(quant)
+                .sort(eval_var)[eval_var, fval_var]
+            )
+            poly = np.append(poly, np.array([[max(poly[:, 0]), f_max]]), axis=0)
+            poly = np.append(poly, np.array([[min(poly[:, 0]), f_max]]), axis=0)
+            poly2 = np.repeat(poly, 2, axis=0)
+            poly2[2::2, 1] = poly[:, 1][:-1]
+            ax.add_patch(Polygon(poly2, facecolor=color))
 
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    plt.colorbar(sm, ax=ax)
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        plt.colorbar(sm, ax=ax)
 
     return ax, df
 
@@ -189,52 +182,45 @@ def plot_eaf_pareto(
     x_min, x_max = plot_args.xlim
     y_min, y_max = plot_args.ylim
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
+    with _canvas(ax, plot_args, file_name) as ax:
+        eaf_data_df = eaf_data_df.sort(obj1_var, maintain_order=True)
 
-    eaf_data_df = eaf_data_df.sort(obj1_var, maintain_order=True)
-
-    cmap = plt.get_cmap(plot_args.heatmap_palette)
-    norm = plt.Normalize(
-        vmin=(min_eaf if plot_args.use_background_color else 0), vmax=1
-    )
-    unique_eafs = eaf_data_df["eaf"].unique(maintain_order=True)
-    colors = [cmap(norm(v)) for v in unique_eafs]
-
-    ax.add_patch(
-        Rectangle(
-            (x_min, y_min),
-            x_max - x_min,
-            y_max - y_min,
-            facecolor=(
-                plot_args.background_color
-                if plot_args.use_background_color
-                else cmap(norm(0))
-            ),
-            zorder=0,
+        cmap = plt.get_cmap(plot_args.heatmap_palette)
+        norm = plt.Normalize(
+            vmin=(min_eaf if plot_args.use_background_color else 0), vmax=1
         )
-    )
+        unique_eafs = eaf_data_df["eaf"].unique(maintain_order=True)
+        colors = [cmap(norm(v)) for v in unique_eafs]
 
-    for i, color in zip(unique_eafs, colors):
-        poly = eaf_data_df.filter(pl.col("eaf") == i).select(obj1_var, obj2_var)
-        poly = poly.to_numpy()
-        poly = np.append(poly, np.array([[x_max, y_max]]), axis=0)
-        poly = np.append(poly, np.array([[min(poly[:, 0]), y_max]]), axis=0)
-        poly2 = np.repeat(poly, 2, axis=0)
-        poly2[2::2, 1] = poly[:, 1][:-1]
-        ax.add_patch(Polygon(poly2, facecolor=color))
+        ax.add_patch(
+            Rectangle(
+                (x_min, y_min),
+                x_max - x_min,
+                y_max - y_min,
+                facecolor=(
+                    plot_args.background_color
+                    if plot_args.use_background_color
+                    else cmap(norm(0))
+                ),
+                zorder=0,
+            )
+        )
 
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    plt.colorbar(sm, ax=ax)
-    # set a background rectangle behind the EAF polygons
+        for i, color in zip(unique_eafs, colors):
+            poly = eaf_data_df.filter(pl.col("eaf") == i).select(obj1_var, obj2_var)
+            poly = poly.to_numpy()
+            poly = np.append(poly, np.array([[x_max, y_max]]), axis=0)
+            poly = np.append(poly, np.array([[min(poly[:, 0]), y_max]]), axis=0)
+            poly2 = np.repeat(poly, 2, axis=0)
+            poly2[2::2, 1] = poly[:, 1][:-1]
+            ax.add_patch(Polygon(poly2, facecolor=color))
 
-    ax.set_facecolor("white")
-    ax = plot_args.apply(ax)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        plt.colorbar(sm, ax=ax)
+        # set a background rectangle behind the EAF polygons
 
-    _save_fig(fig, file_name, plot_args)
+        ax.set_facecolor("white")
 
     return ax, eaf_data_df
 
@@ -328,29 +314,22 @@ def plot_eaf_diffs(
         )
     }
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    for rect in eaf_diff_rect_data.iter_rows(named=True):
-        ax.add_patch(
-            Rectangle(
-                (rect["x_min"], rect["y_min"]),
-                rect["x_max"] - rect["x_min"],
-                rect["y_max"] - rect["y_min"],
-                facecolor=color_dict[rect["eaf_diff"]],
+    with _canvas(ax, plot_args, file_name) as ax:
+        for rect in eaf_diff_rect_data.iter_rows(named=True):
+            ax.add_patch(
+                Rectangle(
+                    (rect["x_min"], rect["y_min"]),
+                    rect["x_max"] - rect["x_min"],
+                    rect["y_max"] - rect["y_min"],
+                    facecolor=color_dict[rect["eaf_diff"]],
+                )
             )
+
+        sm = plt.cm.ScalarMappable(
+            cmap=plot_args.heatmap_palette,
+            norm=plt.Normalize(vmin=eaf_min_diff, vmax=eaf_max_diff),
         )
-
-    sm = plt.cm.ScalarMappable(
-        cmap=plot_args.heatmap_palette,
-        norm=plt.Normalize(vmin=eaf_min_diff, vmax=eaf_max_diff),
-    )
-    sm.set_array([])
-    plt.colorbar(sm, ax=ax)
-    ax = plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args)
+        sm.set_array([])
+        plt.colorbar(sm, ax=ax)
 
     return ax, eaf_diff_rect_data

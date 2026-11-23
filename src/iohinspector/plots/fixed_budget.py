@@ -1,7 +1,6 @@
 from collections.abc import Iterable, Sequence
 
 import matplotlib
-import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sbs
 
@@ -9,10 +8,10 @@ from .._upgrade import upgrade_hints
 from ..metrics.fixed_budget import aggregate_convergence
 from .utils import (
     LinePlotArgs,
+    _canvas,
     _check_measures,
     _create_plot_args,
     _hue,
-    _save_fig,
 )
 
 
@@ -98,23 +97,15 @@ def plot_single_function_fixed_budget(
         ),
         plot_args,
     )
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    sbs.lineplot(
-        pdf,
-        x=eval_var,
-        y="value",
-        style="variable",
-        hue=_hue(pdf, by),
-        palette=plot_args.line_colors,
-        ax=ax,
-    )
-
-    ax = plot_args.apply(ax=ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        sbs.lineplot(
+            pdf,
+            x=eval_var,
+            y="value",
+            style="variable",
+            hue=_hue(pdf, by),
+            palette=plot_args.line_colors,
+            ax=ax,
+        )
 
     return ax, dt_plot

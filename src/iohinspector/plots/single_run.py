@@ -1,12 +1,11 @@
 from collections.abc import Iterable
 
 import matplotlib
-import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sbs
 
 from ..metrics.single_run import get_heatmap_single_run_data
-from .utils import HeatmapPlotArgs, _create_plot_args, _save_fig
+from .utils import HeatmapPlotArgs, _canvas, _create_plot_args
 
 
 def plot_heatmap_single_run(
@@ -70,16 +69,8 @@ def plot_heatmap_single_run(
         plot_args,
     )
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    sbs.heatmap(
-        dt_plot.to_pandas(), cmap=plot_args.heatmap_palette, vmin=0, vmax=1, ax=ax
-    )
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        sbs.heatmap(
+            dt_plot.to_pandas(), cmap=plot_args.heatmap_palette, vmin=0, vmax=1, ax=ax
+        )
     return ax, dt_plot

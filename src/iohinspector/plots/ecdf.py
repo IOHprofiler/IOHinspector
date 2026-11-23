@@ -1,13 +1,12 @@
 from collections.abc import Iterable, Sequence
 
 import matplotlib
-import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sbs
 
 from .._upgrade import upgrade_hints
 from ..metrics.ecdf import _ecdf_on_grid  # get_data_ecdf without its warning
-from .utils import LinePlotArgs, _create_plot_args, _hue, _save_fig
+from .utils import LinePlotArgs, _canvas, _create_plot_args, _hue
 
 
 @upgrade_hints
@@ -98,24 +97,17 @@ def plot_ecdf(
         plot_args,
     )
 
-    fig = None
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-
-    by = list(by)
-    pdf = dt_plot.to_pandas()
-    sbs.lineplot(
-        pdf,
-        x=eval_var,
-        y="eaf",
-        style=by[0],
-        hue=_hue(pdf, by[1:] or by),
-        palette=plot_args.line_colors,
-        ax=ax,
-    )
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        by = list(by)
+        pdf = dt_plot.to_pandas()
+        sbs.lineplot(
+            pdf,
+            x=eval_var,
+            y="eaf",
+            style=by[0],
+            hue=_hue(pdf, by[1:] or by),
+            palette=plot_args.line_colors,
+            ax=ax,
+        )
 
     return ax, dt_plot
