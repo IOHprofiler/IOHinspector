@@ -57,12 +57,14 @@ def restarts(stopped: str) -> bool:
 def run_sets(data: pl.DataFrame, by: list[str], eval_var: str, final: pl.Expr):
     """One row per run: ``run_id``, ``run_set`` (its group of ``by``),
     ``evals_used`` (B_i, at least 1) and ``final``, the run's final level (``final``
-    aggregated over its rows)."""
+    aggregated over its rows), sorted by run set, final level and run id: runs
+    that tie on their final level keep one order, so the sampled restarts, which
+    index the failed runs, are the same in every process."""
     runs = runs_of(data, by, eval_var).select(
         "run_id", pl.col("run_set").cast(pl.Int64), pl.col("evals_used").clip(1)
     )
     finals = data.group_by("run_id").agg(final.alias("final"))
-    return runs.join(finals, on="run_id").sort("run_set", "final")
+    return runs.join(finals, on="run_id").sort("run_set", "final", "run_id")
 
 
 def _below(runs: pl.DataFrame, rows: pl.DataFrame, level: str, strict: bool):
