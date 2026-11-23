@@ -263,14 +263,14 @@ def _direct_shapley(data, targets, lo, hi, **kw):
 @pytest.mark.parametrize(
     "lo,hi,log", [(1, 10, False), (1, 10, True), (2, 6, False), (1, 30, True)]
 )
-@pytest.mark.parametrize("stopped", ["restart", "carry_forward"])
+@pytest.mark.parametrize("stopped", ["restart_exact", "carry_forward"])
 def test_portfolio_value_is_the_area_of_the_virtual_best_ecdf(lo, hi, log, stopped):
     result = get_shapley_values(
         DATA, TARGETS, b_lo=lo, b_hi=hi, scale_eval_log=log, stopped=stopped
     )
     assert result.columns == ["algorithm_name", "shapley", "se"]
     assert result["algorithm_name"].to_list() == ["A", "B", "C"]
-    restart = stopped == "restart"
+    restart = stopped != "carry_forward"
     expected = _direct_shapley(DATA, TARGETS, lo, hi, log=log, restart=restart)
     np.testing.assert_allclose(result["shapley"], expected, rtol=TOL)
     assert abs(result["shapley"].sum() - 1) < TOL
@@ -279,7 +279,9 @@ def test_portfolio_value_is_the_area_of_the_virtual_best_ecdf(lo, hi, log, stopp
 def test_portfolio_value_under_maximization():
     data = DATA.with_columns(-pl.col("raw_y"))
     targets = TARGETS.with_columns(-pl.col("target"))
-    result = get_shapley_values(data, targets, maximization=True)
+    result = get_shapley_values(
+        data, targets, maximization=True, stopped="restart_exact"
+    )
     expected = _direct_shapley(data, targets, 1, 10, maximization=True)
     np.testing.assert_allclose(result["shapley"], expected, rtol=TOL)
 

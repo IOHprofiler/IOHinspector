@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 
 from iohinspector import DataManager
+from iohinspector.metrics import RestartCostWarning, get_restart_cost, restarts
 from iohinspector.metrics.ecdf import (
     get_data_ecdf,
     get_ecdf,
@@ -616,7 +617,8 @@ def test_fixed_budget_auc_matches_iohanalyzer_trapezoid(fixture):
     assert ((agreed >= 0) & (agreed <= 1)).all()
 
 
-# Simulated restarts (EC-7), the default of every ECDF
+# Simulated restarts (EC-7), the default of every ECDF: sampled, or exact
+EXACT = restarts.EXACT
 
 # runs 1 and 2 stop at 3 (values 1 and 2), run 3 is first logged at 6 (value 5)
 STOPPED_PAIR = STOPPED.with_columns(function_id=1, dimension=2)
@@ -665,13 +667,14 @@ def test_target_ecdf_restarts_are_the_expected_restarted_runs(maximization):
     df = _ragged(3)
     targets = get_ecdf_targets(df, n=6)
     budgets = [1, 4, 9, 13, 20, 37, 60]
-    ours = get_ecdf(df, targets, x_values=budgets, maximization=maximization)
+    exact = {"maximization": maximization, "stopped": EXACT}
+    ours = get_ecdf(df, targets, x_values=budgets, **exact)
     times = [_hitting_times(df, t, maximization) for t in targets["target"]]
     for b, value in zip(budgets, ours["ecdf"]):
         expected = np.mean([_restarted(h, u, b) for h, u in times])
         assert value == pytest.approx(expected, rel=1e-12)
     # the exact steps agree with the samples, up to the largest budget asked for
-    steps = get_ecdf(df, targets, maximization=maximization, x_values=None)
+    steps = get_ecdf(df, targets, x_values=None, **exact)
     carried = get_ecdf(
         df,
         targets,
@@ -686,6 +689,159 @@ def test_target_ecdf_restarts_are_the_expected_restarted_runs(maximization):
         assert last == pytest.approx(value, rel=1e-12)
 
 
+@pytest.mark.parametrize("stopped", ["restart", EXACT])
+@pytest.mark.parametrize("divide", [False, True])
+def test_restarts_in_chunks_and_sampled_are_the_exact_steps(
+    monkeypatch, divide, stopped
+):
+    # the renewal pass in chunks of 7 evaluations gives the same rows (up to rounding
+    # where they are summed); sampled, the restarts are summed at the samples, so
+    # the ECDF there is that of the steps
+    df = _ragged(11).with_columns(dimension=3)
+    targets = get_ecdf_targets(df, n=6)
+    xs = [0.5, 2 / 3, 1, 7 / 3, 3.3, 4.1, 9, 13 + 1 / 3, 20, 37, 60]
+    options = {"targets": targets, "divide_by_dimension": divide, "stopped": stopped}
+    steps = get_ecdf(df, x_values=None, **options)
+    sampled = get_ecdf(df, x_values=xs, **options)
+    budgets = get_ecdf_budgets(df, 5).with_columns(pl.col("budget") * 4)
+    fixed = get_fixed_budget_ecdf(df, budgets, stopped=stopped)
+    monkeypatch.setattr(restarts, "CHUNK", 7)
+    assert get_ecdf(df, x_values=None, **options).equals(steps)
+    assert get_ecdf(df, x_values=xs, **options).equals(sampled)
+    chunked = get_fixed_budget_ecdf(df, budgets, stopped=stopped)
+    np.testing.assert_allclose(chunked["ecdf"], fixed["ecdf"], rtol=1e-12)
+    within = sampled.filter(pl.col("evaluations") <= steps["evaluations"].max())
+    assert within.height >= 5
+    for _, x, value, _ in within.rows():
+        last = steps.filter(pl.col("evaluations") <= x)["ecdf"][-1]
+        assert value == pytest.approx(last, rel=1e-12)
+
+
+@pytest.mark.parametrize("stopped", ["restart", EXACT])
+def test_long_curves_do_not_leak_into_a_batch_of_short_ones(monkeypatch, stopped):
+    # curves of up to CHUNK evaluations are computed in one array; a longer curve
+    # between them (computed on its own) must place no hits in that array
+    b = _ragged(12).with_columns(
+        algorithm_name=pl.lit("B"), run_id=pl.col("run_id") + 9
+    )
+    df = pl.concat([_ragged(11), b])
+    targets = get_ecdf_targets(df, n=8)
+    xs = [1, 4, 9, 13, 20, 37, 60, 150]
+    expected = get_ecdf(df, targets, x_values=xs, stopped=stopped)
+    for chunk in range(4, 160, 3):
+        monkeypatch.setattr(restarts, "CHUNK", chunk)
+        ours = get_ecdf(df, targets, x_values=xs, stopped=stopped)
+        np.testing.assert_allclose(ours["ecdf"], expected["ecdf"], rtol=1e-12)
+
+
+def _two_groups():
+    b = _ragged(12).with_columns(
+        algorithm_name=pl.lit("B"), run_id=pl.col("run_id") + 9
+    )
+    return pl.concat([_ragged(11), b])
+
+
+def test_sampled_restarts_are_close_to_the_exact_ones(monkeypatch):
+    # the sampled restarts estimate the exact expectation; the error falls as the
+    # draws grow, in the target ECDF, its AUC and the fixed-budget ECDF
+    df = _two_groups()
+    targets = get_ecdf_targets(df, n=8)
+    xs = [1, 4, 9, 13, 20, 37, 60, 150, 1000]
+    budgets = get_ecdf_budgets(df, 5).with_columns(pl.col("budget") * 4)
+
+    def both(stopped):
+        return (
+            get_ecdf(df, targets, x_values=xs, stopped=stopped)["ecdf"],
+            get_ecdf_auc(df, targets, b_hi=1000, stopped=stopped)["auc"],
+            get_fixed_budget_ecdf(df, budgets, stopped=stopped)["ecdf"],
+        )
+
+    exact = both(EXACT)
+    for ours, expected in zip(both("restart"), exact):
+        assert (ours - expected).abs().max() < 0.03
+    monkeypatch.setattr(restarts, "SAMPLES", 100_000)
+    for ours, expected in zip(both("restart"), exact):
+        assert (ours - expected).abs().max() < 0.003
+
+
+def test_sampled_restarts_reach_their_limit_exactly():
+    # once every draw lies within the budget, a target that one run reaches counts
+    # as reached by all runs, as with the exact restarts
+    targets = pl.DataFrame({"function_id": 1, "dimension": 2, "target": [1e-4, 1e0]})
+    ecdf = get_ecdf(THREE, targets, x_values=[1e6])["ecdf"].item()
+    assert ecdf == pytest.approx(1.0, rel=1e-12)
+
+
+def test_sampled_restarts_depend_only_on_the_groups_own_runs():
+    # the same uniforms serve every run set: adding a group changes no other group
+    df = _two_groups()
+    targets = get_ecdf_targets(df, n=8)
+    xs = [4, 20, 150]
+    alone = get_ecdf(df.filter(algorithm_name="A"), targets, x_values=xs)
+    with_b = get_ecdf(df, targets, x_values=xs).filter(algorithm_name="A")
+    np.testing.assert_allclose(with_b["ecdf"], alone["ecdf"], rtol=1e-12)
+    again = get_ecdf(df.filter(algorithm_name="A"), targets, x_values=xs)
+    assert again.equals(alone)
+
+
+def test_exact_restarts_estimate_their_cost_and_warn(monkeypatch):
+    df = _ragged(11)
+    short, long = get_restart_cost(df, horizon=20), get_restart_cost(df, horizon=2000)
+    assert set(short) == {"curves", "evaluations", "seconds", "gigabytes"}
+    assert 0 < short["evaluations"] < long["evaluations"]
+    assert 0 < short["seconds"] < long["seconds"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RestartCostWarning)
+        get_ecdf(df, x_values=[1, 100], stopped=EXACT)  # cheap: no warning
+    monkeypatch.setattr(restarts, "WARN_SECONDS", 0.0)
+    with pytest.warns(RestartCostWarning, match="restart_exact"):
+        get_ecdf(df, x_values=[1, 100], stopped=EXACT)
+    with pytest.warns(RestartCostWarning):
+        get_fixed_budget_ecdf(df, stopped=EXACT)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RestartCostWarning)
+        get_ecdf(df, x_values=[1, 100])  # sampled: never
+    with pytest.raises(ValueError, match="simulated chains"):
+        aggregate_convergence(df, stopped=EXACT)
+
+
+@pytest.mark.parametrize("chunk", [None, 7])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"stopped": EXACT},
+        {"scale_eval_log": True, "b_lo": 2},
+        {"scale_eval_log": True, "b_lo": 2, "stopped": EXACT},
+        {"divide_by_dimension": True, "b_lo": 0.5},
+        {"continuous": True, "scale_eval_log": True},
+    ],
+)
+def test_restarted_auc_is_the_area_under_the_steps(monkeypatch, options, chunk):
+    # the AUC sums the restarts' weighted increments per chunk instead of building
+    # the step function: the same as the exact area under get_ecdf's steps
+    b = _ragged(12).with_columns(
+        algorithm_name=pl.lit("B"), run_id=pl.col("run_id") + 9
+    )
+    df = pl.concat([_ragged(11), b]).with_columns(dimension=3)
+    if chunk:
+        monkeypatch.setattr(restarts, "CHUNK", chunk)
+    auc = get_ecdf_auc(df, **options).sort("algorithm_name")
+    lo, log = options.get("b_lo", 1.0), options.get("scale_eval_log", False)
+    keep = ("divide_by_dimension", "continuous", "stopped")
+    steps = get_ecdf(df, **{k: v for k, v in options.items() if k in keep})
+    for (name,), curve in steps.sort("algorithm_name").group_by(
+        "algorithm_name", maintain_order=True
+    ):
+        x, ecdf = curve["evaluations"].to_numpy(), curve["ecdf"].to_numpy()
+        hi = x.max()
+        axis = np.log10 if log else (lambda v: v)
+        ends = axis(np.clip(np.r_[x[1:], hi], lo, hi))
+        area = np.sum(ecdf * (ends - axis(np.clip(x, lo, hi))))
+        value = auc.filter(pl.col("algorithm_name") == name)["auc"].item()
+        assert value == pytest.approx(area / (axis(hi) - axis(lo)), rel=1e-12)
+
+
 def test_runs_that_reach_a_target_are_not_restarted():
     # every run reaches 1e4 at evaluation 1: restarts change nothing; no run reaches
     # 1e-5: it stays unreached; for 1e0 two runs stop (at 100) without reaching it
@@ -695,7 +851,8 @@ def test_runs_that_reach_a_target_are_not_restarted():
     never = targets.with_columns(target=pl.lit(1e-5))
     assert get_ecdf(THREE, never, x_values=xs)["ecdf"].to_list() == [0, 0, 0]
     once = targets.with_columns(target=pl.lit(1e-4))
-    ecdf = get_ecdf(THREE, once, x_values=[100, 200, 300])["ecdf"].to_list()
+    ecdf = get_ecdf(THREE, once, x_values=[100, 200, 300], stopped=EXACT)
+    ecdf = ecdf["ecdf"].to_list()
     # E(b) = 1[b >= 10]/3 + 2/3 E(b - 100)
     assert ecdf == pytest.approx([1 / 3, 1 / 3 + 2 / 9, 1 / 3 + 2 / 9 + 4 / 27])
 
@@ -735,7 +892,7 @@ def test_continuum_and_fixed_budget_restarts_are_the_same_restarts():
 def test_fixed_budget_restarts_are_the_expected_restarted_runs(maximization):
     df = _ragged(7)
     budgets = pl.DataFrame({"function_id": 1, "dimension": 2, "budget": [2, 7, 15, 31]})
-    ours = get_fixed_budget_ecdf(df, budgets, maximization=maximization)
+    ours = get_fixed_budget_ecdf(df, budgets, maximization=maximization, stopped=EXACT)
     for _, v, value, _ in ours.rows()[1:]:
         h, u = _hitting_times(df, v, maximization)
         expected = np.mean([_restarted(h, u, b) for b in budgets["budget"]])
@@ -751,7 +908,9 @@ def test_restarts_only_improve_on_carrying_forward():
     # at 3 and 4 the stopped runs keep 1 and 2, at 6 also run 3 has 5
     np.testing.assert_allclose(carried["ecdf"], [3 / 9, 6 / 9, 7 / 9, 7 / 9, 7 / 9])
     # v = 1: E(b) = 1[b >= 3]/3 + E(b - 3)/3 + E(b - 6)/3 is 1/3, 1/3 and 4/9
-    restarted = get_fixed_budget_ecdf(STOPPED_PAIR, STOPPED_BUDGETS, x_values=xs)
+    restarted = get_fixed_budget_ecdf(
+        STOPPED_PAIR, STOPPED_BUDGETS, x_values=xs, stopped=EXACT
+    )
     np.testing.assert_allclose(
         restarted["ecdf"], [10 / 27, 6 / 9, 7 / 9, 7 / 9, 7 / 9], rtol=1e-12
     )
@@ -814,17 +973,22 @@ def _coco_old(dimension):
     return manager.load(include_columns=columns).filter(dimension=dimension)
 
 
-def _within_cocopp(joined):
-    """Every cell within 5 standard errors of cocopp's sample of 20000."""
+def _within_cocopp(joined, samples=None):
+    """Every cell within 5 standard errors of cocopp's sample of 20000, and of
+    ours of ``samples`` if sampled."""
     p = joined["ours"].clip(0, 1)
     se = (p * (1 - p) / COCOPP_SAMPLES).sqrt()
+    if samples:  # p from both: a sampled 0 or 1 has no error of its own
+        p = ((joined["ours"] + joined["ecdf"]) / 2).clip(0, 1)
+        se = (p * (1 - p) * (1 / COCOPP_SAMPLES + 1 / samples)).sqrt()
     diff = (joined["ours"] - joined["ecdf"]).abs()
     assert (diff <= 5 * se + 1e-12).all()
     return diff
 
 
+@pytest.mark.parametrize("stopped", [EXACT, "restart"])
 @pytest.mark.parametrize("dimension", [2, 3])
-def test_restarts_match_cocopp(dimension):
+def test_restarts_match_cocopp(dimension, stopped):
     # cocopp's runtime ECDF with simulated restarts (drawSP, as pprldmany) gives per
     # target t and budget b the fraction of 20000 simulated runtimes T(t) <= b. Ours
     # is its expected value: the target ECDF of t at b, and, as T(t) <= b exactly
@@ -837,14 +1001,14 @@ def test_restarts_match_cocopp(dimension):
     levels = [cocopp_level(t) for t in targets]
     budget = gold["budget"].unique().sort()
     target_ecdf = pl.concat(
-        get_ecdf(data, pair.with_columns(target=level), x_values=budget).select(
-            target=pl.lit(t), budget="evaluations", ours="ecdf"
-        )
+        get_ecdf(
+            data, pair.with_columns(target=level), x_values=budget, stopped=stopped
+        ).select(target=pl.lit(t), budget="evaluations", ours="ecdf")
         for t, level in zip(targets, levels)
     )
     fixed_budget = pl.concat(
         get_fixed_budget_ecdf(
-            data, pair.with_columns(budget=int(b)), x_values=levels
+            data, pair.with_columns(budget=int(b)), x_values=levels, stopped=stopped
         ).select(target=targets, budget=pl.lit(b), ours="ecdf")
         for b in budget
     )
@@ -852,14 +1016,14 @@ def test_restarts_match_cocopp(dimension):
     for ours in (target_ecdf, fixed_budget):
         joined = gold.join(ours, on=["target", "budget"], maintain_order="left")
         assert joined.height == gold.height == 510
-        _within_cocopp(joined)
+        _within_cocopp(joined, None if stopped == EXACT else restarts.SAMPLES)
         cells.append(joined["ours"])
     np.testing.assert_allclose(*cells, rtol=1e-12, atol=1e-15)
     # the fixed-budget ECDF over the ten budgets is the mean of a target's cells
     budgets = pair.join(pl.DataFrame({"budget": budget.cast(pl.Int64)}), how="cross")
     mean = gold.group_by("target").agg(pl.col("ecdf").mean()).sort("target")["ecdf"]
-    ecdf = get_fixed_budget_ecdf(data, budgets, x_values=levels)["ecdf"]
-    assert (ecdf - mean).abs().max() < 0.005
+    ecdf = get_fixed_budget_ecdf(data, budgets, x_values=levels, stopped=stopped)
+    assert (ecdf["ecdf"] - mean).abs().max() < 0.005
     carried = get_fixed_budget_ecdf(
         data, budgets, x_values=levels, stopped="carry_forward"
     )["ecdf"]

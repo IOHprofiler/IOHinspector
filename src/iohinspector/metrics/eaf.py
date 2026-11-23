@@ -14,7 +14,7 @@ from .._upgrade import upgrade_hints
 from ..align import align_data
 from ..targets import PAIR, get_ecdf_targets, seq_fv, seq_rt, spaced
 from .ecdf import ALL, _one_group, _quality
-from .restarts import failed, gained, restarts, run_sets
+from .restarts import EXACT, failed, gained, restarts, run_sets
 from .utils import runs_of, transform_fval
 
 #: IOHanalyzer's 11 attainment levels, in percent (EA-1).
@@ -369,7 +369,7 @@ def _grid(  # pylint: disable=R0913
 
 
 def _gain(  # pylint: disable=R0913,R0914,R0917
-    data, runs, grid, by, scope, value, larger, eval_var
+    data, runs, grid, by, scope, value, larger, eval_var, exact=False
 ) -> pl.DataFrame:
     """What simulated restarts add to alpha(b, y) (EA-6, EC-7): per run that
     attains y at T, the renewal function of the runs of its group and pair that
@@ -400,7 +400,7 @@ def _gain(  # pylint: disable=R0913,R0914,R0917
     budget = {
         r: np.array(b) for r, b in budgets.group_by("run_set").agg(eval_var).rows()
     }
-    gain = gained(hits, finals, budget, eval_var)
+    gain = gained(hits, finals, budget, eval_var, exact=exact)
     width = np.array([len(budget[r]) for r in hits["run_set"]])
     row, column = np.nonzero(np.arange(gain.shape[1]) < width[:, None])
     at = np.array([budget[r][c] for r, c in zip(hits["run_set"][row], column)])
@@ -413,7 +413,7 @@ def _gain(  # pylint: disable=R0913,R0914,R0917
 
 
 def _attainment(  # pylint: disable=R0913,R0914,R0917
-    runs, grid, by, scope, value, larger, eval_var, restart=None
+    runs, grid, by, scope, value, larger, eval_var, restart=None, exact=False
 ) -> pl.DataFrame:
     """alpha(b, y) of each group of ``by`` on the ``grid`` of its scope: the
     fraction of its runs, by ``weight``, whose best-so-far value at budget b is y
@@ -438,7 +438,7 @@ def _attainment(  # pylint: disable=R0913,R0914,R0917
         eaf=(hit.fill_null(False) * w).sum() / w.sum(), weight=w.sum()
     )
     if restart is not None:
-        gain = _gain(restart, runs, grid, by, scope, value, larger, eval_var)
+        gain = _gain(restart, runs, grid, by, scope, value, larger, eval_var, exact)
         alpha = alpha.join(
             gain, on=[*keys, eval_var, value], how="left", nulls_equal=True
         ).with_columns(pl.col("eaf") + pl.col("gain").fill_null(0) / pl.col("weight"))
@@ -503,7 +503,8 @@ def _prepare(data: pl.DataFrame, by: Sequence[str], mode: str, options: dict):
     traces of ``_traces`` weighted by ``_weigh``, and the options of ``_grid``."""
     if mode not in ("precise", "discretised"):
         raise ValueError(f"mode {mode!r}: precise or discretised")
-    restart = restarts(options.get("stopped", "carry_forward"))
+    stopped = options.get("stopped", "carry_forward")
+    restart = stopped if restarts(stopped) else None
     if restart and mode == "precise":
         raise ValueError(
             "stopped='restart' needs mode='discretised': the precise attainment "
@@ -607,7 +608,15 @@ def get_eaf(
     else:
         grid = _grid(data, scope, value, **grid_options)
         result = _attainment(
-            runs, grid, by, scope, value, larger, eval_var, data if restart else None
+            runs,
+            grid,
+            by,
+            scope,
+            value,
+            larger,
+            eval_var,
+            data if restart else None,
+            exact=restart == EXACT,
         )
         result = result.select(*by, eval_var, value, "eaf")
     return _finish(result, data, eval_var)
@@ -645,7 +654,15 @@ def _margin(prepared, eval_var: str, column: str) -> pl.DataFrame:
     data, by, (runs, value, larger, scope), grid_options, restart = prepared
     grid = _grid(data, scope, value, **grid_options)
     alpha = _attainment(
-        runs, grid, by, scope, value, larger, eval_var, data if restart else None
+        runs,
+        grid,
+        by,
+        scope,
+        value,
+        larger,
+        eval_var,
+        data if restart else None,
+        exact=restart == EXACT,
     )
     cell = [*scope, eval_var, value]
     result = alpha.select(*by, eval_var, value, _minus_best_other(cell).alias(column))

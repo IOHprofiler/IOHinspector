@@ -346,25 +346,32 @@ def read_manifest(
 
     Raises ``UnsupportedFormatVersion`` for an unknown format or major version, and
     ``ManifestError`` when the manifest is not valid JSON or, with ``validate``, does
-    not match the schema.
+    not match the schema. A manifest whose bytes were valid before in this process
+    is not checked again (``_VALID``): with a large ``sources`` list the schema
+    check costs far more than reading the file.
     """
     file = _manifest_path(path)
+    raw = file.read_bytes()
     try:
-        manifest = json.loads(
-            file.read_text(encoding="utf-8"), parse_constant=_reject_constant
-        )
+        manifest = json.loads(raw.decode("utf-8"), parse_constant=_reject_constant)
     except (ValueError, UnicodeDecodeError) as exc:
         raise ManifestError(f"{file}: not a valid JSON manifest: {exc}") from exc
     if not isinstance(manifest, dict):
         raise ManifestError(f"{file}: the manifest must be a JSON object")
     check_format_version(manifest, warn=warn)
-    if validate:
+    digest = hashlib.blake2b(raw, digest_size=16).digest()
+    if validate and digest not in _VALID:
         problems = validate_manifest(manifest)
         if problems:
             raise ManifestError(
                 f"{file}: invalid manifest:\n  " + "\n  ".join(problems)
             )
+        _VALID.add(digest)
     return manifest
+
+
+#: digests of the manifest files that ``read_manifest`` found valid
+_VALID: set[bytes] = set()
 
 
 def _reject_constant(name: str) -> Any:

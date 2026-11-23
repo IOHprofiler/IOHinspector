@@ -76,7 +76,7 @@ def test_the_code_runs_and_saves_the_figure(data, tmp_path, monkeypatch, name):
 
 def test_the_code_carries_the_rc_params_and_the_style_table(data):
     code = to_python(SPECS["panels"], data)
-    assert "mpl.rcParams.update(" in code and "'font.size': 10" in code
+    assert "mpl.rcParams.update(" in code and "'font.size': 9" in code
     assert "'PSO': {'name': 'PSO', 'color': '#c05800'" in code
     assert "'markevery': 4" in code  # every n points
     assert "get_ecdf(" in code and "is_in([1])" in code
