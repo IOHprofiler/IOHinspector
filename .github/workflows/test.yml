@@ -23,9 +23,7 @@ jobs:
           uv run --no-sync python -c "import polars; print(polars.__version__)"
       - name: Test
         run: uv run --no-sync pytest -q -n auto
-      # Baseline only: existing code has many findings, cleaned up in later work packages.
-      - name: Ruff (informational)
-        continue-on-error: true
+      - name: Ruff
         run: uv run --no-sync ruff check src tests
       - name: Pyright (informational)
         continue-on-error: true

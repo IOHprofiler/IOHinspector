@@ -160,3 +160,15 @@ def test_manager_reads_run_attributes(ioh_logs):
         2.0**40 + 1,
     ]
     assert manager.overview["maximization"].to_list() == [True] * 4
+
+
+def test_a_descriptor_key_no_suffix_can_fix_is_an_error_not_a_hang():
+    from iohinspector.io.base import ReaderError, Renamer
+
+    renamer = Renamer()
+    assert renamer.descriptor_key("run_id", set(), "run", "x") == "run_id_run"
+    assert renamer.descriptor_key("", set(), "run", "x") == "_run"
+    assert renamer.descriptor_key("k" * 256, set(), "run", "x") == "k" * 256
+    for key in ("a\tb", "k" * 300):
+        with pytest.raises(ReaderError, match="descriptor key"):
+            renamer.descriptor_key(key, set(), "run", "x")

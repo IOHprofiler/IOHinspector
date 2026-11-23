@@ -11,24 +11,18 @@ from ..metrics import (
 )
 from .base import (
     Plot,
+    budget_at,
     categories,
     curves,
-    default_budget,
-    default_target,
+    evals_axis,
     finite,
     library_kind,
     log_if_positive,
     one_pair,
-    pairs,
+    per_pair,
+    target_at,
 )
 from .spec import Annotation
-
-
-def _with_pair(frame: pl.DataFrame, runs: pl.DataFrame) -> pl.DataFrame:
-    return frame.with_columns(
-        function_id=pl.lit(runs["function_id"][0]),
-        dimension=pl.lit(runs["dimension"][0]),
-    )
 
 
 def convergence_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
@@ -50,7 +44,7 @@ def convergence_plot(panel, frame: pl.DataFrame) -> Plot:
     target = [Annotation("line", "target", y=d.at)] if d.at is not None else []
     return Plot(
         lines,
-        x={"label": "# f-evals", "scale": "log", "ticks": "exponent"},
+        x=evals_axis(),
         y={"label": "best-so-far value", "scale": scale},
         annotations=target,
     )
@@ -60,18 +54,15 @@ def fixed_budget_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
     """``aggregate_convergence`` at one budget (``Data.at``, else each pair's
     largest) for every (function, dimension) pair, with their columns."""
     d = panel.data
-    return pl.concat(
-        _with_pair(
-            aggregate_convergence(
-                run,
-                by=d.by,
-                maximization=d.maximization,
-                budgets=[d.at or default_budget(run)],
-                **d.options,
-            ),
+    return per_pair(
+        runs,
+        lambda run: aggregate_convergence(
             run,
-        )
-        for run in pairs(runs)
+            by=d.by,
+            maximization=d.maximization,
+            budgets=[budget_at(d, run)],
+            **d.options,
+        ),
     )
 
 
@@ -110,15 +101,12 @@ def ert_frame(panel, runs: pl.DataFrame) -> pl.DataFrame:
     d = panel.data
     if runs["function_id"].n_unique() > 1:
         raise ValueError("ert: one function; select it in data.where")
-    target = d.at if d.at is not None else default_target(runs, d.maximization)
-    return pl.concat(
-        _with_pair(
-            aggregate_running_time(
-                run, by=d.by, targets=[target], maximization=d.maximization, **d.options
-            ),
-            run,
-        )
-        for run in pairs(runs)
+    target = target_at(d, runs)
+    return per_pair(
+        runs,
+        lambda run: aggregate_running_time(
+            run, by=d.by, targets=[target], maximization=d.maximization, **d.options
+        ),
     )
 
 

@@ -1,7 +1,7 @@
-from typing import Iterable
+from collections.abc import Iterable
 
-import polars as pl
 import numpy as np
+import polars as pl
 from moocore import is_nondominated
 
 

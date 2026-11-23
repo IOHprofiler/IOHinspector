@@ -1,17 +1,14 @@
 import string
 import warnings
-from collections.abc import Callable, Sequence
-from typing import Iterable, Optional, Union, Dict
+from collections.abc import Callable, Iterable, Sequence
 
 import numpy as np
 import polars as pl
-
 from moocore import (
     filter_dominated,
 )
 
 from ..targets import seq_rt, spaced
-
 
 #: The probabilities of the quantile columns ``q2`` ... ``q98``, in percent: the
 #: nine of IOHanalyzer (``docs/definitions/runtime.md`` RT-5, ``fixed-budget.md`` FB-2).
@@ -116,9 +113,9 @@ def group_label(by: Sequence[str], template: str | None = None) -> pl.Expr:
 def normalize_objectives(
     data: pl.DataFrame,
     obj_vars: Iterable[str] = ["raw_y"],
-    bounds: Optional[Dict[str, tuple[Optional[float], Optional[float]]]] = None,
-    log_scale: Union[bool, Dict[str, bool]] = False,
-    maximize: Union[bool, Dict[str, bool]] = False,
+    bounds: dict[str, tuple[float | None, float | None]] | None = None,
+    log_scale: bool | dict[str, bool] = False,
+    maximize: bool | dict[str, bool] = False,
     only_nondominated: bool = False,
     prefix: str = "ert",
     keep_original: bool = True,
@@ -146,11 +143,7 @@ def normalize_objectives(
     for i, col in enumerate(obj_vars):
         use_log = log_scale[col] if isinstance(log_scale, dict) else log_scale
         is_max = maximize[col] if isinstance(maximize, dict) else maximize
-        lb, ub = bounds[col] if bounds and col in bounds else (None, None)
-        if lb is None:
-            lb = result[col].min() if ndpoints is None else ndpoints[:, i].min()
-        if ub is None:
-            ub = result[col].max() if ndpoints is None else ndpoints[:, i].max()
+        lb, ub = _bounds(result, col, i, bounds, ndpoints)
         v = pl.col(col)
         if use_log:
             if lb <= 0:
@@ -172,11 +165,22 @@ def normalize_objectives(
     return result
 
 
+def _bounds(data: pl.DataFrame, col: str, i: int, bounds, ndpoints):
+    """The given bounds of ``col``, else its smallest and largest value (of the
+    nondominated points ``ndpoints``, column ``i``, if given)."""
+    lb, ub = bounds[col] if bounds and col in bounds else (None, None)
+    if lb is None:
+        lb = data[col].min() if ndpoints is None else ndpoints[:, i].min()
+    if ub is None:
+        ub = data[col].max() if ndpoints is None else ndpoints[:, i].max()
+    return lb, ub
+
+
 def add_normalized_objectives(
     data: pl.DataFrame,
     obj_vars: Iterable[str],
-    max_obj: Optional[pl.DataFrame] = None,
-    min_obj: Optional[pl.DataFrame] = None,
+    max_obj: pl.DataFrame | None = None,
+    min_obj: pl.DataFrame | None = None,
     only_nondominated: bool = False,
 ) -> pl.DataFrame:
     """Add new normalized columns to provided dataframe based on the provided objective columns.

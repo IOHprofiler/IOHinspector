@@ -8,7 +8,7 @@ from collections.abc import Sequence
 import numpy as np
 import polars as pl
 
-from ..targets import PAIR, get_target_dt
+from ..targets import PAIR, targets_per_pair
 from .distributions import _split
 from .fixed_budget import aggregate_convergence
 from .fixed_target import aggregate_running_time
@@ -323,10 +323,9 @@ def get_win_fractions(  # pylint: disable=too-many-arguments
         )
     by = list(by)
     columns = {"eval_var": eval_var, "fval_var": fval_var}
-    if targets is None:
-        targets = get_target_dt(
-            data, perspective, maximization=maximization, by=by, **columns
-        )
+    targets = targets_per_pair(
+        data, targets, perspective, maximization=maximization, by=by, **columns
+    )
     fixed_target = perspective == "fixed_target"
     summary = _summaries(
         data,

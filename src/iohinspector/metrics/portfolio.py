@@ -156,13 +156,8 @@ def shapley_values(  # pylint: disable=too-many-arguments
     """
     if n_players < 1:
         raise ValueError("a game needs at least one player")
-    if method not in get_args(Method):
-        raise ValueError(f"method must be one of {get_args(Method)}, not {method!r}")
     envelope = value if marginal is None and isinstance(value, _Envelope) else None
-    if method == "auto" and envelope is not None:
-        method = "closed"
-    elif method == "auto":
-        method = "exact" if n_players <= exact_limit else "sampled"
+    method = _method(method, envelope is not None, n_players, exact_limit)
     if method == "closed":
         if envelope is None:
             raise ValueError(
@@ -185,6 +180,18 @@ def shapley_values(  # pylint: disable=too-many-arguments
     if total == 0:
         return np.full(n_players, np.nan), np.full(n_players, np.nan)
     return phi / total, se / total
+
+
+def _method(method: str, closed: bool, n_players: int, exact_limit: int) -> str:
+    """``method`` checked, with ``auto`` resolved: ``closed`` when the closed form
+    applies, else ``exact`` up to ``exact_limit`` players and ``sampled`` above."""
+    if method not in get_args(Method):
+        raise ValueError(f"method must be one of {get_args(Method)}, not {method!r}")
+    if method != "auto":
+        return method
+    if closed:
+        return "closed"
+    return "exact" if n_players <= exact_limit else "sampled"
 
 
 class _Envelope:

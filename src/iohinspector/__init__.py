@@ -5,7 +5,7 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-from . import figures, indicators, metrics, plots
+from . import figures, indicators, metrics, plots  # noqa: F401  (iohinspector.figures)
 from ._upgrade import removed_names
 from .align import align_data
 from .indicators import *
@@ -13,7 +13,7 @@ from .manager import DataManager
 from .metrics import *
 from .plots import *
 
-__all__ = [
+__all__ = [  # noqa: PLE0604  (the subpackages' names)
     "DataManager",
     "align_data",
     *indicators.__all__,

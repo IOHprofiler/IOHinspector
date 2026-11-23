@@ -22,6 +22,7 @@ from .render import (
     figure_size,
     legend_entries,
     rc_params,
+    shared_legend,
     style,
 )
 from .spec import UNITS, FigureSpec
@@ -96,97 +97,14 @@ def to_python(spec: FigureSpec, data=None, *, frames=None) -> str:
         plots, styles = _prepare(spec, data, frames)
         fig = _figure(spec, plots, styles)
         size = spec.text.annotation_size or rc_params(spec)["font.size"]
-        n, layout = len(plots), spec.layout
-        columns = min(layout.columns, n)
         kinds = [KINDS[p.kind] for p in spec.panels]
-        literal = [p.mark for p, k in zip(plots, kinds) if k.literal]
-        used = set(literal) & set(marks.MARKS)
-        out = [
-            f'"""{spec.title or "Figure"}: an iohinspector figure as matplotlib code."""',
-            "",
-            "import math",
-            "",
-            "import matplotlib as mpl",
-            "import matplotlib.pyplot as plt",
-            "import polars as pl",
-            "from matplotlib import ticker",
-            "from matplotlib.lines import Line2D",
-            *(["import numpy as np"] * bool(literal)),
-            *(["from types import SimpleNamespace as Curve"] * bool(used)),
-            *dict.fromkeys(k.imports for k in kinds),
-            "",
-            "# data: the runs, from the data code (Reproduce)",
-            "",
-            "mpl.rcParams.update(",
-            "    {",
-            *(f"        {k!r}: {v!r}," for k, v in rc_params(spec).items()),
-            "    }",
-            ")",
-            "STYLE = {  # each series: its name and look",
-            *(
-                f"    {label!r}: {_look(spec, look)!r},"
-                for label, look in styles.items()
-            ),
-            "}",
-            DRAW,
-            *_marks(used),
-            "fig, axes = plt.subplots(",
-            f"    {math.ceil(n / columns)},",
-            f"    {columns},",
-            f"    figsize=({', '.join(f'{v:.4f}' for v in figure_size(spec))}),",
-            '    layout="constrained",',
-            f"    sharex={layout.share_x},",
-            f"    sharey={layout.share_y},",
-            "    squeeze=False,",
-            ")",
-            "axes = axes.ravel()",
-            f"for ax in axes[{n}:]:",
-            "    ax.remove()",
-        ]
-        if n > 1 and layout.gap is not None:
-            pad = layout.gap * UNITS[spec.unit] / 2
-            out.append(
-                f"fig.get_layout_engine().set(w_pad={pad!r}, h_pad={pad!r}, wspace=0, hspace=0)"
-            )
-        if spec.title:
-            out.append(f"fig.suptitle({spec.title!r})")
+        out = _preamble(spec, plots, styles, kinds)
         for i, (ax, panel, plot, kind) in enumerate(
             zip(fig.axes, spec.panels, plots, kinds)
         ):
-            out += ["", f"# panel {i + 1}", "runs = data"]
-            out += [
-                f"runs = runs.filter(pl.col({k!r}).is_in({v!r}))"
-                for k, v in panel.data.where.items()
-            ]
-            labels = [c.label for c in plot.curves]
-            if kind.literal:  # the curves are derived from the frame: write them out
-                out += ["# the numbers drawn below, as this call computes them:"]
-                out += [f"# {line}" for line in kind.code(panel).splitlines()]
-                out += [f"ax = axes[{i}]", *_curves(plot, labels)]
-            else:
-                x, y = kind.columns[:2]
-                out += [
-                    kind.code(panel),
-                    f"ax = axes[{i}]",
-                    f"draw(ax, frame, {labels!r}, {x!r}, {y!r}, {float(ax.get_xlim()[1])!r}, {plot.step})",
-                ]
-            out += _axes(ax, panel, plot, spec)
-            notes: list = []
-            for note in [*panel.annotations, *plot.annotations]:
-                _annotate(_Calls("ax", notes), note, size)
-            out += [repr(c) for c in list(notes)]
-            out += _legend(ax, i, spec, plot, styles)
+            out += _panel_code(i, ax, panel, plot, kind, spec, styles, size)
         if fig.legends:  # outside, or one box for all panels
-            union = {}
-            for plot in plots:
-                for curve in plot.curves if plot.legend else []:
-                    union.setdefault(curve.label, curve)
-            entries = legend_entries(spec, list(union.values()), styles)
-            loc = (
-                "outside right center"
-                if spec.legend.mode == "outside"
-                else "outside lower center"
-            )
+            entries, loc = shared_legend(spec, plots, styles)
             out += [
                 "",
                 f"fig.legend(handles={_handles(entries)}, loc={loc!r}, ncols={spec.legend.columns})",
@@ -194,6 +112,89 @@ def to_python(spec: FigureSpec, data=None, *, frames=None) -> str:
     fmt = spec.formats[0] if spec.formats[0] != "pgf" else "pdf"
     out += ["", f'fig.savefig("figure.{fmt}", dpi={spec.dpi})', ""]
     return "\n".join(out)
+
+
+def _preamble(spec: FigureSpec, plots, styles: dict, kinds) -> list[str]:
+    """The code before the panels: imports, settings, styles, the helpers and
+    the figure with its axes."""
+    n, layout = len(plots), spec.layout
+    columns = min(layout.columns, n)
+    literal = [p.mark for p, k in zip(plots, kinds) if k.literal]
+    used = set(literal) & set(marks.MARKS)
+    out = [
+        f'"""{spec.title or "Figure"}: an iohinspector figure as matplotlib code."""',
+        "",
+        "import math",
+        "",
+        "import matplotlib as mpl",
+        "import matplotlib.pyplot as plt",
+        "import polars as pl",
+        "from matplotlib import ticker",
+        "from matplotlib.lines import Line2D",
+        *(["import numpy as np"] * bool(literal)),
+        *(["from types import SimpleNamespace as Curve"] * bool(used)),
+        *dict.fromkeys(k.imports for k in kinds),
+        "",
+        "# data: the runs, from the data code (Reproduce)",
+        "",
+        "mpl.rcParams.update(",
+        "    {",
+        *(f"        {k!r}: {v!r}," for k, v in rc_params(spec).items()),
+        "    }",
+        ")",
+        "STYLE = {  # each series: its name and look",
+        *(f"    {label!r}: {_look(spec, look)!r}," for label, look in styles.items()),
+        "}",
+        DRAW,
+        *_marks(used),
+        "fig, axes = plt.subplots(",
+        f"    {math.ceil(n / columns)},",
+        f"    {columns},",
+        f"    figsize=({', '.join(f'{v:.4f}' for v in figure_size(spec))}),",
+        '    layout="constrained",',
+        f"    sharex={layout.share_x},",
+        f"    sharey={layout.share_y},",
+        "    squeeze=False,",
+        ")",
+        "axes = axes.ravel()",
+        f"for ax in axes[{n}:]:",
+        "    ax.remove()",
+    ]
+    if n > 1 and layout.gap is not None:
+        pad = layout.gap * UNITS[spec.unit] / 2
+        out.append(
+            f"fig.get_layout_engine().set(w_pad={pad!r}, h_pad={pad!r}, wspace=0, hspace=0)"
+        )
+    if spec.title:
+        out.append(f"fig.suptitle({spec.title!r})")
+    return out
+
+
+def _panel_code(i: int, ax, panel, plot, kind, spec, styles, size) -> list[str]:
+    """The code of panel ``i``: its runs, curves, axes, notes and legend."""
+    out = ["", f"# panel {i + 1}", "runs = data"]
+    out += [
+        f"runs = runs.filter(pl.col({k!r}).is_in({v!r}))"
+        for k, v in panel.data.where.items()
+    ]
+    labels = [c.label for c in plot.curves]
+    if kind.literal:  # the curves are derived from the frame: write them out
+        out += ["# the numbers drawn below, as this call computes them:"]
+        out += [f"# {line}" for line in kind.code(panel).splitlines()]
+        out += [f"ax = axes[{i}]", *_curves(plot, labels)]
+    else:
+        x, y = kind.columns[:2]
+        out += [
+            kind.code(panel),
+            f"ax = axes[{i}]",
+            f"draw(ax, frame, {labels!r}, {x!r}, {y!r}, {float(ax.get_xlim()[1])!r}, {plot.step})",
+        ]
+    out += _axes(ax, panel, plot, spec)
+    notes: list = []
+    for note in [*panel.annotations, *plot.annotations]:
+        _annotate(_Calls("ax", notes), note, size)
+    out += [repr(c) for c in list(notes)]
+    return out + _legend(ax, i, spec, plot, styles)
 
 
 def _look(spec: FigureSpec, look: dict) -> dict:
@@ -300,22 +301,30 @@ def _array(values) -> str:
 
 def _curves(plot, labels: list[str]) -> list[str]:
     """The code that draws the curves of ``plot`` from their numbers."""
-    if plot.mark == "line":  # as the frame of x and y that ``draw`` takes
-        end = max(float(c.x[-1]) for c in plot.curves)
-        columns: dict = {"label": [c.label for c in plot.curves for _ in c.x]}
-        for name in ("x", "y", "lo", "hi"):
-            parts = [getattr(c, name) for c in plot.curves]
-            if name in "xy" or any(p is not None for p in parts):
-                parts = [
-                    np.full(len(c.x), np.nan) if p is None else p
-                    for c, p in zip(plot.curves, parts)
-                ]
-                columns[name] = _array(np.concatenate(parts))
-        text = ", ".join(f"{k!r}: {v}" for k, v in columns.items())
-        return [
-            f"frame = pl.DataFrame({{{text}}})",
-            f"draw(ax, frame, {labels!r}, 'x', 'y', {end!r}, {plot.step})",
-        ]
+    return _line_code(plot, labels) if plot.mark == "line" else _mark_code(plot)
+
+
+def _line_code(plot, labels: list[str]) -> list[str]:
+    """Line curves as the frame of x and y (and the band) that ``draw`` takes."""
+    end = max(float(c.x[-1]) for c in plot.curves)
+    columns: dict = {"label": [c.label for c in plot.curves for _ in c.x]}
+    for name in ("x", "y", "lo", "hi"):
+        parts = [getattr(c, name) for c in plot.curves]
+        if name in "xy" or any(p is not None for p in parts):
+            parts = [
+                np.full(len(c.x), np.nan) if p is None else p
+                for c, p in zip(plot.curves, parts)
+            ]
+            columns[name] = _array(np.concatenate(parts))
+    text = ", ".join(f"{k!r}: {v}" for k, v in columns.items())
+    return [
+        f"frame = pl.DataFrame({{{text}}})",
+        f"draw(ax, frame, {labels!r}, 'x', 'y', {end!r}, {plot.step})",
+    ]
+
+
+def _mark_code(plot) -> list[str]:
+    """Other marks as a list of curves, each drawn by its mark function."""
     fields = ("x", "y", "lo", "hi", "z")
     out = ["CURVES = ["]
     for c in plot.curves:

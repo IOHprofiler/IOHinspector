@@ -1,11 +1,10 @@
-from typing import Iterable, Callable
+from collections.abc import Callable, Iterable
 from functools import partial
 
 import polars as pl
 
 from .._upgrade import upgrade_hints
-
-from .anytime import Epsilon, HyperVolume, IGDPlus, R2, get_reference_set
+from .anytime import R2, Epsilon, HyperVolume, IGDPlus, get_reference_set
 from .final import NonDominated
 
 
@@ -42,15 +41,15 @@ def add_indicator(
             group of data.
     """
     indicator_callable = partial(indicator, obj_vars=obj_vars, **kwargs)
-    return df.group_by("run_id").map_groups(indicator_callable)
+    return df.group_by("run_id", maintain_order=True).map_groups(indicator_callable)
 
 
 __all__ = [
+    "R2",
     "Epsilon",
     "HyperVolume",
     "IGDPlus",
     "NonDominated",
-    "R2",
     "add_indicator",
     "get_reference_set",
 ]

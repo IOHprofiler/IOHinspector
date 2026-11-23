@@ -52,7 +52,8 @@ def elements(
 
         def box(node) -> Bbox | None:
             boxes = [_extent(a) for a in parts.get(node["id"], [])]
-            boxes += [b for b in map(box, node["children"]) if b is not None]
+            boxes += map(box, node["children"])
+            boxes = [b for b in boxes if b is not None]  # an invisible axis has none
             if not boxes:
                 return None
             b = Bbox.union(boxes)

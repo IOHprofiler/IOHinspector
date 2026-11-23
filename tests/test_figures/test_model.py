@@ -279,6 +279,13 @@ def test_every_element_has_an_id_in_the_svg(data):
     assert render(spec, data) == render(spec, data)
 
 
+def test_elements_of_panels_with_a_shared_axis(data):
+    # the second panel's y tick labels are hidden: an axis without a box
+    spec = FigureSpec(panels=[Panel(), F2], layout=Layout(columns=2, share_y=True))
+    tree = elements(spec, data)
+    assert tree["box"][2] > 0 and len(tree["children"]) == 2
+
+
 def test_boxes_are_in_points_from_the_top_left(data):
     spec = FigureSpec(width=8, height=6)
     tree = elements(spec, data)

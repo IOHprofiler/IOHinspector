@@ -1,17 +1,11 @@
+from collections.abc import Iterable, Sequence
+
 import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sbs
 import polars as pl
-from typing import Iterable, Sequence
+
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_budget import aggregate_convergence
-from .utils import (
-    LinePlotArgs,
-    _check_measures,
-    _create_plot_args,
-    _hue,
-    _save_fig,
-)
+from .utils import LinePlotArgs, _canvas, _create_plot_args, _measure_lines, _measures
 
 
 @upgrade_hints
@@ -20,13 +14,13 @@ def plot_single_function_fixed_budget(
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
     by: Sequence[str] = ("algorithm_name",),
-    eval_min: float = None,
-    eval_max: float = None,
+    eval_min: float | None = None,
+    eval_max: float | None = None,
     maximization: bool = False,
     measures: Iterable[str] = ["geometric_mean"],
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | LinePlotArgs = None,
 ):
     """Create a fixed-budget convergence plot showing algorithm performance over evaluation budgets.
@@ -78,12 +72,7 @@ def plot_single_function_fixed_budget(
         eval_max=eval_max,
         maximization=maximization,
     )
-    _check_measures(dt_agg, measures)
-    dt_plot = (
-        dt_agg.unpivot(index=[eval_var, *by])
-        .filter(pl.col("variable").is_in(list(measures)))
-        .sort(by, maintain_order=True)
-    )
+    dt_plot = _measures(dt_agg, eval_var, by, measures)
     pdf = dt_plot.to_pandas()
 
     plot_args = _create_plot_args(
@@ -96,23 +85,7 @@ def plot_single_function_fixed_budget(
         ),
         plot_args,
     )
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    sbs.lineplot(
-        pdf,
-        x=eval_var,
-        y="value",
-        style="variable",
-        hue=_hue(pdf, by),
-        palette=plot_args.line_colors,
-        ax=ax,
-    )
-
-    ax = plot_args.apply(ax=ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        _measure_lines(pdf, eval_var, by, plot_args, ax)
 
     return ax, dt_plot

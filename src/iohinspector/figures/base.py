@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import polars as pl
 
+from ..metrics.distributions import get_runtime_sample, get_value_sample
 from ..metrics.utils import group_label
 
 
@@ -120,9 +121,21 @@ def pairs(runs: pl.DataFrame) -> list[pl.DataFrame]:
     return runs.partition_by("function_id", "dimension", maintain_order=True)
 
 
+def per_pair(runs: pl.DataFrame, metric: Callable) -> pl.DataFrame:
+    """``metric`` of the runs of each (function, dimension) pair, with the pair's
+    columns, one frame."""
+    return pl.concat(
+        metric(run).with_columns(
+            function_id=pl.lit(run["function_id"][0]),
+            dimension=pl.lit(run["dimension"][0]),
+        )
+        for run in pairs(runs)
+    )
+
+
 def one_pair(runs: pl.DataFrame, kind: str) -> pl.DataFrame:
     """``runs``, which must be of one (function, dimension) pair."""
-    if len(pairs(runs)) > 1:
+    if runs.select("function_id", "dimension").n_unique() > 1:
         raise ValueError(f"{kind}: one function and dimension; select it in data.where")
     return runs
 
@@ -138,6 +151,44 @@ def default_target(runs: pl.DataFrame, maximization: bool) -> float:
         (pl.col("raw_y").max() if maximization else pl.col("raw_y").min()).alias("b")
     )["b"]
     return float(best.min() if maximization else best.max())  # type: ignore[arg-type]
+
+
+def target_at(data, runs: pl.DataFrame) -> float:
+    """The target a runtime view is at: ``Data.at``, else ``default_target``."""
+    return data.at if data.at is not None else default_target(runs, data.maximization)
+
+
+def budget_at(data, runs: pl.DataFrame) -> int:
+    """The budget a value view is at: ``Data.at``, else ``default_budget``."""
+    return data.at or default_budget(runs)
+
+
+def sample_at(data, runs: pl.DataFrame) -> tuple[pl.DataFrame, str, str]:
+    """The sample of ``Data.measure`` (runtimes at ``target_at`` or values at
+    ``budget_at``), its value column and its view column."""
+    options = {"maximization": data.maximization}
+    if data.measure == "runtime":
+        at = [target_at(data, runs)]
+        return get_runtime_sample(runs, at, data.by, **options), "runtime", "target"
+    at = [budget_at(data, runs)]
+    return get_value_sample(runs, at, data.by, **options), "value", "budget"
+
+
+def matrix(frame: pl.DataFrame, row: str, col: str, value: str, rows, cols):
+    """``z[i, j]``: the mean ``value`` of the rows of ``frame`` whose ``row`` is
+    ``rows[i]`` and ``col`` is ``cols[j]``; nan for a cell without rows."""
+    cells = frame.group_by(row, col).agg(pl.col(value).cast(pl.Float64).mean())
+    i = {k: n for n, k in enumerate(rows)}
+    j = {k: n for n, k in enumerate(cols)}
+    z = np.full((len(rows), len(cols)), np.nan)
+    z[[i[k] for k in cells[row]], [j[k] for k in cells[col]]] = cells[value]
+    return z
+
+
+def evals_axis(per_dimension: bool = False, **more) -> dict:
+    """The axis of the evaluations (divided by the dimension), log-scaled."""
+    label = "# f-evals / dimension" if per_dimension else "# f-evals"
+    return {"label": label, "scale": "log", "ticks": "exponent", **more}
 
 
 def finite(frame: pl.DataFrame, column: str) -> pl.DataFrame:

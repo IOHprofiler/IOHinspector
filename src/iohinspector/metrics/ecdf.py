@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 
 from .._upgrade import upgrade_hints
-from ..align import align_data
+from ..align import align_data, best_so_far
 from ..targets import PAIR, get_ecdf_budgets, get_ecdf_targets, seq_rt
 from .restarts import EXACT, continued, failed, gained, restarts, run_sets, split
 from .utils import runs_of
@@ -95,7 +95,7 @@ def _quality(data, targets, maximization, scale_f_log, fval_var):
         lo=pl.col("target").min(), hi=pl.col("target").max()
     )
     f = pl.col(fval_var).cast(pl.Float64)  # clip would truncate float bounds to int
-    best = f.cum_max() if maximization else f.cum_min()
+    best = best_so_far(f, maximization)
     lo, hi = pl.col("lo"), pl.col("hi")
     scale = (lambda e: e.log10()) if scale_f_log else (lambda e: e)
     v = scale(pl.col("best").clip(lo, hi))
@@ -116,6 +116,23 @@ def _quality(data, targets, maximization, scale_f_log, fval_var):
     )
 
 
+def _kind(scale_f_log: bool) -> str:
+    """The kind of default targets (``get_ecdf_targets``) for the f scale."""
+    return "log-linear" if scale_f_log else "linear"
+
+
+def _with_targets(
+    data: pl.DataFrame, targets: pl.DataFrame | None, scale_f_log: bool, fval_var: str
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """``data`` on the pairs that have targets, and the targets (by default 10 per
+    pair, log-linear or linear) with the pair columns of ``data``'s types."""
+    if targets is None:
+        targets = get_ecdf_targets(data, _kind(scale_f_log), fval_var=fval_var)
+    targets = targets.cast({c: data.schema[c] for c in PAIR})
+    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    return data, targets
+
+
 def _prepare(
     data: pl.DataFrame,
     targets: pl.DataFrame | None,
@@ -126,12 +143,8 @@ def _prepare(
     fval_var,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """``data`` on the pairs that have targets and are used (EC-2), with ``weight``,
-    and the targets (by default 10 per pair, log-linear or linear)."""
-    if targets is None:
-        kind = "log-linear" if scale_f_log else "linear"
-        targets = get_ecdf_targets(data, kind, fval_var=fval_var)
-    targets = targets.cast({c: data.schema[c] for c in PAIR})
-    data = data.join(targets.select(PAIR), on=PAIR, how="semi", maintain_order="left")
+    and the targets (``_with_targets``)."""
+    data, targets = _with_targets(data, targets, scale_f_log, fval_var)
     return _weights(data, by, pairs), targets
 
 
@@ -671,8 +684,7 @@ def get_fixed_budget_ecdf_auc(  # pylint: disable=too-many-arguments
         pl.DataFrame: ``by`` and ``auc``; with restarts also ``n_restarted``.
     """
     if f_lo is None or f_hi is None:
-        kind = "log-linear" if scale_f_log else "linear"
-        bounds = get_ecdf_targets(data, kind, n=2, fval_var=fval_var)
+        bounds = get_ecdf_targets(data, _kind(scale_f_log), n=2, fval_var=fval_var)
         bounds = bounds["target"].to_numpy()
         f_lo = float(bounds.min()) if f_lo is None else f_lo
         f_hi = float(bounds.max()) if f_hi is None else f_hi

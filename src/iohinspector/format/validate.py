@@ -409,10 +409,8 @@ class _Checker:  # pylint: disable=too-many-instance-attributes  # one field per
         for problem in fr.null_problems(batch, state.not_null, table):
             self.error(problem)
         # Keep the file's row order through the join: the order checks need it.
-        df = (
-            batch.with_row_index("__ioh_pos")
-            .join(state.run_map, on="run_id", how="left", suffix="_run")
-            .sort("__ioh_pos")
+        df = batch.join(
+            state.run_map, on="run_id", how="left", suffix="_run", maintain_order="left"
         )
         unknown = df.filter(pl.col(fr.RANK).is_null())
         if unknown.height:

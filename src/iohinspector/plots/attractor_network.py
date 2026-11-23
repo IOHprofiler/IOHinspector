@@ -1,14 +1,14 @@
 import warnings
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
-import numpy as np
-import polars as pl
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
 
 from iohinspector.metrics import get_attractor_network
-from iohinspector.plots.utils import BasePlotArgs, _create_plot_args, _save_fig
+from iohinspector.plots.utils import BasePlotArgs, _canvas, _create_plot_args
 
 
 @dataclass
@@ -25,25 +25,6 @@ class AttractorNetworkPlotArgs(BasePlotArgs):
         results["color_map"] = self.color_map
         return results
 
-    def apply(self, ax):
-        """Apply attractor network plot properties to a matplotlib Axes object.
-
-        Args:
-            ax: matplotlib Axes instance to apply the attractor network plot properties to.
-
-        Returns:
-            ax: The modified matplotlib Axes object with attractor network plot properties applied.
-        """
-        return super().apply(ax)
-
-    def override(self, other):
-        """Update attractor network plot arguments in place with values from another source.
-
-        Args:
-            other: Attractor network plot arguments to override current values with.
-        """
-        return super().override(other)
-
 
 def plot_attractor_network(
     data: pl.DataFrame,
@@ -55,7 +36,7 @@ def plot_attractor_network(
     epsilon: float = 0.0001,
     *,
     ax: matplotlib.axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | AttractorNetworkPlotArgs = None,
 ):
     """Plot an attractor network visualization from optimization algorithm data.
@@ -92,7 +73,7 @@ def plot_attractor_network(
     """
     try:
         import networkx as nx
-    except:
+    except ImportError:
         print("NetworkX is required to use this plot type")
         return
     from sklearn.manifold import MDS
@@ -112,100 +93,56 @@ def plot_attractor_network(
             title="Attractor Network",
             xlabel="MDS-reduced decision vector",
             ylabel="fitness",
-            color_map="viridis",
         ),
         plot_args,
     )
 
     network = nx.DiGraph()
-    for idx, row in enumerate(nodes.iter_rows(named=True)):
-        network.add_node(
-            idx,
-            decision=np.array([row[c] for c in coord_vars]),
-            fitness=row["y"],
-            hitcount=row["count"],
-            evals=row["evals"] / row["count"],
-        )
-
-    for row in edges.iter_rows(named=True):
-        network.add_edge(
-            row["start"],
-            row["end"],
-            weight=row["count"],
-            evaldiff=row["stag_length_avg"],
-        )
-    network.remove_edges_from(nx.selfloop_edges(network))
-
-    D = [network.nodes[node]["decision"] for node in network.nodes()]
+    network.add_nodes_from(range(nodes.height))
+    network.add_edges_from(
+        (start, end)
+        for start, end in edges.select("start", "end").iter_rows()
+        if start != end
+    )
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=UserWarning)
         mds = MDS(n_components=1, random_state=0, n_init=4)
-        if len(D[0]) == len(D):
-            x_positions = mds.fit_transform(D)
-        else:
-            x_positions = mds.fit_transform(D)
+        x_positions = mds.fit_transform(list(nodes.select(coord_vars).to_numpy()))
 
-    x_positions = x_positions.flatten()  # Flatten to get 1D array for x-axis
-    y_positions = [network.nodes[node]["fitness"] for node in network.nodes()]
-    pos = {
-        node: (x, y) for node, x, y in zip(network.nodes(), x_positions, y_positions)
-    }
-
-    hitcounts = [network.nodes[node]["hitcount"] for node in network.nodes()]
-    if len(hitcounts) > 1:
-        min_hitcount = min(hitcounts)
-        max_hitcount = max(hitcounts)
-
+    fitness_values = nodes["y"].to_list()
+    pos = dict(enumerate(zip(x_positions.flatten(), fitness_values)))
+    hitcounts = nodes["count"].to_numpy()
     if len(hitcounts) > 1 and np.std(hitcounts) > 0:
-        node_sizes = [
-            100
-            + (
-                400
-                * (network.nodes[node]["hitcount"] - min_hitcount)
-                / (max_hitcount - min_hitcount)
-            )
-            for node in network.nodes()
-        ]
+        low, high = hitcounts.min(), hitcounts.max()
+        node_sizes = list(100 + 400 * (hitcounts - low) / (high - low))
     else:
         node_sizes = [500] * len(hitcounts)
-    fitness_values = y_positions  # Reuse y_positions as they represent 'fitness'
 
     if plot_args.yscale == "log":
         norm = matplotlib.colors.LogNorm(min(fitness_values), max(fitness_values))
     else:
         norm = plt.Normalize(min(fitness_values), max(fitness_values))
-
-    # Safely get colormap name or default to 'viridis' if not present on plot_args
-    cmap_name = getattr(plot_args, "color_map", "viridis")
-    cmap = plt.get_cmap(cmap_name)
+    cmap = plt.get_cmap(plot_args.color_map)
     node_colors = cmap(norm(fitness_values))
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=plot_args.figsize)
-    else:
-        fig = None
+    with _canvas(ax, plot_args, file_name) as ax:
+        nx.draw(
+            network,
+            pos=pos,
+            with_labels=True,
+            node_size=node_sizes,
+            node_color=node_colors[:, :3],
+            edge_color="gray",
+            width=2,
+            ax=ax,
+        )
+        # ensure the axis frame, ticks and grid are visible
+        ax.set_axis_on()
+        ax.set_aspect("auto")
 
-    nx.draw(
-        network,
-        pos=pos,
-        with_labels=True,
-        node_size=node_sizes,
-        node_color=node_colors[:, :3],
-        edge_color="gray",
-        width=2,
-        ax=ax,
-    )
-    # ensure the axis frame, ticks and grid are visible
-    ax.set_axis_on()
-    ax.set_aspect("auto")
-
-    # Add colorbar for fitness values
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array(fitness_values)
-    plt.colorbar(sm, ax=ax)
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args)
+        # Add colorbar for fitness values
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array(fitness_values)
+        plt.colorbar(sm, ax=ax)
     return ax, nodes, edges

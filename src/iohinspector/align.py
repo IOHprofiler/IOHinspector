@@ -12,6 +12,13 @@ __getattr__ = removed_names(__name__)
 RUN = "_run"
 
 
+def best_so_far(value: str | pl.Expr, maximization: bool = False) -> pl.Expr:
+    """The running best of ``value`` (a column name or expression), in row order;
+    apply ``.over`` per run (AL-6)."""
+    v = pl.col(value) if isinstance(value, str) else value
+    return v.cum_max() if maximization else v.cum_min()
+
+
 @upgrade_hints
 def align_data(  # pylint: disable=R0913,R0914,R0917
     df: pl.DataFrame,
@@ -33,7 +40,8 @@ def align_data(  # pylint: disable=R0913,R0914,R0917
     ``y_col`` (evaluations) at which it first reached each target, ``inf`` for a
     target it never reached. Before a run's first logged evaluation its value is
     null (``docs/definitions/alignment.md``, AL-5): metrics leave it out of their
-    statistics but count the run. Works in one join for all runs.
+    statistics but count the run. Works in one join for all runs. Rows are by
+    value of ``x_values``, then by run in order of first appearance.
 
     Fixed budget with an ``evals_used`` column (the run's B_i from the run
     metadata, ``DataManager.load(include_columns=["evals_used"])``): each row
@@ -61,14 +69,15 @@ def align_data(  # pylint: disable=R0913,R0914,R0917
     group_cols = list(dict.fromkeys(group_cols))
     budget = x_col == eval_var
     fval = y_col if budget else x_col
-    best = pl.col(fval).cum_max() if maximization else pl.col(fval).cum_min()
-    df = df.with_columns(best.over(group_cols))
+    df = df.with_columns(best_so_far(fval, maximization).over(group_cols))
     stopped = budget and "evals_used" in df.columns
     if stopped:  # B_i per run, from the run metadata (AL-9)
-        runs = df.group_by(group_cols).agg(pl.col("evals_used").max())
+        runs = df.group_by(group_cols, maintain_order=True).agg(
+            pl.col("evals_used").max()
+        )
         df = df.drop("evals_used")
     else:
-        runs = df.select(group_cols).unique()
+        runs = df.select(group_cols).unique(maintain_order=True)
     runs = runs.with_row_index(RUN)  # a key per run: join_asof matches no null
     keys = runs.select(*group_cols, RUN)
     df = df.join(keys, on=group_cols, nulls_equal=True, maintain_order="left")
@@ -77,7 +86,7 @@ def align_data(  # pylint: disable=R0913,R0914,R0917
     if not budget:  # the first row with each best-so-far value reaches it (AL-3)
         df = df.filter(pl.col(fval).is_first_distinct().over(RUN))
     df = df.drop(group_cols).sort(x_col, maintain_order=True)  # budget: last of ties
-    result = grid.sort(x_col).join_asof(
+    result = grid.sort(x_col, maintain_order=True).join_asof(
         df,
         on=x_col,
         by=RUN,

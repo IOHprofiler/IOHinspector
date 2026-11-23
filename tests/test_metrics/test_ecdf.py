@@ -784,6 +784,28 @@ def test_sampled_restarts_depend_only_on_the_groups_own_runs():
     assert again.equals(alone)
 
 
+def test_sampled_restarts_do_not_depend_on_the_order_of_tied_runs():
+    # four runs end at the same value after different budgets; the draws index
+    # the failed runs, so their order must not depend on the order of the input
+    finals = [1.0, 1.0, 1.0, 1.0, 1e-4, 1e-4]
+    lengths = [10, 20, 40, 80, 30, 50]
+    rows = [
+        (i, 1, 2, "A", e, finals[i] if e == n else 10.0)
+        for i, n in enumerate(lengths)
+        for e in range(1, n + 1)
+    ]
+    columns = ["run_id", "function_id", "dimension", "algorithm_name"]
+    df = pl.DataFrame(rows, schema=[*columns, "evaluations", "raw_y"], orient="row")
+    targets = pl.DataFrame({"function_id": 1, "dimension": 2, "target": [1e-3]})
+    xs = [50, 100, 200, 400, 800]
+    expected = get_ecdf(df, targets, x_values=xs)
+    for seed in range(20):
+        order = np.random.default_rng(seed).permutation(len(lengths)).tolist()
+        shuffled = pl.concat([df.filter(run_id=i) for i in order])
+        ours = get_ecdf(shuffled, targets, x_values=xs)
+        np.testing.assert_array_equal(ours["ecdf"], expected["ecdf"])
+
+
 def test_exact_restarts_estimate_their_cost_and_warn(monkeypatch):
     df = _ragged(11)
     short, long = get_restart_cost(df, horizon=20), get_restart_cost(df, horizon=2000)

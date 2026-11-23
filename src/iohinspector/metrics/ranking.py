@@ -14,7 +14,7 @@ from skelo.model.elo import EloEstimator
 
 from .._upgrade import upgrade_hints
 from ..indicators import add_indicator
-from ..targets import get_target_dt
+from ..targets import targets_per_pair
 from .distributions import get_runtime_sample, get_value_sample
 from .stats import per_pair
 
@@ -354,16 +354,13 @@ def get_tournament_ranking(  # pylint: disable=too-many-arguments
             ``deviation``, ``volatility`` (null for Elo), ``games``, ``wins``,
             ``draws`` and ``losses``.
     """
-    if perspective not in ("fixed_target", "fixed_budget"):
-        raise ValueError(f"perspective {perspective!r}: fixed_target or fixed_budget")
     if method not in ("glicko2", "elo"):
         raise ValueError(f"method {method!r}: glicko2 or elo")
     by = list(by)
     columns = {"eval_var": eval_var, "fval_var": fval_var}
-    if targets is None:
-        targets = get_target_dt(
-            data, perspective, maximization=maximization, by=by, **columns
-        )
+    targets = targets_per_pair(
+        data, targets, perspective, maximization=maximization, by=by, **columns
+    )
     rng = np.random.default_rng(seed)
     groups, games = _tournament(
         data,

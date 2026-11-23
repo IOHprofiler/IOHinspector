@@ -1,17 +1,11 @@
-import polars as pl
+from collections.abc import Iterable, Sequence
+
 import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sbs
-from typing import Iterable, Sequence
+import polars as pl
+
 from .._upgrade import upgrade_hints
 from ..metrics.fixed_target import aggregate_running_time
-from .utils import (
-    LinePlotArgs,
-    _check_measures,
-    _create_plot_args,
-    _hue,
-    _save_fig,
-)
+from .utils import LinePlotArgs, _canvas, _create_plot_args, _measure_lines, _measures
 
 
 @upgrade_hints
@@ -20,15 +14,15 @@ def plot_single_function_fixed_target(
     eval_var: str = "evaluations",
     fval_var: str = "raw_y",
     by: Sequence[str] = ("algorithm_name",),
-    f_min: float = None,
-    f_max: float = None,
+    f_min: float | None = None,
+    f_max: float | None = None,
     scale_f_log: bool = True,
-    eval_max: int = None,
+    eval_max: int | None = None,
     maximization: bool = False,
     measures: Iterable[str] = ["ERT"],
     *,
     ax: matplotlib.axes._axes.Axes = None,
-    file_name: str = None,
+    file_name: str | None = None,
     plot_args: dict | LinePlotArgs = None,
 ):
     """Create a fixed-target plot showing Expected Running Time (ERT) analysis for algorithm performance.
@@ -86,12 +80,7 @@ def plot_single_function_fixed_target(
         eval_max=eval_max,
         maximization=maximization,
     )
-    _check_measures(dt_agg, measures)
-    dt_plot = (
-        dt_agg.unpivot(index=[fval_var, *by])
-        .filter(pl.col("variable").is_in(list(measures)))
-        .sort(by, maintain_order=True)
-    )
+    dt_plot = _measures(dt_agg, fval_var, by, measures)
     pdf = dt_plot.to_pandas()
 
     plot_args = _create_plot_args(
@@ -105,23 +94,7 @@ def plot_single_function_fixed_target(
         plot_args,
     )
 
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=plot_args.figsize)
-    else:
-        fig = None
-
-    sbs.lineplot(
-        pdf,
-        x=fval_var,
-        y="value",
-        style="variable",
-        hue=_hue(pdf, by),
-        palette=plot_args.line_colors,
-        ax=ax,
-    )
-
-    plot_args.apply(ax)
-
-    _save_fig(fig, file_name, plot_args=plot_args)
+    with _canvas(ax, plot_args, file_name) as ax:
+        _measure_lines(pdf, fval_var, by, plot_args, ax)
 
     return ax, dt_plot

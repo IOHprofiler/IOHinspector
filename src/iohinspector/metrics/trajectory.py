@@ -1,6 +1,8 @@
+from collections.abc import Sequence
+
 import numpy as np
 import polars as pl
-from typing import Sequence
+
 from .._upgrade import upgrade_hints
 from ..align import align_data
 
@@ -8,7 +10,7 @@ from ..align import align_data
 @upgrade_hints
 def get_trajectory(
     data: pl.DataFrame,
-    traj_length: int = None,
+    traj_length: int | None = None,
     min_fevals: int = 1,
     evaluation_variable: str = "evaluations",
     fval_variable: str = "raw_y",

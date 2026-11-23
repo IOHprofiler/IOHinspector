@@ -2,11 +2,19 @@
 (``docs/definitions/eaf.md``): the attainment surfaces of each group and the
 difference of two groups."""
 
-import numpy as np
 import polars as pl
 
 from ..metrics import get_eaf, get_eaf_difference
-from .base import Curve, Plot, edges, library_kind, log_if_positive, with_labels
+from .base import (
+    Curve,
+    Plot,
+    edges,
+    evals_axis,
+    library_kind,
+    log_if_positive,
+    matrix,
+    with_labels,
+)
 
 PERCENTILES = (10, 50, 90)
 
@@ -45,7 +53,7 @@ def eaf_plot(panel, frame: pl.DataFrame) -> Plot:
     scale = "linear" if value == "quality" else log_if_positive(frame[value])
     return Plot(
         lines,
-        x={"label": "# f-evals", "scale": "log", "ticks": "exponent"},
+        x=evals_axis(),
         y={"label": "quality" if value == "quality" else "value", "scale": scale},
         step=True,
     )
@@ -70,19 +78,11 @@ def eaf_difference_plot(panel, frame: pl.DataFrame) -> Plot:
     rows = frame.filter(pl.col("label") == first)
     xs, ys = rows["evaluations"].unique().sort(), rows[value].unique().sort()
     log_y = value == "raw_y" and log_if_positive(ys) == "log"
-    z = np.full((len(ys), len(xs)), np.nan)
-    ix = np.searchsorted(xs.to_numpy(), rows["evaluations"].to_numpy())
-    iy = np.searchsorted(ys.to_numpy(), rows[value].to_numpy())
-    z[iy, ix] = rows["eaf_diff"].to_numpy()
+    z = matrix(rows, value, "evaluations", "eaf_diff", ys, xs)
     x, y = edges(xs, log=True), edges(ys, log=log_y)
     return Plot(
         [Curve(f"{first} − {second}", x, y, z=z, family=rows["family"][0])],
-        x={
-            "label": "# f-evals",
-            "scale": "log",
-            "ticks": "exponent",
-            "lim": [x[0], x[-1]],
-        },
+        x=evals_axis(lim=[x[0], x[-1]]),
         y={
             "label": "quality" if value == "quality" else "value",
             "scale": "log" if log_y else "linear",
