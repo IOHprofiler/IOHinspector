@@ -70,23 +70,27 @@ class StoredDataset:
         name.
         """
         by = [b for b in dict.fromkeys(by) if b != "run_id"]
-        keys = self.manifest["descriptors"]
-        unknown = [
-            b
-            for b in by
-            if b not in RUNS_SCHEMA and b not in keys and b not in ALGORITHM_DESCRIPTORS
-        ]
+        columns, present, absent = _names(by, self.manifest["descriptors"])
+        unknown = [b for b in absent if b not in ALGORITHM_DESCRIPTORS]
         if unknown:
             raise ValueError(f"no runs column or descriptor is named {unknown}")
-        lf = self.runs.select("run_id", *[b for b in by if b in RUNS_SCHEMA])
-        present = [b for b in by if b not in RUNS_SCHEMA and b in keys]
+        lf = self.runs.select("run_id", *columns)
         if present:
-            columns = descriptor_columns(self.descriptors, present, mixed=mixed)
-            lf = lf.join(columns, on="run_id", how="left")
-        absent = [b for b in by if b not in RUNS_SCHEMA and b not in keys]
-        # a required descriptor of a dataset without runs
-        lf = lf.with_columns(pl.lit(None, pl.String).alias(key) for key in absent)
+            values = descriptor_columns(self.descriptors, present, mixed=mixed)
+            lf = lf.join(values, on="run_id", how="left")
+        # a required descriptor of a dataset without runs: null
+        lf = lf.with_columns(pl.lit(None, pl.String).alias(b) for b in absent)
         return lf.select("run_id", *by)
+
+
+def _names(by: list[str], keys) -> tuple[list[str], list[str], list[str]]:
+    """The names of ``by`` that are runs columns, descriptor ``keys``, and neither."""
+    named = [b for b in by if b not in RUNS_SCHEMA]
+    return (
+        [b for b in by if b in RUNS_SCHEMA],
+        [b for b in named if b in keys],
+        [b for b in named if b not in keys],
+    )
 
 
 def scan_dataset(path: str | os.PathLike[str], *, warn: bool = True) -> StoredDataset:
